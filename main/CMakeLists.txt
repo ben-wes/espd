@@ -1,4 +1,4 @@
-set(COMPONENT_SRCS "weasel.c fifostream.c \
+set(COMPONENT_SRCS "weasel.c fifostream.c pdmain.c \
 ../pd/src/g_canvas.c \
 ../pd/src/g_graph.c \
 ../pd/src/g_text.c \

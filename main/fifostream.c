@@ -11,6 +11,7 @@
 static const char *TAG = "fifostream";
 
 #define BUF_SIZE (100)
+extern void pdmain_tick( void);
 
 typedef struct fifostream {
     int  samplerate;
@@ -64,6 +65,7 @@ int phaseinc = 123;
 
 static int fifostream_process(audio_element_handle_t self, char *in_buffer, int in_len)
 {
+    static int cumsamps = 0;
     fifostream_t *fifostream = (fifostream_t *)audio_element_getdata(self);
     int ret = 0;
     int r_size = 0;
@@ -82,6 +84,12 @@ static int fifostream_process(audio_element_handle_t self, char *in_buffer, int 
             {
                 phase += phaseinc ;
                 fifostream->s_buf[i] = (phase >> 3);
+            }
+            cumsamps += r_size/sizeof(short);
+            while (cumsamps >= 128)
+            {
+                pdmain_tick();
+                cumsamps -= 128;
             }
         }
         ret = audio_element_output(self, (char *)fifostream->s_buf, BUF_SIZE);

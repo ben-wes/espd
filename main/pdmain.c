@@ -1,0 +1,1136 @@
+#include "../pd/src/m_pd.h"
+#include "../pd/src/s_stuff.h"
+#include "../pd/src/m_imp.h"
+#include "../pd/src/g_canvas.h"
+#include "../pd/src/g_undo.h"
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/time.h>
+#include <string.h>
+#include <stdarg.h>
+#include <stdlib.h>
+
+void pd_init(void);
+void glob_open(t_pd *ignore, t_symbol *name, t_symbol *dir, t_floatarg f);
+extern t_printhook sys_printhook;
+
+void pdmain_print( const char *s);
+
+static const char patchfile[] = "\
+canvas 274 279 752 643 12;\n\
+#X obj 123 146 loadbang;\n\
+#X obj 123 171 metro 10000;\n\
+#X obj 123 196 print poodle;\n\
+#X connect 0 0 1 0;\n\
+#X connect 1 0 2 0;\n\
+";
+
+static void trymem(int foo)
+{
+    int i;
+    char msg[80];
+    for (i = 1; i < 500; i++)
+    {
+        char *foo = malloc(i*1024);
+        if (foo)
+            free(foo);
+        else break;
+    }
+    sprintf(msg, "%d max mem %dk", foo, i-1);
+    pdmain_print(msg);
+}
+
+void pdmain_init( void)
+{
+    t_binbuf *b;
+
+    sys_printhook = pdmain_print;
+    trymem(1); // 111
+    trymem(2);
+    pd_init();
+    trymem(100); // 47
+    STUFF->st_dacsr = sys_getsr();
+
+
+    b = binbuf_new();
+    glob_setfilename(0, gensym("main-patch"), gensym("."));
+    binbuf_text(b, patchfile, strlen(patchfile));
+    binbuf_eval(b, &pd_canvasmaker, 0, 0);
+    canvas_loadbang((t_canvas *)s__X.s_thing);
+    vmess(s__X.s_thing, gensym("pop"), "i", 0);
+
+    glob_setfilename(0, &s_, &s_);
+    binbuf_free(b);
+}
+
+void pdmain_tick( void)
+{
+    sched_tick();
+}
+
+/* ----------------- stuff to keep Pd happy -------------------- */
+
+void glob_init( void)
+{
+}
+
+void g_array_setup(void);
+void g_canvas_setup(void);
+void g_guiconnect_setup(void);
+/* iemlib */
+void g_bang_setup(void);
+void g_hradio_setup(void);
+void g_hslider_setup(void);
+void g_mycanvas_setup(void);
+void g_numbox_setup(void);
+void g_toggle_setup(void);
+void g_vradio_setup(void);
+void g_vslider_setup(void);
+void g_vumeter_setup(void);
+/* iemlib */
+void g_io_setup(void);
+void g_scalar_setup(void);
+void g_template_setup(void);
+void g_text_setup(void);
+void g_traversal_setup(void);
+void clone_setup(void);
+void m_pd_setup(void);
+void x_acoustics_setup(void);
+void x_interface_setup(void);
+void x_connective_setup(void);
+void x_time_setup(void);
+void x_arithmetic_setup(void);
+void x_array_setup(void);
+void x_midi_setup(void);
+void x_misc_setup(void);
+void x_net_setup(void);
+void x_qlist_setup(void);
+void x_gui_setup(void);
+void x_list_setup(void);
+void x_scalar_setup(void);
+void expr_setup(void);
+void d_arithmetic_setup(void);
+void d_array_setup(void);
+void d_ctl_setup(void);
+void d_dac_setup(void);
+void d_delay_setup(void);
+void d_fft_setup(void);
+void d_filter_setup(void);
+void d_global_setup(void);
+void d_math_setup(void);
+void d_misc_setup(void);
+void d_osc_setup(void);
+void d_soundfile_setup(void);
+void d_ugen_setup(void);
+
+void conf_init(void)
+{
+    trymem(10);
+    g_array_setup();
+    g_canvas_setup();
+    g_text_setup();
+    x_time_setup();
+    x_interface_setup();
+    x_misc_setup();
+    g_guiconnect_setup();
+    g_scalar_setup();
+    g_template_setup();
+    clone_setup();
+    m_pd_setup();
+    x_acoustics_setup();
+    x_interface_setup();
+    x_connective_setup();
+    x_time_setup();
+    x_arithmetic_setup();
+#if POODLE
+    x_array_setup();
+    x_misc_setup();
+    x_gui_setup();
+    x_scalar_setup();
+    d_global_setup();
+    d_soundfile_setup();
+    d_ugen_setup();
+#endif
+    trymem(11);
+}
+
+/*
+    d_osc_setup();
+    d_arithmetic_setup();
+    d_array_setup();
+    d_ctl_setup();
+    d_dac_setup();
+    d_delay_setup();
+    d_filter_setup();
+    d_math_setup();
+    d_misc_setup();
+    g_traversal_setup();
+*/
+
+/* ------- STUBS that do nothing ------------- */
+int sys_get_outchannels(void) {return(2); }
+int sys_get_inchannels(void) {return(2); }
+float sys_getsr( void) {return (44100);}
+int sys_getblksize(void) { return (DEFDACBLKSIZE); }
+
+int pd_compatibilitylevel = 100;
+int sys_verbose = 0;
+int sys_noloadbang = 0;
+
+int audio_shouldkeepopen(void) { return (0);}
+t_symbol *sys_libdir = &s_;
+
+void sys_vgui(const char *format, ...) {}
+void sys_gui(const char *s) { }
+
+int sys_havegui(void) {return (0);}
+int sys_pollgui( void) { return (0); }
+
+void sys_lock(void) {}
+void sys_unlock(void) {}
+void pd_globallock(void) {}
+void pd_globalunlock(void) {}
+void sys_set_audio_state(int onoff) {}
+int sys_defaultfont = 1;
+int sys_nearestfontsize(int fontsize) {return (1);}
+int sys_noautopatch = 1;
+
+int gobj_shouldvis(t_gobj *x, struct _glist *glist) {return (0);}
+
+void canvas_undo_cleardirty(t_canvas *x) {}
+
+t_undo_action *canvas_undo_init(t_canvas *x) {return (0);}
+t_undo_action *canvas_undo_add(t_canvas *x,
+ t_undo_type type, const char *name, void *data) {return (0);}
+void canvas_undo_undo(t_canvas *x) {}
+void canvas_undo_redo(t_canvas *x) {}
+void canvas_undo_rebranch(t_canvas *x) {}
+void canvas_undo_check_canvas_pointers(t_canvas *x) {}
+void canvas_undo_purge_abstraction_actions(t_canvas *x) {}
+void canvas_undo_free(t_canvas *x) {}
+void *canvas_undo_set_create(t_canvas *x) { return (0); }
+void *canvas_undo_set_recreate(t_canvas *x,
+    t_gobj *y, int old_pos) { return (0); }
+void canvas_noundo(t_canvas *x) {}
+void canvas_properties(t_canvas *x) {}
+
+void glist_select(t_glist *x, t_gobj *y) {}
+void glist_deselect(t_glist *x, t_gobj *y) {}
+void glist_noselect(t_glist *x) {}
+int glist_isselected(t_glist *x, t_gobj *g) {return (0);}
+void glist_getnextxy(t_glist *gl, int *xpix, int *ypix) {*xpix = *ypix = 40;}
+int glist_getindex(t_glist *x, t_gobj *y) {return (0);}
+
+void canvas_create_editor(t_canvas *x) {}
+void canvas_destroy_editor(t_canvas *x) {}
+void canvas_editor_for_class(t_class *c) {}
+void g_editor_setup( void) {}
+void canvas_finderror(const void *error_object) {}
+void canvas_setcursor(t_canvas *x, unsigned int cursornum) {}
+void canvas_setgraph(t_glist *x, int flag, int nogoprect) {}
+int canvas_hitbox(t_canvas *x, t_gobj *y, int xpos, int ypos,
+    int *x1p, int *y1p, int *x2p, int *y2p) {return (0);}
+void canvas_restoreconnections(t_canvas *x) {}
+void canvas_reload(t_symbol *name, t_symbol *dir, t_glist *except) {}
+
+void sys_queuegui(void *client, t_glist *glist, t_guicallbackfn f) {}
+void sys_unqueuegui(void *client) {}
+char sys_fontweight[10] = "no";
+char sys_font[10] = "no";
+int sys_hostfontsize(int fontsize, int zoom) { return (1);}
+int sys_zoom_open = 1;
+int sys_zoomfontwidth(int fontsize, int zoom, int worstcase) { return (1);}
+int sys_zoomfontheight(int fontsize, int zoom, int worstcase) { return (1);}
+int sys_load_lib(t_canvas *canvas, const char *classname) { return (0);}
+
+void s_inter_newpdinstance( void) {}
+void x_midi_newpdinstance( void) {}
+
+t_symbol *iemgui_raute2dollar(t_symbol *s) {return(s);}
+t_symbol *iemgui_dollar2raute(t_symbol *s) {return(s);}
+
+/* --------------- m_sched.c -------------------- */
+#define TIMEUNITPERMSEC (32. * 441.)
+#define TIMEUNITPERSECOND (TIMEUNITPERMSEC * 1000.)
+void dsp_tick(void);
+static int sched_diddsp;
+int sys_quit = 0;
+
+
+typedef void (*t_clockmethod)(void *client);
+
+struct _clock
+{
+    double c_settime;       /* in TIMEUNITS; <0 if unset */
+    void *c_owner;
+    t_clockmethod c_fn;
+    struct _clock *c_next;
+    t_float c_unit;         /* >0 if in TIMEUNITS; <0 if in samples */
+};
+
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+
+t_clock *clock_new(void *owner, t_method fn)
+{
+    t_clock *x = (t_clock *)getbytes(sizeof *x);
+    x->c_settime = -1;
+    x->c_owner = owner;
+    x->c_fn = (t_clockmethod)fn;
+    x->c_next = 0;
+    x->c_unit = TIMEUNITPERMSEC;
+    return (x);
+}
+
+void clock_unset(t_clock *x)
+{
+    if (x->c_settime >= 0)
+    {
+        if (x == pd_this->pd_clock_setlist)
+            pd_this->pd_clock_setlist = x->c_next;
+        else
+        {
+            t_clock *x2 = pd_this->pd_clock_setlist;
+            while (x2->c_next != x) x2 = x2->c_next;
+            x2->c_next = x->c_next;
+        }
+        x->c_settime = -1;
+    }
+}
+
+    /* set the clock to call back at an absolute system time */
+void clock_set(t_clock *x, double setticks)
+{
+    if (setticks < pd_this->pd_systime) setticks = pd_this->pd_systime;
+    clock_unset(x);
+    x->c_settime = setticks;
+    if (pd_this->pd_clock_setlist &&
+        pd_this->pd_clock_setlist->c_settime <= setticks)
+    {
+        t_clock *cbefore, *cafter;
+        for (cbefore = pd_this->pd_clock_setlist,
+            cafter = pd_this->pd_clock_setlist->c_next;
+                cbefore; cbefore = cafter, cafter = cbefore->c_next)
+        {
+            if (!cafter || cafter->c_settime > setticks)
+            {
+                cbefore->c_next = x;
+                x->c_next = cafter;
+                return;
+            }
+        }
+    }
+    else x->c_next = pd_this->pd_clock_setlist, pd_this->pd_clock_setlist = x;
+}
+
+    /* set the clock to call back after a delay in msec */
+void clock_delay(t_clock *x, double delaytime)
+{
+    clock_set(x, (x->c_unit > 0 ?
+        pd_this->pd_systime + x->c_unit * delaytime :
+            pd_this->pd_systime -
+                (x->c_unit*(TIMEUNITPERSECOND/STUFF->st_dacsr)) * delaytime));
+}
+
+    /* set the time unit in msec or (if 'samps' is set) in samples.  This
+    is flagged by setting c_unit negative.  If the clock is currently set,
+    recalculate the delay based on the new unit and reschedule */
+void clock_setunit(t_clock *x, double timeunit, int sampflag)
+{
+    double timeleft;
+    if (timeunit <= 0)
+        timeunit = 1;
+    /* if no change, return to avoid truncation errors recalculating delay */
+    if ((sampflag && (timeunit == -x->c_unit)) ||
+        (!sampflag && (timeunit == x->c_unit * TIMEUNITPERMSEC)))
+            return;
+
+        /* figure out time left in the units we were in */
+    timeleft = (x->c_settime < 0 ? -1 :
+        (x->c_settime - pd_this->pd_systime)/((x->c_unit > 0)? x->c_unit :
+            (x->c_unit*(TIMEUNITPERSECOND/STUFF->st_dacsr))));
+    if (sampflag)
+        x->c_unit = -timeunit;  /* negate to flag sample-based */
+    else x->c_unit = timeunit * TIMEUNITPERMSEC;
+    if (timeleft >= 0)  /* reschedule if already set */
+        clock_delay(x, timeleft);
+}
+
+    /* get current logical time.  We don't specify what units this is in;
+    use clock_gettimesince() to measure intervals from time of this call. */
+double clock_getlogicaltime(void)
+{
+    return (pd_this->pd_systime);
+}
+
+    /* OBSOLETE (misleading) function name kept for compatibility */
+double clock_getsystime(void) { return (pd_this->pd_systime); }
+
+    /* elapsed time in milliseconds since the given system time */
+double clock_gettimesince(double prevsystime)
+{
+    return ((pd_this->pd_systime - prevsystime)/TIMEUNITPERMSEC);
+}
+
+    /* elapsed time in units, ala clock_setunit(), since given system time */
+double clock_gettimesincewithunits(double prevsystime,
+    double units, int sampflag)
+{
+            /* If in samples, divide TIMEUNITPERSECOND/sys_dacsr first (at
+            cost of an extra division) since it's probably an integer and if
+            units == 1 and (sys_time - prevsystime) is an integer number of
+            DSP ticks, the result will be exact. */
+    if (sampflag)
+        return ((pd_this->pd_systime - prevsystime)/
+            ((TIMEUNITPERSECOND/STUFF->st_dacsr)*units));
+    else return ((pd_this->pd_systime - prevsystime)/(TIMEUNITPERMSEC*units));
+}
+
+    /* what value the system clock will have after a delay */
+double clock_getsystimeafter(double delaytime)
+{
+    return (pd_this->pd_systime + TIMEUNITPERMSEC * delaytime);
+}
+
+void clock_free(t_clock *x)
+{
+    clock_unset(x);
+    freebytes(x, sizeof *x);
+}
+    /* take the scheduler forward one DSP tick, also handling clock timeouts */
+void sched_tick(void)
+{
+    double next_sys_time = pd_this->pd_systime +
+        (STUFF->st_schedblocksize/STUFF->st_dacsr) * TIMEUNITPERSECOND;
+    int countdown = 5000;
+    while (pd_this->pd_clock_setlist &&
+        pd_this->pd_clock_setlist->c_settime < next_sys_time)
+    {
+        t_clock *c = pd_this->pd_clock_setlist;
+        pd_this->pd_systime = c->c_settime;
+        clock_unset(pd_this->pd_clock_setlist);
+        outlet_setstacklim();
+        (*c->c_fn)(c->c_owner);
+        if (!countdown--)
+        {
+            countdown = 5000;
+            sys_pollgui();
+        }
+        if (sys_quit)
+            return;
+    }
+    pd_this->pd_systime = next_sys_time;
+    dsp_tick();
+    sched_diddsp++;
+}
+
+/* ------------------------ g_editor.c ---------------------- */
+
+struct _instanceeditor
+{
+    t_binbuf *copy_binbuf;
+    char *canvas_textcopybuf;
+    int canvas_textcopybufsize;
+    t_undofn canvas_undo_fn;         /* current undo function if any */
+    int canvas_undo_whatnext;        /* whether we can now UNDO or REDO */
+    void *canvas_undo_buf;           /* data private to the undo function */
+    t_canvas *canvas_undo_canvas;    /* which canvas we can undo on */
+    const char *canvas_undo_name;
+    int canvas_undo_already_set_move;
+    double canvas_upclicktime;
+    int canvas_upx, canvas_upy;
+    int canvas_find_index, canvas_find_wholeword;
+    t_binbuf *canvas_findbuf;
+    int paste_onset;
+    t_canvas *paste_canvas;
+    t_glist *canvas_last_glist;
+    int canvas_last_glist_x, canvas_last_glist_y;
+    t_canvas *canvas_cursorcanvaswas;
+    unsigned int canvas_cursorwas;
+};
+
+extern t_class *text_class;
+
+void canvas_startmotion(t_canvas *x)
+{
+    int xval, yval;
+    if (!x->gl_editor) return;
+    glist_getnextxy(x, &xval, &yval);
+    if (xval == 0 && yval == 0) return;
+    x->gl_editor->e_onmotion = MA_MOVE;
+    x->gl_editor->e_xwas = xval;
+    x->gl_editor->e_ywas = yval;
+}
+
+void g_editor_newpdinstance(void)
+{
+    EDITOR = getbytes(sizeof(*EDITOR));
+        /* other stuff is null-checked but this needs to exist: */
+    EDITOR->copy_binbuf = binbuf_new();
+}
+
+void g_editor_freepdinstance(void)
+{
+    if (EDITOR->copy_binbuf)
+        binbuf_free(EDITOR->copy_binbuf);
+    if (EDITOR->canvas_undo_buf)
+    {
+        if (!EDITOR->canvas_undo_fn)
+            bug("g_editor_freepdinstance");
+        else (*EDITOR->canvas_undo_fn)
+            (EDITOR->canvas_undo_canvas, EDITOR->canvas_undo_buf, UNDO_FREE);
+    }
+    if (EDITOR->canvas_findbuf)
+        binbuf_free(EDITOR->canvas_findbuf);
+    freebytes(EDITOR, sizeof(*EDITOR));
+}
+
+void canvas_connect(t_canvas *x, t_floatarg fwhoout, t_floatarg foutno,
+    t_floatarg fwhoin, t_floatarg finno)
+{
+    int whoout = fwhoout, outno = foutno, whoin = fwhoin, inno = finno;
+    t_gobj *src = 0, *sink = 0;
+    t_object *objsrc, *objsink;
+    t_outconnect *oc;
+    int nin = whoin, nout = whoout;
+    if (EDITOR->paste_canvas == x) whoout += EDITOR->paste_onset,
+        whoin += EDITOR->paste_onset;
+    for (src = x->gl_list; whoout; src = src->g_next, whoout--)
+        if (!src->g_next) goto bad; /* bug fix thanks to Hannes */
+    for (sink = x->gl_list; whoin; sink = sink->g_next, whoin--)
+        if (!sink->g_next) goto bad;
+
+        /* check they're both patchable objects */
+    if (!(objsrc = pd_checkobject(&src->g_pd)) ||
+        !(objsink = pd_checkobject(&sink->g_pd)))
+            goto bad;
+
+        /* if object creation failed, make dummy inlets or outlets
+           as needed */
+    if (pd_class(&src->g_pd) == text_class && objsrc->te_type == T_OBJECT)
+        while (outno >= obj_noutlets(objsrc))
+            outlet_new(objsrc, 0);
+    if (pd_class(&sink->g_pd) == text_class && objsink->te_type == T_OBJECT)
+        while (inno >= obj_ninlets(objsink))
+            inlet_new(objsink, &objsink->ob_pd, 0, 0);
+
+    if (!(oc = obj_connect(objsrc, outno, objsink, inno))) goto bad;
+    if (glist_isvisible(x) && x->gl_havewindow)
+    {
+        sys_vgui(
+            ".x%lx.c create line %d %d %d %d -width %d -tags [list l%lx cord]\n",
+            glist_getcanvas(x), 0, 0, 0, 0,
+            (obj_issignaloutlet(objsrc, outno) ? 2 : 1) * x->gl_zoom, oc);
+        canvas_fixlinesfor(x, objsrc);
+    }
+    return;
+
+bad:
+    post("%s %d %d %d %d (%s->%s) connection failed",
+        x->gl_name->s_name, nout, outno, nin, inno,
+            (src? class_getname(pd_class(&src->g_pd)) : "???"),
+            (sink? class_getname(pd_class(&sink->g_pd)) : "???"));
+}
+
+/* ---------------- generic widget behavior ------------------------- */
+
+void gobj_getrect(t_gobj *x, t_glist *glist, int *x1, int *y1,
+    int *x2, int *y2)
+{
+    if (x->g_pd->c_wb && x->g_pd->c_wb->w_getrectfn)
+        (*x->g_pd->c_wb->w_getrectfn)(x, glist, x1, y1, x2, y2);
+    else *x1 = *y1 = 0, *x2 = *y2 = 10;
+}
+
+void gobj_displace(t_gobj *x, t_glist *glist, int dx, int dy)
+{
+    if (x->g_pd->c_wb && x->g_pd->c_wb->w_displacefn)
+        (*x->g_pd->c_wb->w_displacefn)(x, glist, dx, dy);
+}
+
+    /* here we add an extra check whether we're mapped, because some
+       editing moves are carried out on invisible windows (notably, re-creating
+       abstractions when one is saved).  Should any other widget finctions also
+       be doing this?  */
+void gobj_select(t_gobj *x, t_glist *glist, int state)
+{
+    if (glist->gl_mapped && x->g_pd->c_wb && x->g_pd->c_wb->w_selectfn)
+        (*x->g_pd->c_wb->w_selectfn)(x, glist, state);
+}
+
+void gobj_activate(t_gobj *x, t_glist *glist, int state)
+{
+    if (x->g_pd->c_wb && x->g_pd->c_wb->w_activatefn)
+        (*x->g_pd->c_wb->w_activatefn)(x, glist, state);
+}
+
+void gobj_delete(t_gobj *x, t_glist *glist)
+{
+    if (x->g_pd->c_wb && x->g_pd->c_wb->w_deletefn)
+        (*x->g_pd->c_wb->w_deletefn)(x, glist);
+}
+
+void gobj_vis(t_gobj *x, struct _glist *glist, int flag)
+{
+    if (x->g_pd->c_wb && x->g_pd->c_wb->w_visfn && gobj_shouldvis(x, glist))
+        (*x->g_pd->c_wb->w_visfn)(x, glist, flag);
+}
+
+int gobj_click(t_gobj *x, struct _glist *glist,
+    int xpix, int ypix, int shift, int alt, int dbl, int doit)
+{
+    if (x->g_pd->c_wb && x->g_pd->c_wb->w_clickfn)
+        return ((*x->g_pd->c_wb->w_clickfn)(x,
+            glist, xpix, ypix, shift, alt, dbl, doit));
+    else return (0);
+}
+
+void canvas_vis(t_canvas *x, t_floatarg f) {}
+
+/* ------------------- s_file.c ------------------------ */
+#define DEBUG(x)
+
+/* add a single item to a namelist.  If "allowdup" is true, duplicates
+may be added; otherwise they're dropped.  */
+
+t_namelist *namelist_append(t_namelist *listwas, const char *s, int allowdup)
+{
+    t_namelist *nl, *nl2;
+    nl2 = (t_namelist *)(getbytes(sizeof(*nl)));
+    nl2->nl_next = 0;
+    nl2->nl_string = (char *)getbytes(strlen(s) + 1);
+    strcpy(nl2->nl_string, s);
+    sys_unbashfilename(nl2->nl_string, nl2->nl_string);
+    if (!listwas)
+        return (nl2);
+    else
+    {
+        for (nl = listwas; ;)
+        {
+            if (!allowdup && !strcmp(nl->nl_string, s))
+            {
+                freebytes(nl2->nl_string, strlen(nl2->nl_string) + 1);
+                return (listwas);
+            }
+            if (!nl->nl_next)
+                break;
+            nl = nl->nl_next;
+        }
+        nl->nl_next = nl2;
+    }
+    return (listwas);
+}
+
+
+    /* change '/' characters to the system's native file separator */
+void sys_bashfilename(const char *from, char *to)
+{
+    char c;
+    while ((c = *from++))
+    {
+#ifdef _WIN32
+        if (c == '/') c = '\\';
+#endif
+        *to++ = c;
+    }
+    *to = 0;
+}
+
+    /* change the system's native file separator to '/' characters  */
+void sys_unbashfilename(const char *from, char *to)
+{
+    char c;
+    while ((c = *from++))
+    {
+#ifdef _WIN32
+        if (c == '\\') c = '/';
+#endif
+        *to++ = c;
+    }
+    *to = 0;
+}
+
+/* test if path is absolute or relative, based on leading /, env vars, ~, etc */
+int sys_isabsolutepath(const char *dir)
+{
+    if (dir[0] == '/' || dir[0] == '~'
+#ifdef _WIN32
+        || dir[0] == '%' || (dir[1] == ':' && dir[2] == '/')
+#endif
+        )
+    {
+        return 1;
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+
+/* expand env vars and ~ at the beginning of a path and make a copy to return */
+static void sys_expandpath(const char *from, char *to, int bufsize)
+{
+    if ((strlen(from) == 1 && from[0] == '~') || (strncmp(from,"~/", 2) == 0))
+    {
+#ifdef _WIN32
+        const char *home = getenv("USERPROFILE");
+#else
+        const char *home = getenv("HOME");
+#endif
+        if (home)
+        {
+            strncpy(to, home, bufsize);
+            to[bufsize-1] = 0;
+            strncpy(to + strlen(to), from + 1, bufsize - strlen(to));
+            to[bufsize-1] = 0;
+        }
+        else *to = 0;
+    }
+    else
+    {
+        strncpy(to, from, bufsize);
+        to[bufsize-1] = 0;
+    }
+#ifdef _WIN32
+    {
+        char *buf = alloca(bufsize);
+        ExpandEnvironmentStrings(to, buf, bufsize-1);
+        buf[bufsize-1] = 0;
+        strncpy(to, buf, bufsize);
+        to[bufsize-1] = 0;
+    }
+#endif
+}
+
+
+int sys_open(const char *path, int oflag, ...)
+{
+    int i, fd;
+    char pathbuf[MAXPDSTRING];
+    sys_bashfilename(path, pathbuf);
+    if (oflag & O_CREAT)
+    {
+        mode_t mode;
+        int imode;
+        va_list ap;
+        va_start(ap, oflag);
+
+        /* Mac compiler complains if we just set mode = va_arg ... so, even
+        though we all know it's just an int, we explicitly va_arg to an int
+        and then convert.
+           -> http://www.mail-archive.com/bug-gnulib@gnu.org/msg14212.html
+           -> http://bugs.debian.org/647345
+        */
+
+        imode = va_arg (ap, int);
+        mode = (mode_t)imode;
+        va_end(ap);
+        fd = open(pathbuf, oflag, mode);
+    }
+    else
+        fd = open(pathbuf, oflag);
+    return fd;
+}
+
+FILE *sys_fopen(const char *filename, const char *mode)
+{
+  char namebuf[MAXPDSTRING];
+  sys_bashfilename(filename, namebuf);
+  return fopen(namebuf, mode);
+}
+
+   /* close a previously opened file
+   this is needed on platforms where you cannot open/close resources
+   across dll-boundaries, but we provide it for other platforms as well */
+int sys_close(int fd)
+{
+    return close(fd);
+}
+
+int sys_fclose(FILE *stream)
+{
+    return fclose(stream);
+}
+
+int sys_usestdpath = 0;
+
+    /* try to open a file in the directory "dir", named "name""ext",
+    for reading.  "Name" may have slashes.  The directory is copied to
+    "dirresult" which must be at least "size" bytes.  "nameresult" is set
+    to point to the filename (copied elsewhere into the same buffer).
+    The "bin" flag requests opening for binary (which only makes a difference
+    on Windows). */
+
+int sys_trytoopenone(const char *dir, const char *name, const char* ext,
+    char *dirresult, char **nameresult, unsigned int size, int bin)
+{
+    int fd;
+    char buf[MAXPDSTRING];
+    if (strlen(dir) + strlen(name) + strlen(ext) + 4 > size)
+        return (-1);
+    sys_expandpath(dir, buf, MAXPDSTRING);
+    strcpy(dirresult, buf);
+    if (*dirresult && dirresult[strlen(dirresult)-1] != '/')
+        strcat(dirresult, "/");
+    strcat(dirresult, name);
+    strcat(dirresult, ext);
+
+    DEBUG(post("looking for %s",dirresult));
+        /* see if we can open the file for reading */
+    if ((fd=sys_open(dirresult, O_RDONLY)) >= 0)
+    {
+            /* in unix, further check that it's not a directory */
+#ifdef HAVE_UNISTD_H
+        struct stat statbuf;
+        int ok =  ((fstat(fd, &statbuf) >= 0) &&
+            !S_ISDIR(statbuf.st_mode));
+        if (!ok)
+        {
+            if (sys_verbose) post("tried %s; stat failed or directory",
+                dirresult);
+            close (fd);
+            fd = -1;
+        }
+        else
+#endif
+        {
+            char *slash;
+            if (sys_verbose) post("tried %s and succeeded", dirresult);
+            sys_unbashfilename(dirresult, dirresult);
+            slash = strrchr(dirresult, '/');
+            if (slash)
+            {
+                *slash = 0;
+                *nameresult = slash + 1;
+            }
+            else *nameresult = dirresult;
+
+            return (fd);
+        }
+    }
+    else
+    {
+        if (sys_verbose) post("tried %s and failed", dirresult);
+    }
+    return (-1);
+}
+
+    /* check if we were given an absolute pathname, if so try to open it
+    and return 1 to signal the caller to cancel any path searches */
+int sys_open_absolute(const char *name, const char* ext,
+    char *dirresult, char **nameresult, unsigned int size, int bin, int *fdp)
+{
+    if (sys_isabsolutepath(name))
+    {
+        char dirbuf[MAXPDSTRING], *z = strrchr(name, '/');
+        int dirlen;
+        if (!z)
+            return (0);
+        dirlen = (int)(z - name);
+        if (dirlen > MAXPDSTRING-1)
+            dirlen = MAXPDSTRING-1;
+        strncpy(dirbuf, name, dirlen);
+        dirbuf[dirlen] = 0;
+        *fdp = sys_trytoopenone(dirbuf, name+(dirlen+1), ext,
+            dirresult, nameresult, size, bin);
+        return (1);
+    }
+    else return (0);
+}
+
+static int do_open_via_path(const char *dir, const char *name,
+    const char *ext, char *dirresult, char **nameresult, unsigned int size,
+    int bin, t_namelist *searchpath)
+{
+    t_namelist *nl;
+    int fd = -1;
+
+        /* first check if "name" is absolute (and if so, try to open) */
+    if (sys_open_absolute(name, ext, dirresult, nameresult, size, bin, &fd))
+        return (fd);
+
+        /* otherwise "name" is relative; try the directory "dir" first. */
+    if ((fd = sys_trytoopenone(dir, name, ext,
+        dirresult, nameresult, size, bin)) >= 0)
+            return (fd);
+
+        /* next go through the temp paths from the commandline */
+    for (nl = STUFF->st_temppath; nl; nl = nl->nl_next)
+        if ((fd = sys_trytoopenone(nl->nl_string, name, ext,
+            dirresult, nameresult, size, bin)) >= 0)
+                return (fd);
+        /* next look in built-in paths like "extra" */
+    for (nl = searchpath; nl; nl = nl->nl_next)
+        if ((fd = sys_trytoopenone(nl->nl_string, name, ext,
+            dirresult, nameresult, size, bin)) >= 0)
+                return (fd);
+        /* next look in built-in paths like "extra" */
+    if (sys_usestdpath)
+        for (nl = STUFF->st_staticpath; nl; nl = nl->nl_next)
+            if ((fd = sys_trytoopenone(nl->nl_string, name, ext,
+                dirresult, nameresult, size, bin)) >= 0)
+                    return (fd);
+
+    *dirresult = 0;
+    *nameresult = dirresult;
+    return (-1);
+}
+
+    /* open via path, using the global search path. */
+int open_via_path(const char *dir, const char *name, const char *ext,
+    char *dirresult, char **nameresult, unsigned int size, int bin)
+{
+    return (do_open_via_path(dir, name, ext, dirresult, nameresult,
+        size, bin, STUFF->st_searchpath));
+}
+
+/* --------------------- s_inter.c --------------- */
+
+    /* get "real time" in seconds; take the
+    first time we get called as a reference time of zero. */
+double sys_getrealtime(void)
+{
+    static struct timeval then;
+    struct timeval now;
+    gettimeofday(&now, 0);
+    if (then.tv_sec == 0 && then.tv_usec == 0) then = now;
+    return ((now.tv_sec - then.tv_sec) +
+        (1./1000000.) * (now.tv_usec - then.tv_usec));
+}
+
+/* -------------- DSP basics --------------- */
+
+t_int *plus_perform(t_int *w)
+{
+    t_sample *in1 = (t_sample *)(w[1]);
+    t_sample *in2 = (t_sample *)(w[2]);
+    t_sample *out = (t_sample *)(w[3]);
+    int n = (int)(w[4]);
+    while (n--) *out++ = *in1++ + *in2++;
+    return (w+5);
+}
+
+t_int *plus_perf8(t_int *w)
+{
+    t_sample *in1 = (t_sample *)(w[1]);
+    t_sample *in2 = (t_sample *)(w[2]);
+    t_sample *out = (t_sample *)(w[3]);
+    int n = (int)(w[4]);
+    for (; n; n -= 8, in1 += 8, in2 += 8, out += 8)
+    {
+        t_sample f0 = in1[0], f1 = in1[1], f2 = in1[2], f3 = in1[3];
+        t_sample f4 = in1[4], f5 = in1[5], f6 = in1[6], f7 = in1[7];
+
+        t_sample g0 = in2[0], g1 = in2[1], g2 = in2[2], g3 = in2[3];
+        t_sample g4 = in2[4], g5 = in2[5], g6 = in2[6], g7 = in2[7];
+
+        out[0] = f0 + g0; out[1] = f1 + g1; out[2] = f2 + g2; out[3] = f3 + g3;
+        out[4] = f4 + g4; out[5] = f5 + g5; out[6] = f6 + g6; out[7] = f7 + g7;
+    }
+    return (w+5);
+}
+
+void dsp_add_plus(t_sample *in1, t_sample *in2, t_sample *out, int n)
+{
+    if (n&7)
+        dsp_add(plus_perform, 4, in1, in2, out, (t_int)n);
+    else
+        dsp_add(plus_perf8, 4, in1, in2, out, (t_int)n);
+}
+
+
+t_int *copy_perform(t_int *w)
+{
+    t_sample *in1 = (t_sample *)(w[1]);
+    t_sample *out = (t_sample *)(w[2]);
+    int n = (int)(w[3]);
+    while (n--) *out++ = *in1++;
+    return (w+4);
+}
+
+static t_int *copy_perf8(t_int *w)
+{
+    t_sample *in1 = (t_sample *)(w[1]);
+    t_sample *out = (t_sample *)(w[2]);
+    int n = (int)(w[3]);
+
+    for (; n; n -= 8, in1 += 8, out += 8)
+    {
+        t_sample f0 = in1[0];
+        t_sample f1 = in1[1];
+        t_sample f2 = in1[2];
+        t_sample f3 = in1[3];
+        t_sample f4 = in1[4];
+        t_sample f5 = in1[5];
+        t_sample f6 = in1[6];
+        t_sample f7 = in1[7];
+
+        out[0] = f0;
+        out[1] = f1;
+        out[2] = f2;
+        out[3] = f3;
+        out[4] = f4;
+        out[5] = f5;
+        out[6] = f6;
+        out[7] = f7;
+    }
+    return (w+4);
+}
+
+void dsp_add_copy(t_sample *in, t_sample *out, int n)
+{
+    if (n&7)
+        dsp_add(copy_perform, 3, in, out, (t_int)n);
+    else
+        dsp_add(copy_perf8, 3, in, out, (t_int)n);
+}
+
+static t_int *sig_tilde_perform(t_int *w)
+{
+    t_float f = *(t_float *)(w[1]);
+    t_sample *out = (t_sample *)(w[2]);
+    int n = (int)(w[3]);
+    while (n--)
+        *out++ = f;
+    return (w+4);
+}
+
+static t_int *sig_tilde_perf8(t_int *w)
+{
+    t_float f = *(t_float *)(w[1]);
+    t_sample *out = (t_sample *)(w[2]);
+    int n = (int)(w[3]);
+
+    for (; n; n -= 8, out += 8)
+    {
+        out[0] = f;
+        out[1] = f;
+        out[2] = f;
+        out[3] = f;
+        out[4] = f;
+        out[5] = f;
+        out[6] = f;
+        out[7] = f;
+    }
+    return (w+4);
+}
+
+void dsp_add_scalarcopy(t_float *in, t_sample *out, int n)
+{
+    if (n&7)
+        dsp_add(sig_tilde_perform, 3, in, out, (t_int)n);
+    else
+        dsp_add(sig_tilde_perf8, 3, in, out, (t_int)n);
+}
+
+/* ------------------ g_traversal.c --------------- */
+
+/* ------------- gstubs and gpointers - safe pointing --------------- */
+
+/* create a gstub which is "owned" by a glist (gl) or an array ("a"). */
+
+t_gstub *gstub_new(t_glist *gl, t_array *a)
+{
+    t_gstub *gs = t_getbytes(sizeof(*gs));
+    if (gl)
+    {
+        gs->gs_which = GP_GLIST;
+        gs->gs_un.gs_glist = gl;
+    }
+    else
+    {
+        gs->gs_which = GP_ARRAY;
+        gs->gs_un.gs_array = a;
+    }
+    gs->gs_refcount = 0;
+    return (gs);
+}
+
+/* when a "gpointer" is set to point to this stub (so we can later chase
+down the owner) we increase a reference count.  The following routine is called
+whenever a gpointer is unset from pointing here.  If the owner is
+gone and the refcount goes to zero, we can free the gstub safely. */
+
+static void gstub_dis(t_gstub *gs)
+{
+    int refcount = --gs->gs_refcount;
+    if ((!refcount) && gs->gs_which == GP_NONE)
+        t_freebytes(gs, sizeof (*gs));
+    else if (refcount < 0) bug("gstub_dis");
+}
+
+/* this routing is called by the owner to inform the gstub that it is
+being deleted.  If no gpointers are pointing here, we can free the gstub;
+otherwise we wait for the last gstub_dis() to free it. */
+
+void gstub_cutoff(t_gstub *gs)
+{
+    gs->gs_which = GP_NONE;
+    if (gs->gs_refcount < 0) bug("gstub_cutoff");
+    if (!gs->gs_refcount) t_freebytes(gs, sizeof (*gs));
+}
+
+/* call this to verify that a pointer is fresh, i.e., that it either
+points to real data or to the head of a list, and that in either case
+the object hasn't disappeared since this pointer was generated.
+Unless "headok" is set,  the routine also fails for the head of a list. */
+
+int gpointer_check(const t_gpointer *gp, int headok)
+{
+    t_gstub *gs = gp->gp_stub;
+    if (!gs) return (0);
+    if (gs->gs_which == GP_ARRAY)
+    {
+        if (gs->gs_un.gs_array->a_valid != gp->gp_valid) return (0);
+        else return (1);
+    }
+    else if (gs->gs_which == GP_GLIST)
+    {
+        if (!headok && !gp->gp_un.gp_scalar) return (0);
+        else if (gs->gs_un.gs_glist->gl_valid != gp->gp_valid) return (0);
+        else return (1);
+    }
+    else return (0);
+}
+
+    /* clear a gpointer that was previously set, releasing the associated
+    gstub if this was the last reference to it. */
+void gpointer_unset(t_gpointer *gp)
+{
+    t_gstub *gs;
+    if ((gs = gp->gp_stub))
+    {
+        gstub_dis(gs);
+        gp->gp_stub = 0;
+    }
+}
+
+void gpointer_setglist(t_gpointer *gp, t_glist *glist, t_scalar *x)
+{
+    t_gstub *gs;
+    if ((gs = gp->gp_stub)) gstub_dis(gs);
+    gp->gp_stub = gs = glist->gl_stub;
+    gp->gp_valid = glist->gl_valid;
+    gp->gp_un.gp_scalar = x;
+    gs->gs_refcount++;
+}
+
+void gpointer_setarray(t_gpointer *gp, t_array *array, t_word *w)
+{
+    t_gstub *gs;
+    if ((gs = gp->gp_stub)) gstub_dis(gs);
+    gp->gp_stub = gs = array->a_stub;
+    gp->gp_valid = array->a_valid;
+    gp->gp_un.gp_w = w;
+    gs->gs_refcount++;
+}
+
+void gpointer_init(t_gpointer *gp)
+{
+    gp->gp_stub = 0;
+    gp->gp_valid = 0;
+    gp->gp_un.gp_scalar = 0;
+}

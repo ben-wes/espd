@@ -29,12 +29,20 @@
 #include "time.h"
 #include "sys/time.h"
 
+extern void pdmain_init( void);
+
+
 #define SPP_TAG "WOMBAT"
 #define SPP_SERVER_NAME "SPP_SERVER"
 #define EXCAMPLE_DEVICE_NAME "ESP_SPP_ACCEPTOR"
 #define SPP_SHOW_DATA 0
 #define SPP_SHOW_SPEED 1
 #define SPP_SHOW_MODE SPP_SHOW_DATA    /*Choose show mode: show data or speed*/
+
+void pdmain_print( const char *s)
+{
+    ESP_LOGI("PD", "%s" , s);
+}
 
 static const esp_spp_mode_t esp_spp_mode = ESP_SPP_MODE_CB;
 
@@ -326,6 +334,8 @@ void app_main()
     esp_bt_pin_code_t pin_code;
     esp_bt_gap_set_pin(pin_type, 0, pin_code);
     
+    pdmain_init();
+
     audio_main();
 }
 
