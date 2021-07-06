@@ -177,7 +177,6 @@ void esp_bt_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
     }
     return;
 }
-
 void audio_main(void)
 {
     audio_pipeline_handle_t pipeline;
@@ -335,7 +334,6 @@ void app_main()
     esp_bt_gap_set_pin(pin_type, 0, pin_code);
     
     pdmain_init();
-
     audio_main();
 }
 

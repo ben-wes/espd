@@ -31,7 +31,10 @@ set(COMPONENT_SRCS "weasel.c fifostream.c pdmain.c \
 ../pd/src/x_gui.c \
 ../pd/src/x_array.c \
 ../pd/src/x_scalar.c \
+../pd/src/x_text.c \
+../pd/src/x_list.c \
 ")
+
 
 set(COMPONENT_ADD_INCLUDEDIRS ".")
 

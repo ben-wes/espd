@@ -143,15 +143,15 @@ void conf_init(void)
     x_connective_setup();
     x_time_setup();
     x_arithmetic_setup();
-#if POODLE
     x_array_setup();
     x_misc_setup();
+    x_qlist_setup();
     x_gui_setup();
+    x_list_setup();
     x_scalar_setup();
     d_global_setup();
     d_soundfile_setup();
     d_ugen_setup();
-#endif
     trymem(11);
 }
 
@@ -1094,6 +1094,17 @@ int gpointer_check(const t_gpointer *gp, int headok)
         else return (1);
     }
     else return (0);
+}
+
+    /* copy a pointer to another, assuming the second one hasn't yet been
+    initialized.  New gpointers should be initialized either by this
+    routine or by gpointer_init below. */
+void gpointer_copy(const t_gpointer *gpfrom, t_gpointer *gpto)
+{
+    *gpto = *gpfrom;
+    if (gpto->gp_stub)
+        gpto->gp_stub->gs_refcount++;
+    else bug("gpointer_copy");
 }
 
     /* clear a gpointer that was previously set, releasing the associated
