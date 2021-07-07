@@ -10,7 +10,12 @@
 #include "audio_type_def.h"
 static const char *TAG = "fifostream";
 
-#define BUF_SIZE (100)
+#define CHANS 2
+#define INCHANS CHANS
+#define OUTCHANS CHANS
+#define BLKSIZE 64
+#define BLK_BYTES (BLKSIZE*CHANS*sizeof(short))
+
 extern void pdmain_tick( void);
 
 typedef struct fifostream {
@@ -40,12 +45,12 @@ static esp_err_t fifostream_open(audio_element_handle_t self)
         fifostream->channel = info.channels;
     }
     fifostream->at_eof = 0;
-    fifostream->s_buf = (short *)calloc(sizeof(short), BUF_SIZE/2);
+    fifostream->s_buf = (short *)calloc(sizeof(short), BLK_BYTES/sizeof(short));
     if (fifostream->s_buf == NULL) {
         ESP_LOGE(TAG, "calloc buffer failed. (line %d)", __LINE__);
         return ESP_ERR_NO_MEM;
     }
-    memset(fifostream->s_buf, 0, BUF_SIZE);
+    memset(fifostream->s_buf, 0, BLK_BYTES);
 
     return ESP_OK;
 }
@@ -61,13 +66,54 @@ static esp_err_t fifostream_close(audio_element_handle_t self)
     return ESP_OK;
 }
 
-int phaseinc = 123;
-#define INCHANS 2
-#define OUTCHANS 2
-#define BLKSIZE 64
-
 float soundin[OUTCHANS * BLKSIZE], soundout[OUTCHANS * BLKSIZE];
 
+#if 0   /* better one that doesn't work for some reason */
+static int fifostream_process(audio_element_handle_t self, char *in_buffer,
+    int in_len)
+{
+    static int cumsamps = 0;
+    fifostream_t *fifostream = (fifostream_t *)audio_element_getdata(self);
+    int ret = 0;
+    int r_size = (fifostream->at_eof ? 0 :
+        audio_element_input(self, (char *)fifostream->s_buf, BLK_BYTES));
+    if (r_size >= BLK_BYTES)
+    {
+        int i, nsamps = BLKSIZE;
+        fifostream->byte_num += BLK_BYTES;
+        
+        for (i = 0; i < BLKSIZE; i+= 2)
+        {
+            soundin[i] = fifostream->s_buf[i]/32768;;
+            soundin[BLKSIZE+i] = fifostream->s_buf[i+1]/32768;
+        }
+        pdmain_tick();
+        for (i = 0; i < BLKSIZE; i+= 2)
+        {
+            int ch1 = 32767*soundout[i], ch2 = 32767*soundout[BLKSIZE+i];
+            if (ch1 > 32767)
+                ch1 = 32767;
+            else if (ch1 < -32768)
+                ch1 = -32768;
+            if (ch2 > 32767)
+                ch2 = 32767;
+            else if (ch2 < -32768)
+                ch2 = -32768;
+            fifostream->s_buf[i] = (short)ch1;
+            fifostream->s_buf[i+1] = (short)ch2;
+        }
+        ret = audio_element_output(self, (char *)fifostream->s_buf, BLK_BYTES);
+    }
+    else
+    {
+        fifostream->at_eof = 1;
+        ret = 0;
+    }
+    return ret;
+}
+#endif
+
+#if 1
 static int fifostream_process(audio_element_handle_t self, char *in_buffer, int in_len)
 {
     static int cumsamps = 0;
@@ -75,35 +121,48 @@ static int fifostream_process(audio_element_handle_t self, char *in_buffer, int 
     int ret = 0;
     int r_size = 0;
     if (fifostream->at_eof == 0) {
-        r_size = audio_element_input(self, (char *)fifostream->s_buf, BUF_SIZE);
+        r_size = audio_element_input(self, (char *)fifostream->s_buf, BLK_BYTES);
     }
     if (r_size > 0) {
-        if (r_size != BUF_SIZE) {
+        if (r_size != BLK_BYTES) {
             fifostream->at_eof = 1;
         }
         fifostream->byte_num += r_size;
         {
-            int i, nsamps = r_size/sizeof(short);
+            int i, nsamps = r_size/(2*sizeof(short));
             static int phase;
+            if (nsamps * 2 * sizeof(short) != r_size)
+                ESP_LOGE("WOMBAT", "odd sample frame size %d", r_size);
             for (i = 0; i < nsamps; i++)
             {
-                phase += phaseinc ;
-                fifostream->s_buf[i] = (phase >> 3);
-            }
-            
-            cumsamps += nsamps;
-            while (cumsamps >= 128)
-            {
-                pdmain_tick();
-                cumsamps -= 128;
+                int ch1 = 32767*soundout[i], ch2 = 32767*soundout[BLKSIZE+i];
+                if (ch1 > 32767)
+                    ch1 = 32767;
+                else if (ch1 < -32768)
+                    ch1 = -32768;
+                if (ch2 > 32767)
+                    ch2 = 32767;
+                else if (ch2 < -32768)
+                ch2 = -32768;
+                soundin[phase] = fifostream->s_buf[2*i]/32768;
+                fifostream->s_buf[2*i] = ch1;
+                soundin[BLKSIZE+phase] = fifostream->s_buf[2*i+1]/32768;
+                fifostream->s_buf[2*i+1] = ch2;
+                phase++;
+                if (phase == BLKSIZE)
+                {
+                    pdmain_tick();
+                    phase = 0;
+                }
             }
         }
-        ret = audio_element_output(self, (char *)fifostream->s_buf, BUF_SIZE);
+        ret = audio_element_output(self, (char *)fifostream->s_buf, BLK_BYTES);
     } else {
         ret = r_size;
     }
     return ret;
 }
+#endif
 
 audio_element_handle_t fifostream_init(fifostream_cfg_t *config)
 {

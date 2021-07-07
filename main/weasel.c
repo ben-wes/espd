@@ -330,7 +330,6 @@ void app_main()
     esp_bt_pin_code_t pin_code;
     esp_bt_gap_set_pin(pin_type, 0, pin_code);
     
-    /* pdmain_init(); */
     audio_main();
 }
 

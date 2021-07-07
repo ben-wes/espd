@@ -17,13 +17,29 @@ extern t_printhook sys_printhook;
 
 void pdmain_print( const char *s);
 
+#if 0
 static const char patchfile[] = "\
 canvas 274 279 752 643 12;\n\
 #X obj 123 146 loadbang;\n\
-#X obj 123 171 metro 10000;\n\
+#X obj 123 171 metro 1000;\n\
 #X obj 123 196 print poodle;\n\
 #X connect 0 0 1 0;\n\
 #X connect 1 0 2 0;\n\
+";
+#endif
+
+static const char patchfile[] = "\
+canvas 0 50 604 482 12;\n\
+#X obj 179 99 r foo;\n\
+#X obj 179 124 osc~ 880;\n\
+#X obj 179 149 dac~ 1;\n\
+#X obj 257 127 osc~ 880;\n\
+#X obj 257 102 r foo2;\n\
+#X obj 257 151 dac~ 2;\n\
+#X connect 0 0 1 0;\n\
+#X connect 1 0 2 0;\n\
+#X connect 3 0 5 0;\n\
+#X connect 4 0 3 0;\n\
 ";
 
 static void trymem(int foo)
@@ -70,16 +86,19 @@ void pd_poll_bt( void)
     }
 }
 
+extern float soundin[], soundout[];
+
 void pdmain_init( void)
 {
     t_binbuf *b;
 
     sys_printhook = pdmain_print;
     trymem(1); // 111
-    trymem(2);
     pd_init();
-    trymem(100); // 47
+    trymem(2); // 47
     STUFF->st_dacsr = sys_getsr();
+    STUFF->st_soundout = soundout;
+    STUFF->st_soundin = soundin;
 
 
     b = binbuf_new();
@@ -102,6 +121,7 @@ void pdmain_tick( void)
         pdmain_init();
         initted = 1;
     }
+    memset(soundout, 0, 128*sizeof(float));
     pd_poll_bt();
     sched_tick();
 }
@@ -110,13 +130,11 @@ void pdmain_tick( void)
 
 t_class *glob_pdobject;
 
-extern int phaseinc;
-
 static void glob_foo(void *dummy, t_floatarg f)
 {
     post("foo %f", f);
-    phaseinc = f;
 }
+
 void glob_dsp(void *dummy, t_symbol *s, int argc, t_atom *argv);
 
 void glob_init( void)
@@ -207,15 +225,15 @@ void conf_init(void)
     d_global_setup();
     d_soundfile_setup();
     d_ugen_setup();
+    d_dac_setup();
+    d_ctl_setup();
+    d_osc_setup();
     trymem(11);
 }
 
 /*
-    d_osc_setup();
     d_arithmetic_setup();
     d_array_setup();
-    d_ctl_setup();
-    d_dac_setup();
     d_delay_setup();
     d_filter_setup();
     d_math_setup();
@@ -226,7 +244,7 @@ void conf_init(void)
 /* ------- STUBS that do nothing ------------- */
 int sys_get_outchannels(void) {return(2); }
 int sys_get_inchannels(void) {return(2); }
-float sys_getsr( void) {return (48000);}
+float sys_getsr( void) {return (44100);}
 int sys_getblksize(void) { return (DEFDACBLKSIZE); }
 
 int pd_compatibilitylevel = 100;
@@ -956,7 +974,8 @@ double sys_getrealtime(void)
         (1./1000000.) * (now.tv_usec - then.tv_usec));
 }
 
-/* -------------- DSP basics --------------- */
+#if 0
+/* -------------- DSP basics - LATER move to d_ugen.c --------------- */
 
 t_int *plus_perform(t_int *w)
 {
@@ -1080,6 +1099,7 @@ void dsp_add_scalarcopy(t_float *in, t_sample *out, int n)
     else
         dsp_add(sig_tilde_perf8, 3, in, out, (t_int)n);
 }
+#endif
 
 /* ------------------ g_traversal.c --------------- */
 

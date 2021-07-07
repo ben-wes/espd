@@ -22,6 +22,10 @@ set(COMPONENT_SRCS "weasel.c fifostream.c pdmain.c \
 ../pd/src/d_resample.c \
 ../pd/src/d_soundfile.c \
 ../pd/src/d_global.c \
+../pd/src/d_osc.c \
+../pd/src/d_ctl.c \
+../pd/src/d_arithmetic.c \
+../pd/src/d_dac.c \
 ../pd/src/x_arithmetic.c \
 ../pd/src/x_connective.c \
 ../pd/src/x_interface.c \
