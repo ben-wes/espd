@@ -28,6 +28,7 @@ canvas 274 279 752 643 12;\n\
 
 static void trymem(int foo)
 {
+#if 0
     int i;
     char msg[80];
     for (i = 1; i < 500; i++)
@@ -39,6 +40,34 @@ static void trymem(int foo)
     }
     sprintf(msg, "%d max mem %dk", foo, i-1);
     pdmain_print(msg);
+#endif
+}
+
+/* queue from bluetooth.  Need to make this a proper RTOS queue */
+static char *pd_bt_buf;
+static int pd_bt_size;
+
+void pd_dispatch_bt(char *data, size_t size)
+{
+    if (!pd_bt_buf)
+        pd_bt_buf = getbytes(0);
+    pd_bt_buf = (char *)resizebytes(pd_bt_buf, pd_bt_size, pd_bt_size+size);
+    memcpy(pd_bt_buf + pd_bt_size, data, size);
+    pd_bt_size += size;
+}
+
+void pd_poll_bt( void)
+{
+    static t_binbuf *b;
+    if (!b)
+        b = binbuf_new();
+    if (pd_bt_size)
+    {
+        binbuf_text(b, pd_bt_buf, pd_bt_size);
+        binbuf_eval(b, 0, 0, 0);
+        pd_bt_buf = (char *)resizebytes(pd_bt_buf, pd_bt_size, 0);
+        pd_bt_size = 0;
+    }
 }
 
 void pdmain_init( void)
@@ -64,15 +93,41 @@ void pdmain_init( void)
     binbuf_free(b);
 }
 
+
 void pdmain_tick( void)
 {
+    static int initted;
+    if (!initted)
+    {
+        pdmain_init();
+        initted = 1;
+    }
+    pd_poll_bt();
     sched_tick();
 }
 
 /* ----------------- stuff to keep Pd happy -------------------- */
 
+t_class *glob_pdobject;
+
+extern int phaseinc;
+
+static void glob_foo(void *dummy, t_floatarg f)
+{
+    post("foo %f", f);
+    phaseinc = f;
+}
+void glob_dsp(void *dummy, t_symbol *s, int argc, t_atom *argv);
+
 void glob_init( void)
 {
+    glob_pdobject = class_new(gensym("pd"), 0, 0, sizeof(t_pd),
+        CLASS_DEFAULT, A_NULL);
+    class_addmethod(glob_pdobject, (t_method)glob_dsp, gensym("dsp"),
+        A_GIMME, 0);
+    class_addmethod(glob_pdobject, (t_method)glob_foo, gensym("foo"),
+        A_DEFFLOAT, 0);
+    pd_bind(&glob_pdobject, gensym("pd"));
 }
 
 void g_array_setup(void);
@@ -171,7 +226,7 @@ void conf_init(void)
 /* ------- STUBS that do nothing ------------- */
 int sys_get_outchannels(void) {return(2); }
 int sys_get_inchannels(void) {return(2); }
-float sys_getsr( void) {return (44100);}
+float sys_getsr( void) {return (48000);}
 int sys_getblksize(void) { return (DEFDACBLKSIZE); }
 
 int pd_compatibilitylevel = 100;

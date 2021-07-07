@@ -19,7 +19,6 @@
 #include "i2s_stream.h"
 #include "board.h"
 #include "fifostream.h"
-
 #include "esp_bt.h"
 #include "esp_bt_main.h"
 #include "esp_gap_bt_api.h"
@@ -28,8 +27,6 @@
 
 #include "time.h"
 #include "sys/time.h"
-
-extern void pdmain_init( void);
 
 
 #define SPP_TAG "WOMBAT"
@@ -65,6 +62,7 @@ static void print_speed(void)
 }
 
 extern int phaseinc;
+void pd_dispatch_bt(char *data, size_t size);
 
 static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
 {
@@ -91,11 +89,15 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
         ESP_LOGI(SPP_TAG, "ESP_SPP_CL_INIT_EVT");
         break;
     case ESP_SPP_DATA_IND_EVT:
-#if (SPP_SHOW_MODE == SPP_SHOW_DATA)
+
         ESP_LOGI(SPP_TAG, "ESP_SPP_DATA_IND_EVT len=%d handle=%d",
                  param->data_ind.len, param->data_ind.handle);
         esp_log_buffer_hex("",param->data_ind.data,param->data_ind.len);
         {
+#if 1
+            pd_dispatch_bt((char *)(param->data_ind.data),
+                param->data_ind.len);
+#else
             char foo[80];
             int nfoo = (param->data_ind.len > 78 ? 78 : param->data_ind.len), i;
             for (i = 0; i < nfoo; i++)
@@ -103,14 +105,9 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
             foo[i] = 0;
             ESP_LOGI(SPP_TAG, "%s", foo);
             sscanf(foo, "%d%d", &i, &phaseinc);
-        }
-#else
-        gettimeofday(&time_new, NULL);
-        data_num += param->data_ind.len;
-        if (time_new.tv_sec - time_old.tv_sec >= 3) {
-            print_speed();
-        }
 #endif
+        }
+
         break;
     case ESP_SPP_CONG_EVT:
         ESP_LOGI(SPP_TAG, "ESP_SPP_CONG_EVT");
@@ -333,7 +330,26 @@ void app_main()
     esp_bt_pin_code_t pin_code;
     esp_bt_gap_set_pin(pin_type, 0, pin_code);
     
-    pdmain_init();
+    /* pdmain_init(); */
     audio_main();
 }
 
+#if 0 /* this will be more work than I thought */
+void gettaskinfo(char *where)
+{
+    TaskStatus_t xTaskDetails;
+    vTaskGetInfo( /* The handle of the task being queried. */
+                  0,
+                  /* The TaskStatus_t structure to complete with information
+                  on xTask. */
+                  &xTaskDetails,
+                  /* Include the stack high water mark value in the
+                  TaskStatus_t structure. */
+                  pdTRUE,
+                  /* Include the task state in the TaskStatus_t structure. */
+                  eInvalid );
+    ESP_LOGE("PROC", "where: proc %s: %d %d", xTaskDetails.pcTaskName,
+        (int)((char *)(&xTaskDetails) - (char *)(pxStackBase)), 
+            (int)usStackHighWaterMark);
+}
+#endif

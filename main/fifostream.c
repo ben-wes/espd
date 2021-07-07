@@ -62,6 +62,11 @@ static esp_err_t fifostream_close(audio_element_handle_t self)
 }
 
 int phaseinc = 123;
+#define INCHANS 2
+#define OUTCHANS 2
+#define BLKSIZE 64
+
+float soundin[OUTCHANS * BLKSIZE], soundout[OUTCHANS * BLKSIZE];
 
 static int fifostream_process(audio_element_handle_t self, char *in_buffer, int in_len)
 {
@@ -78,14 +83,15 @@ static int fifostream_process(audio_element_handle_t self, char *in_buffer, int 
         }
         fifostream->byte_num += r_size;
         {
+            int i, nsamps = r_size/sizeof(short);
             static int phase;
-            int i;
-            for (i = 0; i < r_size/sizeof(short); i++)
+            for (i = 0; i < nsamps; i++)
             {
                 phase += phaseinc ;
                 fifostream->s_buf[i] = (phase >> 3);
             }
-            cumsamps += r_size/sizeof(short);
+            
+            cumsamps += nsamps;
             while (cumsamps >= 128)
             {
                 pdmain_tick();

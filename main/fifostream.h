@@ -26,7 +26,7 @@ typedef struct fifostream_cfg {
     bool stack_in_ext;  /*!< Try to allocate stack in external memory */
 } fifostream_cfg_t;
 
-#define FIFOSTREAM_TASK_STACK       (4 * 1024)
+#define FIFOSTREAM_TASK_STACK       (20000)
 #define FIFOSTREAM_TASK_CORE        (0)
 #define FIFOSTREAM_TASK_PRIO        (5)
 #define FIFOSTREAM_RINGBUFFER_SIZE  (8 * 1024)
