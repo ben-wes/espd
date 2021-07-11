@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <ctype.h>
 
 void pd_init(void);
 void glob_open(t_pd *ignore, t_symbol *name, t_symbol *dir, t_floatarg f);
@@ -29,22 +30,18 @@ canvas 274 279 752 643 12;\n\
 #endif
 
 static const char patchfile[] = "\
-canvas 0 50 604 482 12;\n\
-#X obj 179 99 r foo;\n\
-#X obj 179 124 osc~ 880;\n\
-#X obj 179 149 dac~ 1;\n\
-#X obj 257 127 osc~ 880;\n\
-#X obj 257 102 r foo2;\n\
-#X obj 257 151 dac~ 2;\n\
+canvas 0 50 450 300 12;\n\
+#X obj 190 104 loadbang;\n\
+#X msg 190 129 \; pd dsp 1;\n\
+#X obj 118 123 dac~ 1;\n\
+#X obj 118 98 osc~ 440;\n\
 #X connect 0 0 1 0;\n\
-#X connect 1 0 2 0;\n\
-#X connect 3 0 5 0;\n\
-#X connect 4 0 3 0;\n\
+#X connect 3 0 2 0;\n\
 ";
 
-static void trymem(int foo)
+void trymem(int foo)
 {
-#if 0
+#if 1
     int i;
     char msg[80];
     for (i = 1; i < 500; i++)
@@ -74,10 +71,19 @@ void pd_dispatch_bt(char *data, size_t size)
 
 void pd_poll_bt( void)
 {
+    int lastchar;
     static t_binbuf *b;
     if (!b)
+    {
         b = binbuf_new();
-    if (pd_bt_size)
+        post("new binbuf %x", b);
+    }
+        /* only interpret this text if terminated by a semicolon */
+    lastchar = pd_bt_size-1;
+    while (lastchar >= 0 &&  isspace((int)(pd_bt_buf[lastchar])))
+        lastchar--;
+    if (lastchar >= 3 && pd_bt_buf[lastchar] == ';' &&
+        pd_bt_buf[lastchar-1] != '\\')
     {
         binbuf_text(b, pd_bt_buf, pd_bt_size);
         binbuf_eval(b, 0, 0, 0);
@@ -87,41 +93,35 @@ void pd_poll_bt( void)
 }
 
 extern float soundin[], soundout[];
-
+void  canvas_start_dsp( void);
 void pdmain_init( void)
 {
     t_binbuf *b;
 
     sys_printhook = pdmain_print;
-    trymem(1); // 111
+    trymem(1);
     pd_init();
-    trymem(2); // 47
+    trymem(2);
     STUFF->st_dacsr = sys_getsr();
     STUFF->st_soundout = soundout;
     STUFF->st_soundin = soundin;
 
-
+#if 0
     b = binbuf_new();
     glob_setfilename(0, gensym("main-patch"), gensym("."));
     binbuf_text(b, patchfile, strlen(patchfile));
     binbuf_eval(b, &pd_canvasmaker, 0, 0);
     canvas_loadbang((t_canvas *)s__X.s_thing);
     vmess(s__X.s_thing, gensym("pop"), "i", 0);
-
     glob_setfilename(0, &s_, &s_);
     binbuf_free(b);
+#endif
 }
 
 
 void pdmain_tick( void)
 {
-    static int initted;
-    if (!initted)
-    {
-        pdmain_init();
-        initted = 1;
-    }
-    memset(soundout, 0, 128*sizeof(float));
+    memset(soundout, 0, 64*sizeof(float));
     pd_poll_bt();
     sched_tick();
 }
@@ -132,8 +132,33 @@ t_class *glob_pdobject;
 
 static void glob_foo(void *dummy, t_floatarg f)
 {
-    post("foo %f", f);
+    trymem(0);
 }
+
+static void glob_beginnew(void *dummy, t_symbol *pname, t_symbol *pdir)
+{
+    glob_setfilename(0, pname, pdir);
+    pd_bind(&pd_canvasmaker, &s__N);
+}
+
+static void glob_endnew(void *dummy)
+{
+    pd_unbind(&pd_canvasmaker, &s__N);
+    if ((t_canvas *)s__X.s_thing)
+    {
+        canvas_loadbang((t_canvas *)s__X.s_thing);
+        vmess(s__X.s_thing, gensym("pop"), "i", 0);
+    }
+    glob_setfilename(0, &s_, &s_);
+}
+
+static void glob_close(void *dummy, t_symbol *pname)
+{
+    t_pd *c = pd_findbyclass(pname, canvas_class);
+    if (c)
+        pd_free(c);
+ }
+
 
 void glob_dsp(void *dummy, t_symbol *s, int argc, t_atom *argv);
 
@@ -145,6 +170,12 @@ void glob_init( void)
         A_GIMME, 0);
     class_addmethod(glob_pdobject, (t_method)glob_foo, gensym("foo"),
         A_DEFFLOAT, 0);
+    class_addmethod(glob_pdobject, (t_method)glob_beginnew, gensym("begin-new"),
+        A_SYMBOL, A_SYMBOL, 0);
+    class_addmethod(glob_pdobject, (t_method)glob_close, gensym("close"),
+        A_SYMBOL, 0);
+    class_addmethod(glob_pdobject, (t_method)glob_endnew, gensym("end-new"),
+        0);
     pd_bind(&glob_pdobject, gensym("pd"));
 }
 
@@ -209,7 +240,6 @@ void conf_init(void)
     g_guiconnect_setup();
     g_scalar_setup();
     g_template_setup();
-    clone_setup();
     m_pd_setup();
     x_acoustics_setup();
     x_interface_setup();
@@ -228,23 +258,25 @@ void conf_init(void)
     d_dac_setup();
     d_ctl_setup();
     d_osc_setup();
-    trymem(11);
-}
-
-/*
     d_arithmetic_setup();
     d_array_setup();
+    clone_setup();
     d_delay_setup();
     d_filter_setup();
     d_math_setup();
     d_misc_setup();
+    expr_setup();
+    trymem(11);
+}
+
+/*
     g_traversal_setup();
 */
 
 /* ------- STUBS that do nothing ------------- */
 int sys_get_outchannels(void) {return(2); }
 int sys_get_inchannels(void) {return(2); }
-float sys_getsr( void) {return (44100);}
+float sys_getsr( void) {return (48000);}
 int sys_getblksize(void) { return (DEFDACBLKSIZE); }
 
 int pd_compatibilitylevel = 100;
@@ -322,6 +354,8 @@ void x_midi_newpdinstance( void) {}
 
 t_symbol *iemgui_raute2dollar(t_symbol *s) {return(s);}
 t_symbol *iemgui_dollar2raute(t_symbol *s) {return(s);}
+
+t_class *clone_class;
 
 /* --------------- m_sched.c -------------------- */
 #define TIMEUNITPERMSEC (32. * 441.)

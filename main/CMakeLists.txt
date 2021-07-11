@@ -1,4 +1,4 @@
-set(COMPONENT_SRCS "weasel.c fifostream.c pdmain.c \
+set(COMPONENT_SRCS "espd.c pdmain.c \
 ../pd/src/g_canvas.c \
 ../pd/src/g_graph.c \
 ../pd/src/g_text.c \
@@ -25,7 +25,12 @@ set(COMPONENT_SRCS "weasel.c fifostream.c pdmain.c \
 ../pd/src/d_osc.c \
 ../pd/src/d_ctl.c \
 ../pd/src/d_arithmetic.c \
+../pd/src/d_array.c \
 ../pd/src/d_dac.c \
+../pd/src/d_delay.c \
+../pd/src/d_filter.c \
+../pd/src/d_math.c \
+../pd/src/d_misc.c \
 ../pd/src/x_arithmetic.c \
 ../pd/src/x_connective.c \
 ../pd/src/x_interface.c \
@@ -37,6 +42,9 @@ set(COMPONENT_SRCS "weasel.c fifostream.c pdmain.c \
 ../pd/src/x_scalar.c \
 ../pd/src/x_text.c \
 ../pd/src/x_list.c \
+../pd/src/x_vexp.c \
+../pd/src/x_vexp_fun.c \
+../pd/src/x_vexp_if.c \
 ")
 
 
