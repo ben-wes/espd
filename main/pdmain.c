@@ -51,7 +51,7 @@ void trymem(int foo)
             free(foo);
         else break;
     }
-    sprintf(msg, "%d max mem %dk", foo, i-1);
+    sprintf(msg, "%d max mem %dk\n", foo, i-1);
     pdmain_print(msg);
 #endif
 }
@@ -60,7 +60,7 @@ void trymem(int foo)
 static char *pd_bt_buf;
 static int pd_bt_size;
 
-void pd_dispatch_bt(char *data, size_t size)
+void pd_bt_dispatch(char *data, size_t size)
 {
     if (!pd_bt_buf)
         pd_bt_buf = getbytes(0);
@@ -69,7 +69,7 @@ void pd_dispatch_bt(char *data, size_t size)
     pd_bt_size += size;
 }
 
-void pd_poll_bt( void)
+void pd_bt_poll( void)
 {
     int lastchar;
     static t_binbuf *b;
@@ -122,7 +122,7 @@ void pdmain_init( void)
 void pdmain_tick( void)
 {
     memset(soundout, 0, 64*sizeof(float));
-    pd_poll_bt();
+    pd_bt_poll();
     sched_tick();
 }
 

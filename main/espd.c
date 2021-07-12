@@ -76,12 +76,15 @@ void senddacs( void)
         ESP_LOGE(TAG, "error writing");
 }
 
+void pd_bt_writeback(const unsigned char *s, int length);
+
 void pdmain_print( const char *s)
 {
     char y[80];
     strncpy(y, s, 79);
     y[79]=0;
     ESP_LOGI(TAG, "%s", y);
+    pd_bt_writeback((unsigned char *)y, strlen(y));
 }
 
 void trymem(int foo);
@@ -137,7 +140,21 @@ void app_main(void)
 
 /* -------------------- bluetooth and SD card ------------------ */
 
-void pd_dispatch_bt(char *data, size_t size);
+void pd_bt_dispatch(char *data, size_t size);
+
+static uint32_t pd_bt_writehandle;
+
+void pd_bt_writeback(const unsigned char *s, int length)
+{
+#if 1
+    if (pd_bt_writehandle)
+    {
+        if (esp_spp_write(pd_bt_writehandle, length, s) != ESP_OK)
+            ESP_LOGI(TAG, "bt writeback error");
+    }
+    else ESP_LOGI(TAG, "writeback: not open");
+#endif
+}
 
 static const esp_spp_mode_t esp_spp_mode = ESP_SPP_MODE_CB;
 static const esp_spp_sec_t sec_mask = ESP_SPP_SEC_AUTHENTICATE;
@@ -159,6 +176,7 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
         ESP_LOGI(TAG, "ESP_SPP_OPEN_EVT");
         break;
     case ESP_SPP_CLOSE_EVT:
+        pd_bt_writehandle = 0;
         ESP_LOGI(TAG, "ESP_SPP_CLOSE_EVT");
         break;
     case ESP_SPP_START_EVT:
@@ -172,8 +190,16 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
         if (param->data_ind.len > 2)
             ESP_LOGI(TAG, "ESP_SPP_DATA_IND_EVT len=%d handle=%d",
                  param->data_ind.len, param->data_ind.handle);
-
-        pd_dispatch_bt((char *)(param->data_ind.data), param->data_ind.len);
+#if 0
+        {
+            char foo[80];
+            int len = (param->data_ind.len > 79 ? 79 : param->data_ind.len);
+            memcpy(foo, param->data_ind.data, len);
+            foo[len] = 0;
+            ESP_LOGI(TAG, "message %s", foo);
+        }
+#endif
+        pd_bt_dispatch((char *)(param->data_ind.data), param->data_ind.len);
 
         break;
     case ESP_SPP_CONG_EVT:
@@ -183,6 +209,8 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
         ESP_LOGI(TAG, "ESP_SPP_WRITE_EVT");
         break;
     case ESP_SPP_SRV_OPEN_EVT:
+        pd_bt_writehandle = param->write.handle;
+            // ((struct spp_open_evt_param *)param)->handle;
         ESP_LOGI(TAG, "ESP_SPP_SRV_OPEN_EVT");
         break;
     default:
