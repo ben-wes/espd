@@ -76,7 +76,7 @@ void senddacs( void)
         ESP_LOGE(TAG, "error writing");
 }
 
-void pd_bt_writeback(const unsigned char *s, int length);
+void pd_bt_writeback(unsigned char *s, int length);
 
 void pdmain_print( const char *s)
 {
@@ -104,7 +104,6 @@ void app_main(void)
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL2,
     };
     i2s_pin_config_t i2s_pin_cfg = {0};
-    int zz = 0, ret;
 
     pdmain_init();
 
@@ -127,11 +126,14 @@ void app_main(void)
 
     while (1)
     {
-        /* if (!((zz++)%1000))
-        {
-            trymem(5);
-            ESP_LOGI(TAG, "tick");
-        } */
+        /*
+            int zz = 0;
+            if (!((zz++)%1000))
+            {
+                trymem(5);
+                ESP_LOGI(TAG, "tick");
+            }
+        */
         pdmain_tick();
         senddacs();
     }
@@ -144,7 +146,7 @@ void pd_bt_dispatch(char *data, size_t size);
 
 static uint32_t pd_bt_writehandle;
 
-void pd_bt_writeback(const unsigned char *s, int length)
+void pd_bt_writeback(unsigned char *s, int length)
 {
 #if 1
     if (pd_bt_writehandle)

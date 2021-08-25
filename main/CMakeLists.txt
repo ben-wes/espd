@@ -21,6 +21,10 @@ set(COMPONENT_SRCS "espd.c pdmain.c \
 ../pd/src/d_ugen.c \
 ../pd/src/d_resample.c \
 ../pd/src/d_soundfile.c \
+../pd/src/d_soundfile_wave.c \
+../pd/src/d_soundfile_aiff.c \
+../pd/src/d_soundfile_caf.c \
+../pd/src/d_soundfile_next.c \
 ../pd/src/d_global.c \
 ../pd/src/d_osc.c \
 ../pd/src/d_ctl.c \
@@ -50,7 +54,7 @@ set(COMPONENT_SRCS "espd.c pdmain.c \
 
 set(COMPONENT_ADD_INCLUDEDIRS ".")
 
-set(COMPONENT_ADD_CFLAGS "-DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H \
-    -Wno-unused-variable")
+set(COMPONENT_ADD_CFLAGS "-DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS\
+    -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable")
 
 register_component()

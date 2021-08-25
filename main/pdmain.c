@@ -11,6 +11,7 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <unistd.h>
 
 void pd_init(void);
 void glob_open(t_pd *ignore, t_symbol *name, t_symbol *dir, t_floatarg f);
@@ -319,6 +320,9 @@ void *canvas_undo_set_recreate(t_canvas *x,
     t_gobj *y, int old_pos) { return (0); }
 void canvas_noundo(t_canvas *x) {}
 void canvas_properties(t_canvas *x) {}
+void pd_undo_set_objectstate(t_canvas *canvas, t_pd *x, t_symbol *s,
+                                    int undo_argc, t_atom *undo_argv,
+                                    int redo_argc, t_atom *redo_argv) {}
 
 void glist_select(t_glist *x, t_gobj *y) {}
 void glist_deselect(t_glist *x, t_gobj *y) {}
