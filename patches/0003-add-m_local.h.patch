@@ -1,0 +1,26 @@
+From bbd91ed103574b92de99a0d04ef23b22a2cec27f Mon Sep 17 00:00:00 2001
+From: Miller Puckette <msp@ucsd.edu>
+Date: Fri, 10 Dec 2021 21:17:37 -0800
+Subject: [PATCH 3/3] add m_local.h
+
+---
+ src/m_local.h | 7 +++++++
+ 1 file changed, 7 insertions(+)
+ create mode 100644 src/m_local.h
+
+diff --git a/src/m_local.h b/src/m_local.h
+new file mode 100644
+index 00000000..e2bb0a54
+--- /dev/null
++++ b/src/m_local.h
+@@ -0,0 +1,7 @@
++#define PD
++#define HAVE_UNISTD_H
++#define HAVE_ALLOCA_H
++#define PD_HEADLESS
++#define SYMTABHASHSIZE 512
++#define STUPID_SORT
++#define SSIZE_MAX INT_MAX
+-- 
+2.33.1
+

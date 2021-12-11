@@ -1,0 +1,29 @@
+From 3f588704ada99d43f639f5b6f1af05edf9c29794 Mon Sep 17 00:00:00 2001
+From: Miller Puckette <msp@ucsd.edu>
+Date: Tue, 24 Aug 2021 22:04:54 -0700
+Subject: [PATCH 2/3] fix expr to default to Pd, not Max
+
+---
+ src/x_vexp.h | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/x_vexp.h b/src/x_vexp.h
+index a41e9d8c..5e17a03c 100644
+--- a/src/x_vexp.h
++++ b/src/x_vexp.h
+@@ -5,9 +5,9 @@
+ /* "expr" was written by Shahrokh Yadegari c. 1989. -msp */
+ /* "expr~" and "fexpr~" conversion by Shahrokh Yadegari c. 1999,2000 */
+ 
+-#define MSP
+-#ifdef PD
+-#undef MSP
++#define PD
++#ifdef MSP
++#undef PD
+ #endif
+ 
+ #ifdef PD
+-- 
+2.33.1
+
