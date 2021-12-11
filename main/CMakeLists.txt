@@ -55,6 +55,6 @@ set(COMPONENT_SRCS "espd.c pdmain.c \
 set(COMPONENT_ADD_INCLUDEDIRS ".")
 
 set(COMPONENT_ADD_CFLAGS "-DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS\
-    -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable")
+    -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format")
 
 register_component()
