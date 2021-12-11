@@ -1,7 +1,7 @@
-From 3f588704ada99d43f639f5b6f1af05edf9c29794 Mon Sep 17 00:00:00 2001
+From 4fc07b2f9f0429438586747309b60409586c419e Mon Sep 17 00:00:00 2001
 From: Miller Puckette <msp@ucsd.edu>
 Date: Tue, 24 Aug 2021 22:04:54 -0700
-Subject: [PATCH 2/3] fix expr to default to Pd, not Max
+Subject: [PATCH 2/4] fix expr to default to Pd, not Max
 
 ---
  src/x_vexp.h | 6 +++---

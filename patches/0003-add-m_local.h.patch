@@ -1,7 +1,7 @@
-From bbd91ed103574b92de99a0d04ef23b22a2cec27f Mon Sep 17 00:00:00 2001
+From 378af9d00e6f0f8944a60a1453a1a06b8b7f9ce6 Mon Sep 17 00:00:00 2001
 From: Miller Puckette <msp@ucsd.edu>
 Date: Fri, 10 Dec 2021 21:17:37 -0800
-Subject: [PATCH 3/3] add m_local.h
+Subject: [PATCH 3/4] add m_local.h
 
 ---
  src/m_local.h | 7 +++++++
