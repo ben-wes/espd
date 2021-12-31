@@ -28,7 +28,6 @@ canvas 274 279 752 643 12;\n\
 #X connect 0 0 1 0;\n\
 #X connect 1 0 2 0;\n\
 ";
-#endif
 
 static const char patchfile[] = "\
 canvas 0 50 450 300 12;\n\
@@ -39,6 +38,7 @@ canvas 0 50 450 300 12;\n\
 #X connect 0 0 1 0;\n\
 #X connect 3 0 2 0;\n\
 ";
+#endif
 
 void trymem(int foo)
 {
@@ -57,48 +57,22 @@ void trymem(int foo)
 #endif
 }
 
-/* queue from bluetooth.  Need to make this a proper RTOS queue */
-static char *pd_bt_buf;
-static int pd_bt_size;
-
-void pd_bt_dispatch(char *data, size_t size)
+void pd_sendmsg(char *buf, int bufsize)
 {
-    if (!pd_bt_buf)
-        pd_bt_buf = getbytes(0);
-    pd_bt_buf = (char *)resizebytes(pd_bt_buf, pd_bt_size, pd_bt_size+size);
-    memcpy(pd_bt_buf + pd_bt_size, data, size);
-    pd_bt_size += size;
-}
-
-void pd_bt_poll( void)
-{
-    int lastchar;
     static t_binbuf *b;
     if (!b)
     {
         b = binbuf_new();
         post("new binbuf %x", b);
     }
-        /* only interpret this text if terminated by a semicolon */
-    lastchar = pd_bt_size-1;
-    while (lastchar >= 0 &&  isspace((int)(pd_bt_buf[lastchar])))
-        lastchar--;
-    if (lastchar >= 3 && pd_bt_buf[lastchar] == ';' &&
-        pd_bt_buf[lastchar-1] != '\\')
-    {
-        binbuf_text(b, pd_bt_buf, pd_bt_size);
-        binbuf_eval(b, 0, 0, 0);
-        pd_bt_buf = (char *)resizebytes(pd_bt_buf, pd_bt_size, 0);
-        pd_bt_size = 0;
-    }
+    binbuf_text(b, buf, bufsize);
+    binbuf_eval(b, 0, 0, 0);
 }
 
 extern float soundin[], soundout[];
 void  canvas_start_dsp( void);
 void pdmain_init( void)
 {
-    t_binbuf *b;
-
     sys_printhook = pdmain_print;
     trymem(1);
     pd_init();
@@ -108,14 +82,16 @@ void pdmain_init( void)
     STUFF->st_soundin = soundin;
 
 #if 0
-    b = binbuf_new();
-    glob_setfilename(0, gensym("main-patch"), gensym("."));
-    binbuf_text(b, patchfile, strlen(patchfile));
-    binbuf_eval(b, &pd_canvasmaker, 0, 0);
-    canvas_loadbang((t_canvas *)s__X.s_thing);
-    vmess(s__X.s_thing, gensym("pop"), "i", 0);
-    glob_setfilename(0, &s_, &s_);
-    binbuf_free(b);
+    {
+        t_binbuf *b = binbuf_new();
+        glob_setfilename(0, gensym("main-patch"), gensym("."));
+        binbuf_text(b, patchfile, strlen(patchfile));
+        binbuf_eval(b, &pd_canvasmaker, 0, 0);
+        canvas_loadbang((t_canvas *)s__X.s_thing);
+        vmess(s__X.s_thing, gensym("pop"), "i", 0);
+        glob_setfilename(0, &s_, &s_);
+        binbuf_free(b);
+    }
 #endif
 }
 
@@ -123,7 +99,6 @@ void pdmain_init( void)
 void pdmain_tick( void)
 {
     memset(soundout, 0, 64*sizeof(float));
-    pd_bt_poll();
     sched_tick();
 }
 
@@ -765,7 +740,7 @@ static void sys_expandpath(const char *from, char *to, int bufsize)
 
 int sys_open(const char *path, int oflag, ...)
 {
-    int i, fd;
+    int fd;
     char pathbuf[MAXPDSTRING];
     sys_bashfilename(path, pathbuf);
     if (oflag & O_CREAT)

@@ -36,6 +36,7 @@ static const char *TAG = "ESPD";
 
 extern void pdmain_tick( void);
 void pdmain_init( void);
+void pd_bt_poll( void);
 
 void bt_init( void);
 void sd_init( void);
@@ -89,6 +90,11 @@ void pdmain_print( const char *s)
 
 void trymem(int foo);
 
+    /* allow deprecated form if new one unavailable */
+#ifndef I2S_COMM_FORMAT_STAND_I2S
+#define I2S_COMM_FORMAT_STAND_I2S I2S_COMM_FORMAT_I2S
+#endif
+
 void app_main(void)
 {
     i2s_config_t i2s_cfg = {
@@ -97,7 +103,7 @@ void app_main(void)
         .bits_per_sample = 16,
         /* .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT, */
         .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,
-        .communication_format = I2S_COMM_FORMAT_I2S,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
         .dma_buf_count = 3,
         .dma_buf_len = 300,
         .use_apll = 1,
@@ -134,15 +140,59 @@ void app_main(void)
                 ESP_LOGI(TAG, "tick");
             }
         */
+        pd_bt_poll();
         pdmain_tick();
         senddacs();
     }
-
 }
 
 /* -------------------- bluetooth and SD card ------------------ */
+/* queue from bluetooth.  Need to make this a proper RTOS queue */
+static char *pd_bt_buf;
+static int pd_bt_size;
+static SemaphoreHandle_t pd_bt_mutex;
 
-void pd_bt_dispatch(char *data, size_t size);
+void *getbytes(size_t nbytes);
+void freebytes(void *x, size_t nbytes);
+void *resizebytes(void *x, size_t oldsize, size_t newsize);
+#include <ctype.h>
+void pd_sendmsg(char *buf, int bufsize);
+
+void pd_bt_dispatch(char *data, size_t size)
+{
+    if (!pd_bt_buf)
+        pd_bt_buf = getbytes(0);
+    if (!pd_bt_mutex)
+        pd_bt_mutex = xSemaphoreCreateMutex();
+    while (xSemaphoreTake(pd_bt_mutex, 1) != pdTRUE)
+        ;
+    pd_bt_buf = (char *)resizebytes(pd_bt_buf, pd_bt_size, pd_bt_size+size);
+    memcpy(pd_bt_buf + pd_bt_size, data, size);
+    pd_bt_size += size;
+    xSemaphoreGive(pd_bt_mutex);
+}
+
+void pd_bt_poll( void)
+{
+    int lastchar;
+    if (!pd_bt_mutex)
+        pd_bt_mutex = xSemaphoreCreateMutex();
+    if (xSemaphoreTake(pd_bt_mutex, 0) != pdTRUE)
+        return;
+
+        /* only interpret this text if terminated by a semicolon */
+    lastchar = pd_bt_size-1;
+    while (lastchar >= 0 &&  isspace((int)(pd_bt_buf[lastchar])))
+        lastchar--;
+    if (lastchar >= 3 && pd_bt_buf[lastchar] == ';' &&
+        pd_bt_buf[lastchar-1] != '\\')
+    {
+        pd_sendmsg(pd_bt_buf, pd_bt_size);
+        pd_bt_buf = (char *)resizebytes(pd_bt_buf, pd_bt_size, 0);
+        pd_bt_size = 0;
+    }
+    xSemaphoreGive(pd_bt_mutex);
+}
 
 static uint32_t pd_bt_writehandle;
 
@@ -168,7 +218,11 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
     case ESP_SPP_INIT_EVT:
         ESP_LOGI(TAG, "ESP_SPP_INIT_EVT");
         esp_bt_dev_set_device_name("pure_data");
+#ifdef ESP_BT_SCAN_MODE_CONNECTABLE_DISCOVERABLE
         esp_bt_gap_set_scan_mode(ESP_BT_SCAN_MODE_CONNECTABLE_DISCOVERABLE);
+#else
+        esp_bt_gap_set_scan_mode(ESP_BT_CONNECTABLE, ESP_BT_GENERAL_DISCOVERABLE);
+#endif
         esp_spp_start_srv(sec_mask,role_slave, 0, "pd_server");
         break;
     case ESP_SPP_DISCOVERY_COMP_EVT:
@@ -189,10 +243,10 @@ static void esp_spp_cb(esp_spp_cb_event_t event, esp_spp_cb_param_t *param)
         break;
     case ESP_SPP_DATA_IND_EVT:
 
+#if 0
         if (param->data_ind.len > 2)
             ESP_LOGI(TAG, "ESP_SPP_DATA_IND_EVT len=%d handle=%d",
                  param->data_ind.len, param->data_ind.handle);
-#if 0
         {
             char foo[80];
             int len = (param->data_ind.len > 79 ? 79 : param->data_ind.len);
