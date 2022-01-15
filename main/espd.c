@@ -84,8 +84,9 @@ void pdmain_print( const char *s)
     char y[80];
     strncpy(y, s, 79);
     y[79]=0;
-    ESP_LOGI(TAG, "%s", y);
-    pd_bt_writeback((unsigned char *)y, strlen(y));
+    ESP_LOGI(TAG, "post %d: %s", strlen(y), y);
+    if (strlen(y) > 0)
+        pd_bt_writeback((unsigned char *)y, strlen(y));
 }
 
 void trymem(int foo);

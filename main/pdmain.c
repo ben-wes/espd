@@ -61,10 +61,7 @@ void pd_sendmsg(char *buf, int bufsize)
 {
     static t_binbuf *b;
     if (!b)
-    {
         b = binbuf_new();
-        post("new binbuf %x", b);
-    }
     binbuf_text(b, buf, bufsize);
     binbuf_eval(b, 0, 0, 0);
 }
@@ -74,9 +71,7 @@ void  canvas_start_dsp( void);
 void pdmain_init( void)
 {
     sys_printhook = pdmain_print;
-    trymem(1);
     pd_init();
-    trymem(2);
     STUFF->st_dacsr = sys_getsr();
     STUFF->st_soundout = soundout;
     STUFF->st_soundin = soundin;
