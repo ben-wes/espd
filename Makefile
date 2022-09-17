@@ -5,6 +5,8 @@
 
 PROJECT_NAME := bt_spp_acceptor_demo
 
+BUILD_DIR_BASE := /home/msp/bis/work/builds/espd
+
 COMPONENT_ADD_INCLUDEDIRS := components/include
 
 include $(IDF_PATH)/make/project.mk
