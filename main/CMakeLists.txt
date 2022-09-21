@@ -49,6 +49,8 @@ set(COMPONENT_SRCS "espd.c pdmain.c \
 ../pd/src/x_vexp.c \
 ../pd/src/x_vexp_fun.c \
 ../pd/src/x_vexp_if.c \
+../wifi/wifi.c \
+../wifi/net.c \
 ")
 
 
