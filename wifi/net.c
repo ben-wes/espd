@@ -15,34 +15,36 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char *TAG = "net";
+static const char *TAG = "ESPD";
+int tcp_socket;
 
 void udpreceivertask(void *z)
 {
     char rx_buffer[4000];
-    int ip_protocol = 0;
+    int ip_protocol = 0, err;
     struct sockaddr_in dest_addr;
 
-    dest_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    ESP_LOGI(TAG, "udpreceivertask starting...");
+    ESP_LOGE(TAG, "(ignore this - testing error printout)");
+    dest_addr.sin_addr.s_addr = inet_addr(CONFIG_ESP_WIFI_SENDADDR);
     dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(CONFIG_ESP_WIFI_LISTENPORT);
-    ip_protocol = IPPROTO_IP;
+    dest_addr.sin_port = htons(CONFIG_ESP_WIFI_SENDPORT);
 
-    int rcv_sock = socket(AF_INET, SOCK_DGRAM, ip_protocol);
-    if (rcv_sock < 0) {
+    tcp_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+    if (tcp_socket < 0) {
         ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
         return;
     }
 
-    int err = bind(rcv_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-    if (err < 0) {
+    ESP_LOGI(TAG, "connecting...");
+    while (err = connect(tcp_socket, &dest_addr, sizeof(dest_addr)) < 0)
+    {
         ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
     }
-    ESP_LOGI(TAG, "Waiting for data");
-
     while (1)
     {
-        int len = recv(rcv_sock, rx_buffer, sizeof(rx_buffer) - 1, 0);
+        int len = recv(tcp_socket, rx_buffer, sizeof(rx_buffer) - 1, 0);
 
         if (len < 0) {
             ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
@@ -63,18 +65,19 @@ void udpreceivertask(void *z)
     }
 }
 
-static int xyz_sock;
-static struct sockaddr_in xyz_dest_addr;
+static int udp_out_sock;
+static struct sockaddr_in udp_out_addr;
 
 void net_init( void)
 {
-        /* socket to send over -- could use same one? */
-    xyz_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    ESP_LOGI(TAG, "net_init...");
+        /* socket for sending UDP messages */
+    udp_out_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
     
-    xyz_dest_addr.sin_addr.s_addr = inet_addr(CONFIG_ESP_WIFI_SENDADDR);
-    xyz_dest_addr.sin_family = AF_INET;
+    udp_out_addr.sin_addr.s_addr = inet_addr(CONFIG_ESP_WIFI_SENDADDR);
+    udp_out_addr.sin_family = AF_INET;
         /* this will get overridden later: */
-    xyz_dest_addr.sin_port = htons(CONFIG_ESP_WIFI_SENDPORT);
+    udp_out_addr.sin_port = htons(CONFIG_ESP_WIFI_SENDPORT);
 
     xTaskCreate(udpreceivertask, "udprcv", 6000, NULL, PRIORITY_WIFI, NULL);
 }
@@ -84,9 +87,9 @@ static int64_t whensent;
 void net_sendudp(void *msg, int len, int port)
 {
     int err;
-    xyz_dest_addr.sin_port = htons(port);
-    err = sendto(xyz_sock, msg, len, 0,
-        (struct sockaddr *)&xyz_dest_addr, sizeof(xyz_dest_addr));
+    udp_out_addr.sin_port = htons(port);
+    err = sendto(udp_out_sock, msg, len, 0,
+        (struct sockaddr *)&udp_out_addr, sizeof(udp_out_addr));
     if (err < 0) {
         static int errorcount;
         errorcount++;

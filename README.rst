@@ -20,6 +20,15 @@ file:///home/msp/Downloads/WBT101-06A-ClassicBluetooth-Basic-1.pdf
 https://people.csail.mit.edu/albert/bluez-intro/c404.html
 
 DOLIST
-move to TCP?
-list of MAC addrs (same as for BT?)
+adapt commector extern to act as TCP server
+starting server after ESP fails (can't connect - restart?)
+alive message to send count starting w/0
+server patch (on host) uploads patch when "alive 0" arrives
+message to Pd to restart
+restart when recvfrom fails
+
+
+later:
+fold in the network Pd objects?
+adapt to non-lyraT boards
 
