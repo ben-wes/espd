@@ -21,7 +21,7 @@ int tcp_socket;
 void udpreceivertask(void *z)
 {
     char rx_buffer[4000];
-    int ip_protocol = 0, err;
+    int ip_protocol = 0, err, newsocket;
     struct sockaddr_in dest_addr;
 
     ESP_LOGI(TAG, "udpreceivertask starting...");
@@ -30,26 +30,32 @@ void udpreceivertask(void *z)
     dest_addr.sin_family = AF_INET;
     dest_addr.sin_port = htons(CONFIG_ESP_WIFI_SENDPORT);
 
-    tcp_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-    if (tcp_socket < 0) {
+    newsocket = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+    if (newsocket < 0) {
         ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
         return;
     }
 
     ESP_LOGI(TAG, "connecting...");
-    while (err = connect(tcp_socket, &dest_addr, sizeof(dest_addr)) < 0)
+    while (err = connect(newsocket, &dest_addr, sizeof(dest_addr)) < 0)
     {
-        ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+        ESP_LOGE(TAG, "Socket unable to bind: errno %d - retrying", errno);
+        close(newsocket);
         vTaskDelay(2000 / portTICK_PERIOD_MS);
+        newsocket = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+        if (newsocket < 0) {
+            ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+            return;
+        }
     }
+    tcp_socket = newsocket;
     while (1)
     {
-        int len = recv(tcp_socket, rx_buffer, sizeof(rx_buffer) - 1, 0);
+        int len = recv(newsocket, rx_buffer, sizeof(rx_buffer) - 1, 0);
 
         if (len < 0) {
-            ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
-            vTaskDelay(5000 / portTICK_PERIOD_MS);        
-            continue;
+            ESP_LOGE(TAG, "recvfrom failed: errno %d -- restarting", errno);
+            esp_restart();     
         }
         else if (len == 0)
         {
@@ -96,10 +102,32 @@ void net_sendudp(void *msg, int len, int port)
         if (errorcount < 10 || (errorcount < 100 && !(errorcount%10))
             || !(errorcount%100))
         {
-            ESP_LOGE(TAG, "net send error count %d", errno);
+            ESP_LOGE(TAG, "udp net send error %d, count %d", errno, errorcount);
         }
     }
     else whensent = esp_timer_get_time();
+}
+
+void net_sendtcp(void *msg, int len)
+{
+    int err;
+    while (!tcp_socket)
+    {
+        ESP_LOGE(TAG, "sendtcp: waiting for socket");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
+    err = send(tcp_socket, msg, len, 0);
+    if (err < 0)
+    {
+        static int errorcount;
+        errorcount++;
+        if (errorcount < 10 || (errorcount < 100 && !(errorcount%10))
+            || !(errorcount%100))
+        {
+            ESP_LOGE(TAG, "tcp net send error %d, count %d",
+                errno, errorcount);
+        }
+    }
 }
 
 extern char wifi_mac[];
@@ -108,14 +136,24 @@ extern char wifi_mac[];
 void net_alive( void)
 {
     int elapsed = esp_timer_get_time() - whensent;
+    char buf[80];
+    uint8_t mac[6];
+    static int  notfirst;
+    if (!notfirst)
+    {
+        notfirst = 1;
+        esp_base_mac_addr_get(&mac);
+        sprintf(buf, "hello %02x:%02x:%02x:%02x:%02x:%02x;\n",
+            mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
+        net_sendtcp(buf, strlen(buf)); 
+    }
     if (elapsed > 1000000)
     {
-        char buf[80];
-        uint8_t mac[6];
         esp_base_mac_addr_get(&mac);
         sprintf(buf, "alive %02x:%02x:%02x:%02x:%02x:%02x;\n",
             mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
         net_sendudp(buf, strlen(buf), CONFIG_ESP_WIFI_SENDPORT); 
+        net_sendtcp(buf, strlen(buf)); 
     }
 }
 #endif  /* PD_USE_WIFI */
