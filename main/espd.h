@@ -5,12 +5,10 @@
 /* task priorities */
 #define  PRIORITY_WIFI 2
 
-#if !defined(CONFIG_LOCALE_NUMBER) || (CONFIG_LOCALE_NUMBER==0)
-#define CONFIG_ESP_WIFI_SSID "network"
-#define CONFIG_ESP_WIFI_PASSWORD "password"
-#define CONFIG_ESP_WIFI_SENDADDR "192.168.1.153"
-#define CONFIG_ESP_WIFI_SENDPORT 4498
-#define CONFIG_ESP_WIFI_LISTENPORT 4499
+#if defined(CONFIG_LOCALE_FILE)
+#include CONFIG_LOCALE_FILE
+#else
+#include "locale.h"
 #endif
 
 #include <sys/types.h>
