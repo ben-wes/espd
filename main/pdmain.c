@@ -15,7 +15,6 @@
 
 void pd_init(void);
 void glob_open(t_pd *ignore, t_symbol *name, t_symbol *dir, t_floatarg f);
-extern t_printhook sys_printhook;
 
 void pdmain_print( const char *s);
 

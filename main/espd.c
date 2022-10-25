@@ -126,13 +126,18 @@ void pd_pollhost( void)
 
 void pdmain_print( const char *s)
 {
-    char y[80];
+    char y[81];
     strncpy(y, s, 79);
     y[79]=0;
+    strcat(y, ";");
     ESP_LOGI(TAG, "post %d: %s", strlen(y), y);
 #ifdef PD_USE_BLUETOOTH
     if (strlen(y) > 0)
         pd_bt_writeback((unsigned char *)y, strlen(y));
+#endif
+#ifdef PD_USE_WIFI
+    net_sendudp(y, strlen(y), CONFIG_ESP_WIFI_SENDPORT); 
+    net_sendtcp(y, strlen(y));
 #endif
 }
 
@@ -178,6 +183,11 @@ void app_main(void)
     bt_init();
 #endif
     sd_init();
+#ifdef PD_USE_WIFI
+    ESP_LOGI(TAG, "[ 1a ] start network");
+    wifi_init();
+    net_init();
+#endif
 
     ESP_LOGI(TAG, "[ 2 ] now write some shit");
 
@@ -209,10 +219,5 @@ void sd_init( void)
 
     // Initialize SD Card peripheral
     audio_board_sdcard_init(set, SD_MODE_1_LINE);
-#ifdef PD_USE_WIFI
-    ESP_LOGI(TAG, "[ 1a ] start network");
-    wifi_init();
-    net_init();
-#endif
     ESP_LOGI(TAG, "[ 1b ] done starting network");
 }

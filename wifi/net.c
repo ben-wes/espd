@@ -86,6 +86,11 @@ void net_init( void)
     udp_out_addr.sin_port = htons(CONFIG_ESP_WIFI_SENDPORT);
 
     xTaskCreate(udpreceivertask, "udprcv", 6000, NULL, PRIORITY_WIFI, NULL);
+    while (!tcp_socket)
+    {
+        ESP_LOGE(TAG, "sendtcp: waiting for socket");
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
 }
 
 static int64_t whensent;
@@ -111,10 +116,10 @@ void net_sendudp(void *msg, int len, int port)
 void net_sendtcp(void *msg, int len)
 {
     int err;
-    while (!tcp_socket)
+    if (!tcp_socket)
     {
-        ESP_LOGE(TAG, "sendtcp: waiting for socket");
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        ESP_LOGE(TAG, "sendtcp: no socket yet");
+        return;
     }
     err = send(tcp_socket, msg, len, 0);
     if (err < 0)
