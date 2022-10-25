@@ -72,6 +72,34 @@ void senddacs( void)
         ESP_LOGE(TAG, "error writing");
 }
 
+static void initdacs( void)
+{
+    i2s_config_t i2s_cfg = {
+        .mode = I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX,
+        .sample_rate = 48000,
+        .bits_per_sample = 16,
+        /* .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT, */
+        .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .dma_buf_count = 16,
+        .dma_buf_len = 256,
+        .use_apll = 1,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL2,
+    };
+    i2s_pin_config_t i2s_pin_cfg = {0};
+
+    ESP_LOGI(TAG, "[ 1 ] Start audio codec chip");
+
+    audio_board_handle_t board_handle = audio_board_init();
+    audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
+
+    i2s_driver_install(I2S_NUM_0, &i2s_cfg, 0, NULL);
+    get_i2s_pins(I2S_NUM_0, &i2s_pin_cfg);
+    i2s_set_pin(I2S_NUM_0, &i2s_pin_cfg);
+    i2s_mclk_gpio_select(I2S_NUM_0, GPIO_NUM_0);
+
+}
+
 /* queue from host.  Need to make this a proper RTOS queue */
 void *getbytes(size_t nbytes);
 void freebytes(void *x, size_t nbytes);
@@ -151,33 +179,11 @@ void net_alive( void);
 
 void app_main(void)
 {
-    i2s_config_t i2s_cfg = {
-        .mode = I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX,
-        .sample_rate = 48000,
-        .bits_per_sample = 16,
-        /* .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT, */
-        .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .dma_buf_count = 16,
-        .dma_buf_len = 256,
-        .use_apll = 1,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL2,
-    };
-    i2s_pin_config_t i2s_pin_cfg = {0};
-
-    pdmain_init();
-
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
-    ESP_LOGI(TAG, "[ 1 ] Start audio codec chip");
 
-    audio_board_handle_t board_handle = audio_board_init();
-    audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
-
-    i2s_driver_install(I2S_NUM_0, &i2s_cfg, 0, NULL);
-    get_i2s_pins(I2S_NUM_0, &i2s_pin_cfg);
-    i2s_set_pin(I2S_NUM_0, &i2s_pin_cfg);
-    i2s_mclk_gpio_select(I2S_NUM_0, GPIO_NUM_0);
+    pdmain_init();
+    initdacs();
 
 #ifdef PD_USE_BLUETOOTH
     bt_init();
