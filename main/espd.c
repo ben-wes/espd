@@ -179,7 +179,6 @@ void pdmain_print( const char *s)
 }
 
 void trymem(int foo);
-void net_alive( void);
 
     /* allow deprecated form if new one unavailable */
 #ifndef I2S_COMM_FORMAT_STAND_I2S
@@ -202,6 +201,7 @@ void app_main(void)
     ESP_LOGI(TAG, "[ 1a ] start network");
     wifi_init();
     net_init();
+    net_hello();
 #endif
 
     ESP_LOGI(TAG, "[ 2 ] now write some shit");

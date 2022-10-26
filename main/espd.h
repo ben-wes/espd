@@ -24,7 +24,9 @@ void pd_bt_writeback(unsigned char *s, int length);
 #ifdef PD_USE_WIFI
 void wifi_init(void);   /* wifi.c - manage 802.11 connection */
 void net_init( void);   /* init */
+void net_hello( void);  /* send initial TCP packet when connected */
 void net_alive( void);  /* send keep-alive packet if needed */
 void net_sendudp(void *msg, int len, int port); /* send whatev */
 void net_sendtcp(void *msg, int len);
+extern char wifi_ipaddr[];
 #endif
