@@ -162,6 +162,7 @@ void pd_pollhost( void)
     xSemaphoreGive(pd_bt_mutex);
 }
 
+   /* this doesn't work as a printhook yet since posts are split into atoms */
 void pdmain_print( const char *s)
 {
     char y[81];
@@ -172,7 +173,7 @@ void pdmain_print( const char *s)
     if (strlen(y) > 0)
         pd_bt_writeback((unsigned char *)y, strlen(y));
 #endif
-#if 0   /* this doesn't work all that well since posts are split into atoms */
+#if 1
     net_sendudp(y, strlen(y), CONFIG_ESP_WIFI_SENDPORT); 
     net_sendtcp(y, strlen(y));
 #endif
