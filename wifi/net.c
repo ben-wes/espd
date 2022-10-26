@@ -18,13 +18,13 @@
 static const char *TAG = "ESPD";
 int tcp_socket;
 
-void udpreceivertask(void *z)
+void tcpreceivertask(void *z)
 {
     char rx_buffer[4000];
     int ip_protocol = 0, err, newsocket;
     struct sockaddr_in dest_addr;
 
-    ESP_LOGI(TAG, "udpreceivertask starting...");
+    ESP_LOGI(TAG, "tcpreceivertask starting...");
     ESP_LOGE(TAG, "(ignore this - testing error printout)");
     dest_addr.sin_addr.s_addr = inet_addr(CONFIG_ESP_WIFI_SENDADDR);
     dest_addr.sin_family = AF_INET;
@@ -85,7 +85,7 @@ void net_init( void)
         /* this will get overridden later: */
     udp_out_addr.sin_port = htons(CONFIG_ESP_WIFI_SENDPORT);
 
-    xTaskCreate(udpreceivertask, "udprcv", 6000, NULL, PRIORITY_WIFI, NULL);
+    xTaskCreate(tcpreceivertask, "udprcv", 6000, NULL, PRIORITY_WIFI, NULL);
     while (!tcp_socket)
     {
         ESP_LOGE(TAG, "sendtcp: waiting for socket");

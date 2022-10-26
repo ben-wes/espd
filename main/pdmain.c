@@ -266,7 +266,6 @@ void sys_lock(void) {}
 void sys_unlock(void) {}
 void pd_globallock(void) {}
 void pd_globalunlock(void) {}
-void sys_set_audio_state(int onoff) {}
 int sys_defaultfont = 1;
 int sys_nearestfontsize(int fontsize) {return (1);}
 int sys_noautopatch = 1;

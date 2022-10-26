@@ -100,6 +100,20 @@ static void initdacs( void)
 
 }
 
+static int audiostate;
+
+void sys_set_audio_state(int onoff)
+{
+    /*
+    if (onoff && !audiostate)
+        i2s_start(I2S_NUM_0);
+    else if (!onoff && audiostate)
+        i2s_stop(I2S_NUM_0);
+    audiostate = onoff;
+    */
+}
+
+
 /* queue from host.  Need to make this a proper RTOS queue */
 void *getbytes(size_t nbytes);
 void freebytes(void *x, size_t nbytes);
@@ -122,7 +136,6 @@ void pd_fromhost(char *data, size_t size)
     memcpy(pd_bt_buf + pd_bt_size, data, size);
     pd_bt_size += size;
     xSemaphoreGive(pd_bt_mutex);
-    ESP_LOGI(TAG, "fromhost %d", size);
 }
 
     /* dispatch messages enqueued above */
@@ -138,13 +151,10 @@ void pd_pollhost( void)
     lastchar = pd_bt_size-1;
     while (lastchar >= 0 &&  isspace((int)(pd_bt_buf[lastchar])))
         lastchar--;
-    if (lastchar > 2)
-        ESP_LOGI(TAG, "last %d %c", lastchar, pd_bt_buf[lastchar]);
 
     if (lastchar >= 3 && pd_bt_buf[lastchar] == ';' &&
         pd_bt_buf[lastchar-1] != '\\')
     {
-        ESP_LOGI(TAG, "send it");
         pd_sendmsg(pd_bt_buf, pd_bt_size);
         pd_bt_buf = (char *)resizebytes(pd_bt_buf, pd_bt_size, 0);
         pd_bt_size = 0;
@@ -158,12 +168,11 @@ void pdmain_print( const char *s)
     strncpy(y, s, 79);
     y[79]=0;
     strcat(y, ";");
-    ESP_LOGI(TAG, "post %d: %s", strlen(y), y);
 #ifdef PD_USE_BLUETOOTH
     if (strlen(y) > 0)
         pd_bt_writeback((unsigned char *)y, strlen(y));
 #endif
-#ifdef PD_USE_WIFI
+#if 0   /* this doesn't work all that well since posts are split into atoms */
     net_sendudp(y, strlen(y), CONFIG_ESP_WIFI_SENDPORT); 
     net_sendtcp(y, strlen(y));
 #endif
