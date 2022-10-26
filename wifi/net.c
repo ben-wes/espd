@@ -38,7 +38,7 @@ void tcpreceivertask(void *z)
     ESP_LOGI(TAG, "connecting...");
     while (err = connect(newsocket, &dest_addr, sizeof(dest_addr)) < 0)
     {
-        ESP_LOGE(TAG, "Socket unable to bind: errno %d - retrying", errno);
+        ESP_LOGE(TAG, "Socket unable to connect: errno %d - retrying", errno);
         close(newsocket);
         vTaskDelay(2000 / portTICK_PERIOD_MS);
         newsocket = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);

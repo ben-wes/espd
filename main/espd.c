@@ -26,6 +26,7 @@
 #include "periph_sdcard.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "esp_timer.h"
 
 static const char *TAG = "ESPD";
 #define TEST_I2S_NUM  I2S_NUM_0
@@ -104,13 +105,11 @@ static int audiostate;
 
 void sys_set_audio_state(int onoff)
 {
-    /*
     if (onoff && !audiostate)
         i2s_start(I2S_NUM_0);
     else if (!onoff && audiostate)
         i2s_stop(I2S_NUM_0);
     audiostate = onoff;
-    */
 }
 
 
@@ -237,3 +236,25 @@ void sd_init( void)
     audio_board_sdcard_init(set, SD_MODE_1_LINE);
     ESP_LOGI(TAG, "[ 1b ] done starting network");
 }
+
+static void espd_printtimediff( void)
+{
+    static int64_t whensent;
+    int64_t newtime = esp_timer_get_time();
+    int elapsed = (newtime - whensent)/1000;
+    char msg[80];
+    whensent = newtime;
+    sprintf(msg, "elapsed msec %d\n", elapsed);
+    pdmain_print(msg);
+}
+
+#define t_floatarg float
+void glob_foo(void *dummy, t_floatarg f)
+{
+    if (f == 0)
+        trymem(0);
+    else if (f == 1)
+        espd_printtimediff();
+}
+
+

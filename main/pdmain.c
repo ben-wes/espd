@@ -17,6 +17,7 @@ void pd_init(void);
 void glob_open(t_pd *ignore, t_symbol *name, t_symbol *dir, t_floatarg f);
 
 void pdmain_print( const char *s);
+void espd_printtimediff( void);
 
 #if 0
 static const char patchfile[] = "\
@@ -100,10 +101,7 @@ void pdmain_tick( void)
 
 t_class *glob_pdobject;
 
-static void glob_foo(void *dummy, t_floatarg f)
-{
-    trymem(0);
-}
+void glob_foo(void *dummy, t_floatarg f);
 
 static void glob_beginnew(void *dummy, t_symbol *pname, t_symbol *pdir)
 {
