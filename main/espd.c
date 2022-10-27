@@ -105,10 +105,12 @@ static int audiostate;
 
 void sys_set_audio_state(int onoff)
 {
+/*
     if (onoff && !audiostate)
         i2s_start(I2S_NUM_0);
     else if (!onoff && audiostate)
         i2s_stop(I2S_NUM_0);
+*/
     audiostate = onoff;
 }
 
