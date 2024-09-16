@@ -3,6 +3,7 @@
 #include "../pd/src/m_imp.h"
 #include "../pd/src/g_canvas.h"
 #include "../pd/src/g_undo.h"
+#include "espd.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -18,6 +19,10 @@ void glob_open(t_pd *ignore, t_symbol *name, t_symbol *dir, t_floatarg f);
 
 void pdmain_print( const char *s);
 void espd_printtimediff( void);
+/*
+sed command to prepare patch:
+    sed 's/;$/;\\/' foo.pd | sed 's/#N //'
+*/
 
 #if 0
 static const char patchfile[] = "\
@@ -28,7 +33,8 @@ canvas 274 279 752 643 12;\n\
 #X connect 0 0 1 0;\n\
 #X connect 1 0 2 0;\n\
 ";
-
+#endif
+#if 0
 static const char patchfile[] = "\
 canvas 0 50 450 300 12;\n\
 #X obj 190 104 loadbang;\n\
@@ -38,6 +44,9 @@ canvas 0 50 450 300 12;\n\
 #X connect 0 0 1 0;\n\
 #X connect 3 0 2 0;\n\
 ";
+#endif
+#if 1
+#include "testpatch.c"
 #endif
 
 void trymem(int foo)
@@ -76,7 +85,7 @@ void pdmain_init( void)
     STUFF->st_soundout = soundout;
     STUFF->st_soundin = soundin;
 
-#if 0
+#if 1
     {
         t_binbuf *b = binbuf_new();
         glob_setfilename(0, gensym("main-patch"), gensym("."));
@@ -242,8 +251,8 @@ void conf_init(void)
 */
 
 /* ------- STUBS that do nothing ------------- */
-int sys_get_outchannels(void) {return(2); }
-int sys_get_inchannels(void) {return(2); }
+int sys_get_outchannels(void) {return(OUTCHANS); }
+int sys_get_inchannels(void) {return(INCHANS); }
 float sys_getsr( void) {return (48000);}
 int sys_getblksize(void) { return (DEFDACBLKSIZE); }
 
@@ -252,12 +261,17 @@ int sys_verbose = 0;
 int sys_noloadbang = 0;
 
 int audio_shouldkeepopen(void) { return (0);}
+int audio_isopen( void) { return (1); }
+void sys_reopen_audio ( void) { }
+void sys_close_audio ( void) { }
+
 t_symbol *sys_libdir = &s_;
 
 void sys_vgui(const char *format, ...) {}
 void sys_gui(const char *s) { }
 
 int sys_havegui(void) {return (0);}
+int sys_havetkproc(void) {return (0);}
 int sys_pollgui( void) { return (0); }
 
 void sys_lock(void) {}
@@ -323,14 +337,13 @@ void x_midi_newpdinstance( void) {}
 t_symbol *iemgui_raute2dollar(t_symbol *s) {return(s);}
 t_symbol *iemgui_dollar2raute(t_symbol *s) {return(s);}
 
-t_class *clone_class;
-
 /* --------------- m_sched.c -------------------- */
 #define TIMEUNITPERMSEC (32. * 441.)
 #define TIMEUNITPERSECOND (TIMEUNITPERMSEC * 1000.)
 void dsp_tick(void);
 static int sched_diddsp;
 int sys_quit = 0;
+void sched_init(void) {}
 
 
 typedef void (*t_clockmethod)(void *client);
@@ -573,14 +586,24 @@ void canvas_connect(t_canvas *x, t_floatarg fwhoout, t_floatarg foutno,
     if (EDITOR->paste_canvas == x) whoout += EDITOR->paste_onset,
         whoin += EDITOR->paste_onset;
     for (src = x->gl_list; whoout; src = src->g_next, whoout--)
-        if (!src->g_next) goto bad; /* bug fix thanks to Hannes */
+        if (!src->g_next) {
+            src = NULL;
+            logpost(sink, PD_DEBUG, "cannot connect non-existing object");
+            goto bad; /* bug fix thanks to Hannes */
+        }
     for (sink = x->gl_list; whoin; sink = sink->g_next, whoin--)
-        if (!sink->g_next) goto bad;
+        if (!sink->g_next) {
+            sink = NULL;
+            logpost(src, PD_DEBUG, "cannot connect to non-existing object");
+            goto bad;
+        }
 
         /* check they're both patchable objects */
     if (!(objsrc = pd_checkobject(&src->g_pd)) ||
-        !(objsink = pd_checkobject(&sink->g_pd)))
-            goto bad;
+        !(objsink = pd_checkobject(&sink->g_pd))) {
+        logpost(src?src:sink, PD_DEBUG, "cannot connect unpatchable object");
+        goto bad;
+    }
 
         /* if object creation failed, make dummy inlets or outlets
            as needed */
@@ -594,10 +617,14 @@ void canvas_connect(t_canvas *x, t_floatarg fwhoout, t_floatarg foutno,
     if (!(oc = obj_connect(objsrc, outno, objsink, inno))) goto bad;
     if (glist_isvisible(x) && x->gl_havewindow)
     {
-        sys_vgui(
-            ".x%lx.c create line %d %d %d %d -width %d -tags [list l%lx cord]\n",
-            glist_getcanvas(x), 0, 0, 0, 0,
-            (obj_issignaloutlet(objsrc, outno) ? 2 : 1) * x->gl_zoom, oc);
+        char tag[128];
+        char*tags[] = {tag, "cord"};
+        sprintf(tag, "l%p", oc);
+        pdgui_vmess(0, "crr iiii ri rS",
+            glist_getcanvas(x), "create", "line",
+            0, 0, 0, 0,
+            "-width", (obj_issignaloutlet(objsrc, outno) ? 2 : 1) * x->gl_zoom,
+            "-tags", 2, tags);
         canvas_fixlinesfor(x, objsrc);
     }
     return;
@@ -646,6 +673,16 @@ t_namelist *namelist_append(t_namelist *listwas, const char *s, int allowdup)
     return (listwas);
 }
 
+void namelist_free(t_namelist *listwas)
+{
+    t_namelist *nl, *nl2;
+    for (nl = listwas; nl; nl = nl2)
+    {
+        nl2 = nl->nl_next;
+        t_freebytes(nl->nl_string, strlen(nl->nl_string) + 1);
+        t_freebytes(nl, sizeof(*nl));
+    }
+}
 
     /* change '/' characters to the system's native file separator */
 void sys_bashfilename(const char *from, char *to)
@@ -692,9 +729,8 @@ int sys_isabsolutepath(const char *dir)
     }
 }
 
-
 /* expand env vars and ~ at the beginning of a path and make a copy to return */
-static void sys_expandpath(const char *from, char *to, int bufsize)
+void sys_expandpath(const char *from, char *to, int bufsize)
 {
     if ((strlen(from) == 1 && from[0] == '~') || (strncmp(from,"~/", 2) == 0))
     {
@@ -780,6 +816,8 @@ int sys_fclose(FILE *stream)
 
 int sys_usestdpath = 0;
 
+
+
     /* try to open a file in the directory "dir", named "name""ext",
     for reading.  "Name" may have slashes.  The directory is copied to
     "dirresult" which must be at least "size" bytes.  "nameresult" is set
@@ -787,8 +825,9 @@ int sys_usestdpath = 0;
     The "bin" flag requests opening for binary (which only makes a difference
     on Windows). */
 
-int sys_trytoopenone(const char *dir, const char *name, const char* ext,
-    char *dirresult, char **nameresult, unsigned int size, int bin)
+int sys_trytoopenit(const char *dir, const char *name, const char* ext,
+    char *dirresult, char **nameresult, unsigned int size, int bin,
+    int okgui)
 {
     int fd;
     char buf[MAXPDSTRING];
@@ -812,8 +851,9 @@ int sys_trytoopenone(const char *dir, const char *name, const char* ext,
             !S_ISDIR(statbuf.st_mode));
         if (!ok)
         {
-            if (sys_verbose) post("tried %s; stat failed or directory",
-                dirresult);
+            if (okgui)
+                logpost(NULL, PD_VERBOSE, "tried %s; stat failed or directory",
+                    dirresult);
             close (fd);
             fd = -1;
         }
@@ -821,7 +861,8 @@ int sys_trytoopenone(const char *dir, const char *name, const char* ext,
 #endif
         {
             char *slash;
-            if (sys_verbose) post("tried %s and succeeded", dirresult);
+            if (okgui)
+                logpost(NULL, PD_VERBOSE, "tried %s and succeeded", dirresult);
             sys_unbashfilename(dirresult, dirresult);
             slash = strrchr(dirresult, '/');
             if (slash)
@@ -836,7 +877,8 @@ int sys_trytoopenone(const char *dir, const char *name, const char* ext,
     }
     else
     {
-        if (sys_verbose) post("tried %s and failed", dirresult);
+        if (okgui)
+            logpost(NULL, PD_VERBOSE, "tried %s and failed", dirresult);
     }
     return (-1);
 }
@@ -844,7 +886,8 @@ int sys_trytoopenone(const char *dir, const char *name, const char* ext,
     /* check if we were given an absolute pathname, if so try to open it
     and return 1 to signal the caller to cancel any path searches */
 int sys_open_absolute(const char *name, const char* ext,
-    char *dirresult, char **nameresult, unsigned int size, int bin, int *fdp)
+    char *dirresult, char **nameresult, unsigned int size, int bin, int *fdp,
+    int okgui)
 {
     if (sys_isabsolutepath(name))
     {
@@ -857,44 +900,44 @@ int sys_open_absolute(const char *name, const char* ext,
             dirlen = MAXPDSTRING-1;
         strncpy(dirbuf, name, dirlen);
         dirbuf[dirlen] = 0;
-        *fdp = sys_trytoopenone(dirbuf, name+(dirlen+1), ext,
-            dirresult, nameresult, size, bin);
+        *fdp = sys_trytoopenit(dirbuf, name+(dirlen+1), ext,
+            dirresult, nameresult, size, bin, 1);
         return (1);
     }
     else return (0);
 }
 
-static int do_open_via_path(const char *dir, const char *name,
+int do_open_via_path(const char *dir, const char *name,
     const char *ext, char *dirresult, char **nameresult, unsigned int size,
-    int bin, t_namelist *searchpath)
+    int bin, t_namelist *searchpath, int okgui)
 {
     t_namelist *nl;
     int fd = -1;
 
         /* first check if "name" is absolute (and if so, try to open) */
-    if (sys_open_absolute(name, ext, dirresult, nameresult, size, bin, &fd))
+    if (sys_open_absolute(name, ext, dirresult, nameresult, size, bin, &fd, 1))
         return (fd);
 
         /* otherwise "name" is relative; try the directory "dir" first. */
-    if ((fd = sys_trytoopenone(dir, name, ext,
-        dirresult, nameresult, size, bin)) >= 0)
+    if ((fd = sys_trytoopenit(dir, name, ext,
+        dirresult, nameresult, size, bin, 1)) >= 0)
             return (fd);
 
         /* next go through the temp paths from the commandline */
     for (nl = STUFF->st_temppath; nl; nl = nl->nl_next)
-        if ((fd = sys_trytoopenone(nl->nl_string, name, ext,
-            dirresult, nameresult, size, bin)) >= 0)
+        if ((fd = sys_trytoopenit(nl->nl_string, name, ext,
+            dirresult, nameresult, size, bin, 1)) >= 0)
                 return (fd);
         /* next look in built-in paths like "extra" */
     for (nl = searchpath; nl; nl = nl->nl_next)
-        if ((fd = sys_trytoopenone(nl->nl_string, name, ext,
-            dirresult, nameresult, size, bin)) >= 0)
+        if ((fd = sys_trytoopenit(nl->nl_string, name, ext,
+            dirresult, nameresult, size, bin, 1)) >= 0)
                 return (fd);
         /* next look in built-in paths like "extra" */
     if (sys_usestdpath)
         for (nl = STUFF->st_staticpath; nl; nl = nl->nl_next)
-            if ((fd = sys_trytoopenone(nl->nl_string, name, ext,
-                dirresult, nameresult, size, bin)) >= 0)
+            if ((fd = sys_trytoopenit(nl->nl_string, name, ext,
+                dirresult, nameresult, size, bin, 1)) >= 0)
                     return (fd);
 
     *dirresult = 0;
@@ -907,8 +950,10 @@ int open_via_path(const char *dir, const char *name, const char *ext,
     char *dirresult, char **nameresult, unsigned int size, int bin)
 {
     return (do_open_via_path(dir, name, ext, dirresult, nameresult,
-        size, bin, STUFF->st_searchpath));
+        size, bin, STUFF->st_searchpath, 1));
 }
+
+void open_via_helppath(const char *name, const char *dir) {}
 
 /* --------------------- s_inter.c --------------- */
 

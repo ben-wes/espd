@@ -9,25 +9,19 @@
 
 #include "espd.h"
 #include <string.h>
+#include <math.h>g
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/i2s.h"
 
 #include "esp_log.h"
-#include "audio_element.h"
-#include "audio_pipeline.h"
-#include "audio_event_iface.h"
-#include "audio_mem.h"
-#include "audio_common.h"
-#include "i2s_stream.h"
-#include "mp3_decoder.h"
-#include "filter_resample.h"
-#include "board.h"
-#include "esp_peripherals.h"
-#include "periph_sdcard.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "esp_timer.h"
-
+#ifdef PD_USE_CONSOLE
+#include "driver/uart.h"
+#include "esp_console.h"
+#endif
 static const char *TAG = "ESPD";
 #define TEST_I2S_NUM  I2S_NUM_0
 
@@ -37,68 +31,113 @@ void pdmain_init( void);
 
 void sd_init( void);
 
-#define INCHANS 1
-#define OUTCHANS 1
+#define USEADC
 #define BLKSIZE 64
 float soundin[OUTCHANS * BLKSIZE], soundout[OUTCHANS * BLKSIZE];
 
 void senddacs( void)
 {
     int i, ret;
-    size_t written;
-    short poodle[OUTCHANS * BLKSIZE];
+    static int count;
+    size_t transferred;
+    uint32_t poodle[BLKSIZE];
 
-    for (i = 0; i < BLKSIZE; i+= OUTCHANS)
+    for (i = 0; i < BLKSIZE; i++)
     {
-        int ch1 = 32767*soundout[i];
-         if (ch1 > 32767)
-            ch1 = 32767;
-        else if (ch1 < -32768)
-            ch1 = -32768;
-        poodle[i] = ch1;
-        /* 
-        ch1 = 32767*soundout[BLKSIZE+i];
+        int ch1 = floor(0.5 + 32768.*soundout[i]),
+          ch2 = floor(0.5 + 32768.*soundout[i+BLKSIZE]);
+        static int lastch1, lastch2;
         if (ch1 > 32767)
             ch1 = 32767;
         else if (ch1 < -32768)
             ch1 = -32768;
-        poodle[i+1] = ch2;  */
-        
-        soundout[i] = 0;
+        ch1 &= 0xffff;
+        if (ch2 > 32767)
+            ch2 = 32767;
+        else if (ch2 < -32768)
+            ch2 = -32768;
+        ch2 &= 0xffff;
+#if 0
+        poodle[i] =  ((lastch1 << 17) & 0xfffe0000) | ((lastch2 << 1) & 0x10000) |
+              ((lastch2 << 1) & 0xfffe) | ((ch1 >> 15) & 1);
+#endif
+        poodle[i] = (ch1<<16) | ch2;
+        lastch1 = ch1;
+        lastch2 = ch2;
+        soundout[i] = soundout[i+64] = 0;
+    }
+    if (count++ > 2000)
+    {
+        ESP_LOGI(TAG, "sample %lx", poodle[0]);
+        count = 0;
     }
 
-    ret = i2s_write(TEST_I2S_NUM, poodle, sizeof(poodle), &written,
+    ret = i2s_write(TEST_I2S_NUM, poodle, sizeof(poodle), &transferred,
         portMAX_DELAY);
     if (ret != ESP_OK)
         ESP_LOGE(TAG, "error writing");
+#ifdef USEADC
+    ret = i2s_read(TEST_I2S_NUM, poodle, sizeof(poodle), &transferred,
+        portMAX_DELAY);
+    if (ret != ESP_OK)
+        ESP_LOGE(TAG, "error reading");
+    
+    for (i = 0; i < BLKSIZE; i++)
+    {
+        uint32_t ch1 = poodle[i] & 0xffff, ch2 = (poodle[i]>>16) & 0xffff ;
+        if (ch1 & 0x8000)
+            soundin[i] = (ch1*(1./32768.)) - 2;
+        else soundin[i] = (ch1*(1./32768.));
+        if (ch2 & 0x8000)
+            soundin[i+BLKSIZE] = (ch2*(1./32768.)) - 2;
+        else soundin[i+BLKSIZE] = (ch2*(1./32768.));
+    }
+#endif /* USEADC */
 }
+
+    /* allow deprecated form if new one unavailable */
+#ifndef I2S_COMM_FORMAT_STAND_I2S
+#define I2S_COMM_FORMAT_STAND_I2S I2S_COMM_FORMAT_I2S
+#endif
 
 static void initdacs( void)
 {
-    i2s_config_t i2s_cfg = {
-        .mode = I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX,
-        .sample_rate = 48000,
-        .bits_per_sample = 16,
-        /* .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT, */
-        .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .dma_buf_count = 16,
-        .dma_buf_len = 256,
-        .use_apll = 1,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL2,
+    i2s_config_t i2s_config = {
+    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX
+#ifdef USEADC
+        | I2S_MODE_RX
+#endif
+            ),
+    .sample_rate = 48000,
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+    .communication_format =
+        (i2s_comm_format_t)(I2S_COMM_FORMAT_STAND_I2S),
+    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1, /* high interrupt priority */
+    .dma_buf_count = 16,
+    .dma_buf_len = 256,
+    .use_apll=0,
+    .tx_desc_auto_clear= true, 
+    .fixed_mclk=-1    };
+    i2s_pin_config_t i2s_pin_cfg = {
+#if 1 /* generic board on big breadboard */
+    .bck_io_num = 13,         /* bit clock */
+    .ws_io_num = 33,          /* Word select, aka left right clock */
+    .data_out_num = 32,       /* Data out from ESP32, to DIN on 38357A */
+    .data_in_num = 35         /* data from ADC */
+#endif
+#if 0
+    .bck_io_num = 33,         /* bit clock */
+    .ws_io_num = 25,          /* Word select, aka left right clock */
+    .data_out_num = 32,       /* Data out from ESP32, to DIN on 38357A */
+    .data_in_num = I2S_PIN_NO_CHANGE  /* no ADC */
+#endif
     };
-    i2s_pin_config_t i2s_pin_cfg = {0};
 
     ESP_LOGI(TAG, "[ 1 ] Start audio codec chip");
 
-    audio_board_handle_t board_handle = audio_board_init();
-    audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
-
-    i2s_driver_install(I2S_NUM_0, &i2s_cfg, 0, NULL);
-    get_i2s_pins(I2S_NUM_0, &i2s_pin_cfg);
-    i2s_set_pin(I2S_NUM_0, &i2s_pin_cfg);
-    i2s_mclk_gpio_select(I2S_NUM_0, GPIO_NUM_0);
-
+    i2s_driver_install(TEST_I2S_NUM, &i2s_config, 0, NULL);
+    i2s_set_pin(TEST_I2S_NUM, &i2s_pin_cfg);                 
 }
 
 static int audiostate;
@@ -139,10 +178,39 @@ void pd_fromhost(char *data, size_t size)
     xSemaphoreGive(pd_bt_mutex);
 }
 
+#ifdef PD_USE_CONSOLE
+static QueueHandle_t uart_queue;
+static void console_init( void)
+{
+    const int uart_buffer_size = 256;
+    ESP_ERROR_CHECK(uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM,
+        uart_buffer_size, uart_buffer_size, 10, &uart_queue, 0));
+}
+#endif
+
     /* dispatch messages enqueued above */
 void pd_pollhost( void)
 {
     int lastchar;
+#ifdef PD_USE_CONSOLE
+    uint8_t data[128];
+    int length = 0;
+    ESP_ERROR_CHECK(uart_get_buffered_data_len(CONFIG_ESP_CONSOLE_UART_NUM,  
+        (size_t*)&length));
+    if (length > 0)
+    {
+        int i;
+        /* ESP_LOGI(TAG, "serial in %d", length); */
+        length = uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM, data, length, 100);
+        for (i = 0; i < length; i++)
+        {
+            char foo[80];
+            ESP_LOGI(TAG, " %d", data[i] & 0xff);
+            sprintf(foo, "key %d;", data[i] & 0xff);
+            pd_sendmsg(foo, strlen(foo));
+        }
+    }
+#endif
     if (!pd_bt_mutex)
         pd_bt_mutex = xSemaphoreCreateMutex();
     if (xSemaphoreTake(pd_bt_mutex, 0) != pdTRUE)
@@ -174,18 +242,13 @@ void pdmain_print( const char *s)
     if (strlen(y) > 0)
         pd_bt_writeback((unsigned char *)y, strlen(y));
 #endif
-#if 1
+#ifdef PD_USE_WIFI
     net_sendudp(y, strlen(y), CONFIG_ESP_WIFI_SENDPORT); 
     net_sendtcp(y, strlen(y));
 #endif
 }
 
 void trymem(int foo);
-
-    /* allow deprecated form if new one unavailable */
-#ifndef I2S_COMM_FORMAT_STAND_I2S
-#define I2S_COMM_FORMAT_STAND_I2S I2S_COMM_FORMAT_I2S
-#endif
 
 void app_main(void)
 {
@@ -198,12 +261,17 @@ void app_main(void)
 #ifdef PD_USE_BLUETOOTH
     bt_init();
 #endif
+#ifdef PD_USE_SDCARD
     sd_init();
+#endif
 #ifdef PD_USE_WIFI
     ESP_LOGI(TAG, "[ 1a ] start network");
     wifi_init();
     net_init();
     net_hello();
+#endif
+#ifdef PD_USE_CONSOLE
+    console_init();
 #endif
 
     ESP_LOGI(TAG, "[ 2 ] now write some shit");
@@ -221,11 +289,13 @@ void app_main(void)
         pd_pollhost();
         pdmain_tick();
         senddacs();
+#ifdef PD_USE_WIFI
         net_alive();
+#endif
     }
 }
 
-
+#ifdef PD_USE_SDCARD
 void sd_init( void)
 {
         /* initialize SD card */
@@ -238,6 +308,7 @@ void sd_init( void)
     audio_board_sdcard_init(set, SD_MODE_1_LINE);
     ESP_LOGI(TAG, "[ 1b ] done starting network");
 }
+#endif
 
 static void espd_printtimediff( void)
 {

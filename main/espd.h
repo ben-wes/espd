@@ -1,5 +1,6 @@
 /* #define PD_USE_BLUETOOTH */
-#define PD_USE_WIFI
+/* #define PD_USE_WIFI */
+#define PD_USE_CONSOLE
 
 
 /* task priorities */
@@ -20,6 +21,9 @@ void pd_bt_poll( void);
 void bt_init( void);
 void pd_bt_writeback(unsigned char *s, int length);
 #endif
+
+#define INCHANS 2
+#define OUTCHANS 2
 
 #ifdef PD_USE_WIFI
 void wifi_init(void);   /* wifi.c - manage 802.11 connection */

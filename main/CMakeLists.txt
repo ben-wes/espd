@@ -49,6 +49,7 @@ set(COMPONENT_SRCS "espd.c pdmain.c \
 ../pd/src/x_vexp.c \
 ../pd/src/x_vexp_fun.c \
 ../pd/src/x_vexp_if.c \
+../pd/src/s_inter_gui.c \
 ../wifi/wifi.c \
 ../wifi/net.c \
 ")
@@ -56,7 +57,8 @@ set(COMPONENT_SRCS "espd.c pdmain.c \
 
 set(COMPONENT_ADD_INCLUDEDIRS ".")
 
-set(COMPONENT_ADD_CFLAGS "-DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS\
-    -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation Wno-unused-const-variable")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable")
+
+# set(COMPONENT_ADD_CFLAGS "-DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable")
 
 register_component()

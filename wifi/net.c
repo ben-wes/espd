@@ -36,7 +36,8 @@ void tcpreceivertask(void *z)
     }
 
     ESP_LOGI(TAG, "connecting...");
-    while (err = connect(newsocket, &dest_addr, sizeof(dest_addr)) < 0)
+    while ((err = connect(newsocket,
+        (struct sockaddr *)&dest_addr, sizeof(dest_addr)) < 0))
     {
         ESP_LOGE(TAG, "Socket unable to connect: errno %d - retrying", errno);
         close(newsocket);
@@ -187,7 +188,7 @@ void net_hello( void)
     char buf[80];
     uint8_t mac[6];
     {
-        esp_base_mac_addr_get(&mac);
+        esp_base_mac_addr_get(mac);
         sprintf(buf, "hello %02x:%02x:%02x:%02x:%02x:%02x %s;\n",
             mac[0],mac[1],mac[2],mac[3],mac[4],mac[5], wifi_ipaddr);
         net_sendtcp(buf, strlen(buf)); 
@@ -201,7 +202,7 @@ void net_alive( void)
     uint8_t mac[6];
     if (elapsed > 1000000)
     {
-        esp_base_mac_addr_get(&mac);
+        esp_base_mac_addr_get(mac);
         sprintf(buf, "alive %02x:%02x:%02x:%02x:%02x:%02x;\n",
             mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
         net_sendudp(buf, strlen(buf), CONFIG_ESP_WIFI_SENDPORT); 
