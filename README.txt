@@ -69,6 +69,7 @@ export IDF_PATH=~/bis/var/esp/esp-idf
 
 for LyraT boards:
 
+### FIRST edit Cmakelists.txt to enable esp_adf ###
 export IDF_TOOLS_PATH=~/bis/var/esp/tools
 export ADF_PATH=~/bis/var/esp/esp-adf
  . $ADF_PATH/esp-idf/export.sh

@@ -1,7 +1,7 @@
-/* #define PD_USE_BLUETOOTH */
-/* #define PD_USE_WIFI */
-#define PD_USE_CONSOLE
-
+/* #define PD_USE_BLUETOOTH */  /* messages to Pd over bluetooth */
+/* #define PD_USE_WIFI */       /* messages to/from Pd over wifi TCP */
+#define PD_USE_CONSOLE          /* messages to Pd over "console" (USB serial) */
+/* #define PD_LYRAT  */         /* using LyraT or LyraT mini board */
 
 /* task priorities */
 #define  PRIORITY_WIFI 2

@@ -9,11 +9,13 @@
 
 #include "espd.h"
 #include <string.h>
-#include <math.h>g
+#include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#ifdef PD_LYRAT
+#include "board.h"
+#endif /* PD_LYRAT */
 #include "driver/i2s.h"
-
 #include "esp_log.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -102,42 +104,60 @@ void senddacs( void)
 
 static void initdacs( void)
 {
-    i2s_config_t i2s_config = {
-    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX
+    i2s_config_t i2s_config =
+    {
+        .mode = (I2S_MODE_MASTER | I2S_MODE_TX
 #ifdef USEADC
-        | I2S_MODE_RX
+            | I2S_MODE_RX
 #endif
             ),
-    .sample_rate = 48000,
-    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
-    .communication_format =
-        (i2s_comm_format_t)(I2S_COMM_FORMAT_STAND_I2S),
-    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1, /* high interrupt priority */
-    .dma_buf_count = 16,
-    .dma_buf_len = 256,
-    .use_apll=0,
-    .tx_desc_auto_clear= true, 
-    .fixed_mclk=-1    };
-    i2s_pin_config_t i2s_pin_cfg = {
-#if 1 /* generic board on big breadboard */
-    .bck_io_num = 13,         /* bit clock */
-    .ws_io_num = 33,          /* Word select, aka left right clock */
-    .data_out_num = 32,       /* Data out from ESP32, to DIN on 38357A */
-    .data_in_num = 35         /* data from ADC */
+        .sample_rate = 48000,
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .dma_buf_count = 16,
+        .dma_buf_len = 256,
+#ifdef PD_LYRAT
+        .use_apll=1,
+#else
+        .use_apll=0,
 #endif
-#if 0
-    .bck_io_num = 33,         /* bit clock */
-    .ws_io_num = 25,          /* Word select, aka left right clock */
-    .data_out_num = 32,       /* Data out from ESP32, to DIN on 38357A */
-    .data_in_num = I2S_PIN_NO_CHANGE  /* no ADC */
-#endif
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1, /* high interrupt priority */
+        .tx_desc_auto_clear= true, 
+        .fixed_mclk=-1
     };
 
     ESP_LOGI(TAG, "[ 1 ] Start audio codec chip");
 
+#ifdef PD_LYRAT
+    audio_board_handle_t board_handle = audio_board_init();
+    audio_hal_ctrl_codec(board_handle->audio_hal,
+        AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
+    audio_hal_set_volume(board_handle->audio_hal, 100);
+#endif
+
     i2s_driver_install(TEST_I2S_NUM, &i2s_config, 0, NULL);
-    i2s_set_pin(TEST_I2S_NUM, &i2s_pin_cfg);                 
+
+#ifndef PD_LYRAT
+    {
+        i2s_pin_config_t i2s_pin_cfg =
+        {
+#if 1       /* generic board 1 - edit this as needed */
+        .bck_io_num = 13,         /* bit clock */
+        .ws_io_num = 33,          /* Word select, aka left right clock */
+        .data_out_num = 32,       /* Data out from ESP32, to DIN on 38357A */
+        .data_in_num = 35         /* data from ADC */
+#endif
+#if 0   /* generic board 2 */
+        .bck_io_num = 33,         /* bit clock */
+        .ws_io_num = 25,          /* Word select, aka left right clock */
+        .data_out_num = 32,       /* Data out from ESP32, to DIN on 38357A */
+        .data_in_num = I2S_PIN_NO_CHANGE  /* no ADC */
+#endif
+        };
+        i2s_set_pin(TEST_I2S_NUM, &i2s_pin_cfg);
+    }                
+#endif /* not PD_LYRAT */
 }
 
 static int audiostate;
