@@ -25,7 +25,6 @@
 #include "esp_console.h"
 #endif
 static const char *TAG = "ESPD";
-#define TEST_I2S_NUM  I2S_NUM_0
 
 extern void pdmain_tick( void);
 void pdmain_init( void);
@@ -33,40 +32,41 @@ void pdmain_init( void);
 
 void sd_init( void);
 
-#define USEADC
+/* #define USEADC */
 #define BLKSIZE 64
-float soundin[OUTCHANS * BLKSIZE], soundout[OUTCHANS * BLKSIZE];
+float soundin[IOCHANS * BLKSIZE], soundout[IOCHANS * BLKSIZE];
 
 void senddacs( void)
 {
     int i, ret;
     static int count;
     size_t transferred;
-    uint32_t poodle[BLKSIZE];
+    short poodle[IOCHANS * BLKSIZE];
 
-    for (i = 0; i < BLKSIZE; i++)
+    for (i = 0; i < BLKSIZE; i += IOCHANS)
     {
-        int ch1 = floor(0.5 + 32768.*soundout[i]),
-          ch2 = floor(0.5 + 32768.*soundout[i+BLKSIZE]);
-        static int lastch1, lastch2;
+        int ch1 = floor(0.5 + 32768.*soundout[i]);
+#if IOCHANS > 1
+        int ch2 = floor(0.5 + 32768.*soundout[i+BLKSIZE]);
+#endif
         if (ch1 > 32767)
             ch1 = 32767;
         else if (ch1 < -32768)
             ch1 = -32768;
         ch1 &= 0xffff;
+#if IOCHANS > 1
         if (ch2 > 32767)
             ch2 = 32767;
         else if (ch2 < -32768)
             ch2 = -32768;
         ch2 &= 0xffff;
-#if 0
-        poodle[i] =  ((lastch1 << 17) & 0xfffe0000) | ((lastch2 << 1) & 0x10000) |
-              ((lastch2 << 1) & 0xfffe) | ((ch1 >> 15) & 1);
 #endif
-        poodle[i] = (ch1<<16) | ch2;
-        lastch1 = ch1;
-        lastch2 = ch2;
-        soundout[i] = soundout[i+64] = 0;
+        poodle[i] = ch1;
+        soundout[i] = 0;
+#if IOCHANS > 1
+        poodle[BLKSIZE+i] = ch2;
+        soundout[i+BLKSIZE] = 0;
+#endif
     }
     if (count++ > 2000)
     {
@@ -74,12 +74,12 @@ void senddacs( void)
         count = 0;
     }
 
-    ret = i2s_write(TEST_I2S_NUM, poodle, sizeof(poodle), &transferred,
+    ret = i2s_write(I2S_NUM_0, poodle, sizeof(poodle), &transferred,
         portMAX_DELAY);
     if (ret != ESP_OK)
         ESP_LOGE(TAG, "error writing");
 #ifdef USEADC
-    ret = i2s_read(TEST_I2S_NUM, poodle, sizeof(poodle), &transferred,
+    ret = i2s_read(I2S_NUM_0, poodle, sizeof(poodle), &transferred,
         portMAX_DELAY);
     if (ret != ESP_OK)
         ESP_LOGE(TAG, "error reading");
@@ -113,19 +113,24 @@ static void initdacs( void)
             ),
         .sample_rate = 48000,
         .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+#if IOCHANS > 1
         .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+#else
+        .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,
+#endif
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
         .dma_buf_count = 16,
         .dma_buf_len = 256,
 #ifdef PD_LYRAT
         .use_apll=1,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL2,
 #else
         .use_apll=0,
-#endif
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1, /* high interrupt priority */
         .tx_desc_auto_clear= true, 
         .fixed_mclk=-1
-    };
+ #endif
+   };
 
     ESP_LOGI(TAG, "[ 1 ] Start audio codec chip");
 
@@ -136,12 +141,14 @@ static void initdacs( void)
     audio_hal_set_volume(board_handle->audio_hal, 100);
 #endif
 
-    i2s_driver_install(TEST_I2S_NUM, &i2s_config, 0, NULL);
+    i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
 
-#ifndef PD_LYRAT
     {
-        i2s_pin_config_t i2s_pin_cfg =
-        {
+#ifdef PD_LYRAT
+        i2s_pin_config_t i2s_pin_cfg;
+        get_i2s_pins(I2S_NUM_0, (board_i2s_pin_t *)(&i2s_pin_cfg));
+#else /* PD_LYRAT */
+        i2s_pin_config_t i2s_pin_cfg = {
 #if 1       /* generic board 1 - edit this as needed */
         .bck_io_num = 13,         /* bit clock */
         .ws_io_num = 33,          /* Word select, aka left right clock */
@@ -155,9 +162,9 @@ static void initdacs( void)
         .data_in_num = I2S_PIN_NO_CHANGE  /* no ADC */
 #endif
         };
-        i2s_set_pin(TEST_I2S_NUM, &i2s_pin_cfg);
-    }                
-#endif /* not PD_LYRAT */
+#endif /* PD_LYRAT */
+        i2s_set_pin(I2S_NUM_0, &i2s_pin_cfg);
+    }               
 }
 
 static int audiostate;
@@ -221,7 +228,8 @@ void pd_pollhost( void)
     {
         int i;
         /* ESP_LOGI(TAG, "serial in %d", length); */
-        length = uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM, data, length, 100);
+        length = uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM,
+            data, length, 100);
         for (i = 0; i < length; i++)
         {
             char foo[80];

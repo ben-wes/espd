@@ -45,7 +45,7 @@ canvas 0 50 450 300 12;\n\
 #X connect 3 0 2 0;\n\
 ";
 #endif
-#if 1
+#ifdef PD_INCLUDEPATCH
 #include "testpatch.c"
 #endif
 
@@ -85,7 +85,7 @@ void pdmain_init( void)
     STUFF->st_soundout = soundout;
     STUFF->st_soundin = soundin;
 
-#if 1
+#ifdef PD_INCLUDEPATCH
     {
         t_binbuf *b = binbuf_new();
         glob_setfilename(0, gensym("main-patch"), gensym("."));
@@ -251,8 +251,8 @@ void conf_init(void)
 */
 
 /* ------- STUBS that do nothing ------------- */
-int sys_get_outchannels(void) {return(OUTCHANS); }
-int sys_get_inchannels(void) {return(INCHANS); }
+int sys_get_outchannels(void) {return(IOCHANS); }
+int sys_get_inchannels(void) {return(IOCHANS); }
 float sys_getsr( void) {return (48000);}
 int sys_getblksize(void) { return (DEFDACBLKSIZE); }
 
