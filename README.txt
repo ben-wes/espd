@@ -47,11 +47,10 @@ another (third-party) URL that might be useful:
 
 https://gitdemo.readthedocs.io/en/latest/build-system.html
 
-The compilation chain depends on an "sdkconfig" file.  The included one is for a
-generic ESP board. Samples for the two LyraT boards are included as
-"sdkconfig.lyrat" and "sdkconfig.lyratmini" - you can rename one of these as
-"sdkconfig" before invoking the compiler (and compile using the "ADF", not the
-"IDF" - see below).
+The compilation chain depends on an "sdkconfig" file.  Samples for the two LyraT
+boards are included as "sdkconfig.lyrat" and "sdkconfig.lyratmini", and a sample
+for a bare WROOM module is included as "sdkconfig.wroom".   You can rename one
+of these as "sdkconfig" before invoking the compiler.
 
 In addition to the sources youre looking at you'll need Pd, preferably the
 latest version, although I'm testing this with Pd commit
@@ -67,17 +66,23 @@ flash, and run the monitor program to see debugging output (see bottom of this
 page to see what I type on my system).  This should be done from a shell window
 that is in this (espd) directory.
 
+CAUTION: compiling for LyraT boards works differently from raw WROOM boards.
+
 Commands I issue to shell to compile (customize to your own installation):
 
-For generic ESP32 modules:
+*********  For generic ESP32 modules: *********
+
+FIRST copy sdkconfig.wroom to sdkconfig.  Then:
 
 export IDF_TOOLS_PATH=~/bis/var/esp/tools
 export IDF_PATH=~/bis/var/esp/esp-idf
 . $IDF_PATH/export.sh
 
-for LyraT boards:
+*********  for LyraT boards:  *********
 
-### FIRST edit Cmakelists.txt to enable esp_adf ###
+FIRST edit Cmakelists.txt to enable esp_adf and copy one of sdkconfig.lyrat*
+to sdkconfig.  Then:
+
 export IDF_TOOLS_PATH=~/bis/var/esp/tools
 export ADF_PATH=~/bis/var/esp/esp-adf
  . $ADF_PATH/esp-idf/export.sh

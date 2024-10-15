@@ -38,10 +38,12 @@ void pdmain_init( void);
 
 void sd_init( void);
 
+#ifndef OBSOLETEAPI
 static i2s_chan_handle_t tx_handle;
 #ifdef USEADC
 static i2s_chan_handle_t rx_handle;
 #endif
+#endif /* OBSOLETEAPI */
 
 #define BLKSIZE 64
 float soundin[IOCHANS * BLKSIZE], soundout[IOCHANS * BLKSIZE];
@@ -122,7 +124,7 @@ void senddacs( void)
 #endif /* USEADC */
 }
 
-#if OBSOLETEAPI
+#ifdef OBSOLETEAPI
     /* allow deprecated form if new one unavailable */
 #ifndef I2S_COMM_FORMAT_STAND_I2S
 #define I2S_COMM_FORMAT_STAND_I2S I2S_COMM_FORMAT_I2S
