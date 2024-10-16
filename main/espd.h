@@ -3,7 +3,7 @@
 #define PD_USE_CONSOLE          /* messages to Pd over "console" (USB serial) */
 /* #define PD_INCLUDEPATCH */   /* load the patch defined in "testpatch.c" */
 /* #define PD_LYRAT */          /* using LyraT or LyraT mini board */
- #define USEADC                 /* enable audio input (output always enabled) */
+#define USEADC                  /* enable audio input (output always enabled) */
 #define IOCHANS 2
 #define OBSOLETEAPI 0
 
@@ -42,3 +42,10 @@ void net_sendudp(void *msg, int len, int port); /* send whatev */
 void net_sendtcp(void *msg, int len);
 extern char wifi_ipaddr[];
 #endif
+
+#ifndef PIN_BIT_CLOCK       /* fallback pin locations for I2S audio I/O */
+#define PIN_BIT_CLOCK 13    /* bit clock */
+#define PIN_WORD_SELECT 33  /* word select */
+#define PIN_DATA_OUT 32     /* data out from ESP32 to DAC */
+#define PIN_DATA_IN 35      /* data in from ADC to ESP32 */
+#endif /* PIN_BIT_CLOCK */
