@@ -1,9 +1,12 @@
 This is a very sketchy description of the "espd" version of Pd, which runs on
-Espressif ESP32 bords, eoither generic ones (where you have to add your own
+Espressif ESP32 bords, either generic ones (where you have to add your own
 audio hardware) or LyraT or LyraT-mini boards (with built-in audio). To use
 these you will almost certainly have to compile your own version, at least
 either to include your own patch or to specify the WIFI settings in the file
 main/espd.h .
+
+The generic version can be used with INMP441 microphone and/or MAX98357A
+DSc/amplifier.  The SPH0645 mic is known NOT TO WORK with ESP32s.
 
 The instructions here work for me on linux; they _should_ work on macintoshes
 and PCs with appropriate changes (in the shell commands for instance).
@@ -20,7 +23,7 @@ default).  When the board is booted it will connect to that port.  When you get
 the connection, you can load a test patch on the esp, by sending the message "pd
 begin-new poodle .", then the contents of the patch, then "pd end-new" . 
 Whether you do this or rely on a pre-compiled patch, you can send messages to
-any named object (such as a "receive") on the ESP32 board.
+any named object (such as a "receive") on the ESP32 board
 
 To send a patch over wifi, you must compile and load espd on the board, boot the
 board, and then run a patch on the host computer that waits for the board to

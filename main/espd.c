@@ -183,7 +183,7 @@ static void initdacs( void)
         .data_out_num = 32,       /* Data out from ESP32, to DIN on 38357A */
         .data_in_num = 35         /* data from ADC */
 #endif
-#if 0   /* generic board 2 */
+#if 0   /* complex arts sensorboard */
         .bck_io_num = 33,         /* bit clock */
         .ws_io_num = 25,          /* Word select, aka left right clock */
         .data_out_num = 32,       /* Data out from ESP32, to DIN on 38357A */

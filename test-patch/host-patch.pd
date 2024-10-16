@@ -1,4 +1,4 @@
-#N canvas 616 243 1262 545 12;
+#N canvas 383 59 1262 545 12;
 #X msg 373 294 listen 4498;
 #X obj 374 331 netreceive -u -f;
 #X listbox 481 365 26 0 0 0 - - - 0;
@@ -50,7 +50,7 @@
 #X obj 761 408 s bias;
 #X floatatom 778 382 10 0 0 0 - - - 0;
 #X obj 762 269 r int-bias;
-#X msg 941 34 \; int-bias 223 \; amp 0 \; freq 0;
+#X msg 899 31 \; int-bias 223 \; amp 0 \; freq 0;
 #X msg 904 275 \; int-bias \$1 \; amp 0 \; freq 0;
 #X msg 905 151 15;
 #X msg 938 151 31;
@@ -66,14 +66,14 @@
 #X obj 857 145 + 255;
 #X floatatom 858 117 5 0 0 0 - - - 0;
 #X msg 1166 155 639;
-#X msg 830 31 \; int-bias 255 \; amp 0 \; freq 0;
+#X msg 788 28 \; int-bias 255 \; amp 0 \; freq 0;
 #X msg 1134 153 510;
 #X msg 94 246 send pd foo 0;
 #X msg 81 296 send pd foo 2;
 #X floatatom 1053 395 11 0 0 0 - - - 0;
 #X obj 1053 446 s amp;
 #X obj 1053 420 / 200;
-#X msg 1058 36 \; amp 2 \; bias -1 \; freq 30;
+#X msg 1016 33 \; amp 2 \; bias -1 \; freq 30;
 #X obj 1014 241 bng 35 250 50 0 empty empty empty 0 -11 0 12 #fcfcfc #000000 #000000;
 #X obj 921 397 r pat;
 #X obj 110 425 r esp;
@@ -81,6 +81,9 @@
 #X obj 105 373 r seq;
 #X msg 749 455 \; esp send p1 bang;
 #X msg 752 494 \; esp send p2 bang;
+#X msg 1184 35 \; amp 0 \; bias 0 \; freq 30;
+#X obj 42 528 bng 21 250 50 0 empty empty empty 0 -11 0 12 #fcfcfc #000000 #000000;
+#X msg 1090 33 \; amp 0.1 \; bias 0 \; freq 440;
 #X connect 0 0 1 0;
 #X connect 1 0 4 0;
 #X connect 1 1 2 0;
@@ -91,6 +94,7 @@
 #X connect 7 0 14 0;
 #X connect 8 0 14 0;
 #X connect 10 0 11 0;
+#X connect 11 0 83 0;
 #X connect 13 0 14 0;
 #X connect 14 0 10 0;
 #X connect 14 1 9 0;

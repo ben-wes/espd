@@ -2,10 +2,10 @@
 #define PD_USE_WIFI             /* messages to/from Pd over wifi TCP */
 #define PD_USE_CONSOLE          /* messages to Pd over "console" (USB serial) */
 /* #define PD_INCLUDEPATCH */   /* load the patch defined in "testpatch.c" */
-#define PD_LYRAT                /* using LyraT or LyraT mini board */
-#define USEADC                  /* enable audio input (output always enabled) */
-#define IOCHANS 1
-#define OBSOLETEAPI 1
+/* #define PD_LYRAT */          /* using LyraT or LyraT mini board */
+ #define USEADC                 /* enable audio input (output always enabled) */
+#define IOCHANS 2
+#define OBSOLETEAPI 0
 
 /* task priorities */
 #define  PRIORITY_WIFI 2
