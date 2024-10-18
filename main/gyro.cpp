@@ -32,7 +32,10 @@ char TAG[] = "gyro";
 extern "C" void gyro_poll(void)
 {
     if (myIMU.dataAvailable() == true)
-        pd_sendgyro( myIMU.getRoll(), myIMU.getPitch(), myIMU.getYaw());
+    {
+        /* pd_sendgyro( myIMU.getRoll(), myIMU.getPitch(), myIMU.getYaw()); */
+        pd_sendgyro(myIMU.getAccelX(), myIMU.getAccelY(), myIMU.getAccelZ());
+    }
 }
 
 extern "C" int gyro_init(void)
@@ -46,7 +49,10 @@ extern "C" int gyro_init(void)
             return (0);
 
         /* enable "rotation vector", readings will be produced every 50 ms */
-    myIMU.enableRotationVector(50);
+    /* myIMU.enableRotationVector(50); */
+
+        /* enable accelerometer */
+    myIMU.enableAccelerometer(50);
     
     return (1);
 }
