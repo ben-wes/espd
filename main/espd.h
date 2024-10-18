@@ -4,8 +4,9 @@
 /* #define PD_INCLUDEPATCH */   /* load the patch defined in "testpatch.c" */
 /* #define PD_LYRAT */          /* using LyraT or LyraT mini board */
 #define USEADC                  /* enable audio input (output always enabled) */
+/* #define PD_USE_GYRO */       /* complex Arts board with BNO085 gyro */
 #define IOCHANS 2
-#define OBSOLETEAPI 0
+/* #define OBSOLETEAPI */       /* need this for LyraT boards */
 
 /* task priorities */
 #define  PRIORITY_WIFI 2
@@ -31,7 +32,6 @@ void pd_bt_poll( void);
 void bt_init( void);
 void pd_bt_writeback(unsigned char *s, int length);
 #endif
-
 
 #ifdef PD_USE_WIFI
 void wifi_init(void);   /* wifi.c - manage 802.11 connection */

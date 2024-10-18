@@ -177,24 +177,17 @@ static void initdacs( void)
         get_i2s_pins(I2S_NUM_0, (board_i2s_pin_t *)(&i2s_pin_cfg));
 #else /* PD_LYRAT */
         i2s_pin_config_t i2s_pin_cfg = {
-#if 0       /* generic board 1 - edit this as needed */
-        .bck_io_num = 13,         /* bit clock */
-        .ws_io_num = 33,          /* Word select, aka left right clock */
-        .data_out_num = 32,       /* Data out from ESP32, to DIN on 38357A */
-        .data_in_num = 35         /* data from ADC */
-#endif
-#if 1   /* complex arts sensorboard */
-        .bck_io_num = 33,         /* bit clock */
-        .ws_io_num = 25,          /* Word select, aka left right clock */
-        .data_out_num = 32,       /* Data out from ESP32, to DIN on 38357A */
-        .data_in_num = 26         /* ADC */
-#endif
+        .bck_io_num = PIN_BIT_CLOCK,    /* bit clock */
+        .ws_io_num = PIN_WORD_SELECT,   /* Word select, aka left right clock */
+        .data_out_num = PIN_DATA_OUT,   /* Data out ESP32 - to DIN on 38357A */
+        .data_in_num = PIN_DATA_IN      /* data from ADC */
         };
 #endif /* PD_LYRAT */
         i2s_set_pin(I2S_NUM_0, &i2s_pin_cfg);
     }               
-}
+
 #else /* OBSOLETEAPI */
+
 static void initdacs( void)
 {
     
@@ -219,10 +212,10 @@ static void initdacs( void)
             I2S_SLOT_MODE_STEREO),
         .gpio_cfg = {
             .mclk = I2S_GPIO_UNUSED,
-            .bclk = 13,
-            .ws = 33,
-            .dout = 32,
-            .din = 35,
+            .bclk = PIN_BIT_CLOCK,
+            .ws = PIN_WORD_SELECT,
+            .dout = PIN_DATA_OUT,
+            .din = PIN_DATA_IN,
             .invert_flags = {
                 .mclk_inv = false,
                 .bclk_inv = false,
