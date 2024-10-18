@@ -1,10 +1,14 @@
+#if defined(_LANGUAGE_C_PLUS_PLUS) || defined(__cplusplus)
+extern "C" {
+#endif
+
 /* #define PD_USE_BLUETOOTH */  /* messages to Pd over bluetooth */
 #define PD_USE_WIFI             /* messages to/from Pd over wifi TCP */
 #define PD_USE_CONSOLE          /* messages to Pd over "console" (USB serial) */
 /* #define PD_INCLUDEPATCH */   /* load the patch defined in "testpatch.c" */
 /* #define PD_LYRAT */          /* using LyraT or LyraT mini board */
 #define USEADC                  /* enable audio input (output always enabled) */
-/* #define PD_USE_GYRO */       /* complex Arts board with BNO085 gyro */
+#define PD_USE_GYRO             /* complex Arts board with BNO085 gyro */
 #define IOCHANS 2
 #define OBSOLETEAPI       /* need this for LyraT boards */
 
@@ -49,3 +53,12 @@ extern char wifi_ipaddr[];
 #define PIN_DATA_OUT 32     /* data out from ESP32 to DAC */
 #define PIN_DATA_IN 35      /* data in from ADC to ESP32 */
 #endif /* PIN_BIT_CLOCK */
+
+#ifdef PD_USE_GYRO
+#include "gyro.h"
+void pd_sendgyro(float roll, float pitch, float yaw);
+#endif
+
+#if defined(_LANGUAGE_C_PLUS_PLUS) || defined(__cplusplus)
+}
+#endif

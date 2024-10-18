@@ -187,7 +187,6 @@ static void initdacs( void)
     }               
 }
 #else /* OBSOLETEAPI */
-
 static void initdacs( void)
 {
     
@@ -348,6 +347,9 @@ void trymem(int foo);
 
 void app_main(void)
 {
+#ifdef PD_USE_GYRO
+    int have_gyro;
+#endif
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
@@ -370,23 +372,24 @@ void app_main(void)
     console_init();
 #endif
 
-    ESP_LOGI(TAG, "[ 2 ] now write some shit");
+#ifdef PD_USE_GYRO
+    if (!(have_gyro = gyro_init()))
+        ESP_LOGE(TAG, "gyro init failed");
+    else ESP_LOGI(TAG, "gyro initialized");
+#endif
+
+    ESP_LOGI(TAG, "Pd is running");
 
     while (1)
     {
-        /*
-            int zz = 0;
-            if (!((zz++)%1000))
-            {
-                trymem(5);
-                ESP_LOGI(TAG, "tick");
-            }
-        */
         pd_pollhost();
         pdmain_tick();
         senddacs();
 #ifdef PD_USE_WIFI
         net_alive();
+#endif
+#ifdef PD_USE_GYRO
+        gyro_poll();
 #endif
     }
 }

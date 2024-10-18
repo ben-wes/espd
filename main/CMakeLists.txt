@@ -52,13 +52,27 @@ set(COMPONENT_SRCS "espd.c pdmain.c \
 ../pd/src/s_inter_gui.c \
 ../wifi/wifi.c \
 ../wifi/net.c \
+gyro.cpp \
+../arduino/SparkFun_BNO080_Arduino_Library.cpp \
+../arduino/SPI.cpp \
+../arduino/Print.cpp \
+../arduino/Wire.cpp \
+../arduino/Stream.cpp \
+../arduino/WString.cpp \
+../arduino/esp32-hal-misc.c \
+../arduino/esp32-hal-gpio.c \
+../arduino/esp32-hal-spi.c \
+../arduino/esp32-hal-i2c.c \
+../arduino/esp32-hal-i2c-slave.c \
+../arduino/esp32-hal-matrix.c \
+../arduino/esp32-hal-cpu.c \
+../arduino/esp32-hal-periman.c \
 ")
 
 
 set(COMPONENT_ADD_INCLUDEDIRS ".")
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -DCOSTABLESIZE=512 -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable")
 
-# set(COMPONENT_ADD_CFLAGS "-DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable")
 
 register_component()

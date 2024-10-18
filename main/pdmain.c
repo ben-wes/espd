@@ -99,6 +99,18 @@ void pdmain_init( void)
 #endif
 }
 
+#ifdef PD_USE_GYRO
+void pd_sendgyro(float roll, float pitch, float yaw)
+{
+    t_atom at[3];
+    SETFLOAT(at, roll);
+    SETFLOAT(at+1, pitch);
+    SETFLOAT(at+2, yaw);
+    if (gensym("gyro")->s_thing)
+        pd_list(gensym("gyro")->s_thing, 0, 3, at);
+}
+#endif
+
 
 void pdmain_tick( void)
 {
