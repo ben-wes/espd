@@ -6,7 +6,7 @@
 #define USEADC                  /* enable audio input (output always enabled) */
 /* #define PD_USE_GYRO */       /* complex Arts board with BNO085 gyro */
 #define IOCHANS 2
-/* #define OBSOLETEAPI */       /* need this for LyraT boards */
+#define OBSOLETEAPI       /* need this for LyraT boards */
 
 /* task priorities */
 #define  PRIORITY_WIFI 2

@@ -185,7 +185,7 @@ static void initdacs( void)
 #endif /* PD_LYRAT */
         i2s_set_pin(I2S_NUM_0, &i2s_pin_cfg);
     }               
-
+}
 #else /* OBSOLETEAPI */
 
 static void initdacs( void)
