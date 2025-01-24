@@ -35,7 +35,7 @@ void tcpreceivertask(void *z)
         return;
     }
 
-    ESP_LOGI(TAG, "connecting...");
+    ESP_LOGI(TAG, "TCP connecting...");
     while ((err = connect(newsocket,
         (struct sockaddr *)&dest_addr, sizeof(dest_addr)) < 0))
     {
@@ -49,6 +49,7 @@ void tcpreceivertask(void *z)
         }
     }
     tcp_socket = newsocket;
+    ESP_LOGI(TAG, "TCP connected.");
     while (1)
     {
         int len = recv(newsocket, rx_buffer, sizeof(rx_buffer) - 1, 0);
