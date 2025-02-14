@@ -147,7 +147,7 @@ static void initdacs( void)
         .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,
 #endif
         .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .dma_buf_count = 16,
+        .dma_buf_count = 4,
         .dma_buf_len = 256,
 #ifdef PD_LYRAT
         .use_apll=1,
