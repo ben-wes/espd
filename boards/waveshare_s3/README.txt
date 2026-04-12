@@ -8,13 +8,26 @@ This tree uses ESP-IDF + the Component Manager package **esp_codec_dev** for
 ES8311 (not the full Espressif ADF). I2C 10/11, I2S MCLK/BCLK/LRCK/DOUT/DIN
 12/13/14/16/15 match the wiki “SPEAKER” table.
 
-Build (from repo root, with IDF export.sh already sourced)
+Build (from repo root)
 ------------------------------------------------------------
+
+Set up the toolchain the same way as in the top-level **README.txt** (Espressif
+getting-started guide): point **IDF_PATH** (and optionally **IDF_TOOLS_PATH**)
+at your ESP-IDF tree, then source **export.sh** so **idf.py** is on **PATH**.
+If you use **ESP-ADF**, its bundled IDF works too, for example:
+
+  export ADF_PATH=/path/to/esp-adf
+  . "$ADF_PATH/esp-idf/export.sh"
+
+Then:
 
   export ESPD_BOARD=waveshare_s3
   idf.py set-target esp32s3
   idf.py fullclean
   idf.py build
+
+**idf.py build** alone is enough to verify the firmware compiles; you do not
+need to flash.
 
 The top-level CMakeLists.txt merges **sdkconfig.defaults** and
 **boards/waveshare_s3/sdkconfig.defaults** when ESPD_BOARD=waveshare_s3 is set in
@@ -22,6 +35,11 @@ the environment (not only on the first cmake run; delete **build/** and
 **sdkconfig** if Kconfig changes seem ignored). Other boards: unset ESPD_BOARD
 and keep using your existing **sdkconfig.lyrat** / **sdkconfig.wroom** workflow
 (copy one to **sdkconfig** as before).
+
+If **idf.py build** fails at the end with **app partition is too small**, your
+**sdkconfig** was probably created before this board picked **partitions_pd.csv**
+(**CONFIG_PARTITION_TABLE_CUSTOM**). Remove **sdkconfig** once and rebuild so
+defaults merge again (factory app slot is **2048K** in **partitions_pd.csv**).
 
 This board fragment enables octal PSRAM (per the WROVER-class S3 module on the
 kit) and uses a 32 KB main task stack.
@@ -122,8 +140,18 @@ Software architecture (IDF)
    triggers the expected path on your IDF version (see Espressif TinyUSB / MSC
    issues around **tud_umount_cb** and VBUS if problems appear).
 
-Implemented today (GPIO optional)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Implemented today (GPIO optional + boot TinyUSB probe)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **boards/waveshare_s3/sdkconfig.defaults** — **CONFIG_TINYUSB_CDC_ENABLED=y**
+  and **UART console** (USB-Serial-JTAG is disabled) because TinyUSB and JTAG
+  USB both use the same internal PHY on ESP32-S3.
+
+- **main/boards/waveshare_s3/waveshare_s3_exio.c** — programs **TCA9554 @ 0x22**
+  (I2C **GPIO10/11**) so **EXIO6/EXIO7** route Type-C **D+/D−** to the SoC USB
+  pins (**GPIO19/20**) before enumeration. Levels are overridable in
+  **board_profile.h** (**ESPD_WAVESHARE_EXIO7_USB_ROUTE_LEVEL**,
+  **ESPD_WAVESHARE_EXIO6_CAMERA_SEL_LEVEL**).
 
 - **main/boards/waveshare_s3/waveshare_s3_usb_state.c** — optional VBUS monitoring:
   - **ESPD_WAVESHARE_VBUS_BACKEND** in **board_profile.h**: **NONE** (default),
@@ -134,6 +162,12 @@ Implemented today (GPIO optional)
     Waveshare register wiki). Ephemeral I2C is used before audio init; after
     **espd_waveshare_s3_audio_init** the shared bus registers a second device at
     0x2D for polling.
+  - **Boot without GPIO/UPS VBUS:** if **ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE**
+    is 1 (default in **board_profile.h**), firmware briefly installs TinyUSB
+    CDC and waits up to **ESPD_WAVESHARE_USB_BOOT_HOST_WAIT_MS** (default 500 ms)
+    for host enumeration (**tud_mounted**). If a host configures the device,
+    a placeholder “disc” loop runs until unplug; otherwise TinyUSB is torn
+    down and Pd starts with only that bounded delay.
   When GPIO backend is used with a valid GPIO after schematic review:
   - **Boot with VBUS present:** blocks in a **placeholder “disc” loop** until
     unplugged, then continues with normal Pd + audio init. (MSC is still TODO.)

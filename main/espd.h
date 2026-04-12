@@ -22,11 +22,31 @@
     the peer machine, and the send and receive ports.  This can be done
     using a "locale.h" or by defining CONFIG_ESP_WIFI_SSID, etc., in
     some other way, such as in the sdkconfig file. */
+#if defined(PD_USE_WIFI)
+#include "sdkconfig.h"
+#endif
 #if defined(CONFIG_LOCALE_FILE)
 #include CONFIG_LOCALE_FILE
 #else
 #if defined(PD_USE_WIFI) && !defined(CONFIG_ESP_WIFI_SSID)
 #include "locale.h"
+#endif
+#endif
+#if defined(PD_USE_WIFI)
+#ifndef CONFIG_ESP_WIFI_SSID
+#define CONFIG_ESP_WIFI_SSID "espd"
+#endif
+#ifndef CONFIG_ESP_WIFI_PASSWORD
+#define CONFIG_ESP_WIFI_PASSWORD ""
+#endif
+#ifndef CONFIG_ESP_WIFI_SENDPORT
+#define CONFIG_ESP_WIFI_SENDPORT 4498
+#endif
+#ifndef CONFIG_ESP_WIFI_LISTENPORT
+#define CONFIG_ESP_WIFI_LISTENPORT 4498
+#endif
+#ifndef CONFIG_ESP_WIFI_SENDADDR
+#define CONFIG_ESP_WIFI_SENDADDR "192.168.4.255"
 #endif
 #endif
 

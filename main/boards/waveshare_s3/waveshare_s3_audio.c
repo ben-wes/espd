@@ -4,6 +4,7 @@
  */
 
 #include "boards/waveshare_s3/board_profile.h"
+#include "boards/waveshare_s3/waveshare_s3_exio.h"
 #include "boards/waveshare_s3/waveshare_s3_usb_state.h"
 #include "driver/i2c_master.h"
 #include "driver/i2s_std.h"
@@ -47,6 +48,9 @@ static esp_err_t es8311_codec_init(i2s_chan_handle_t tx_h, i2s_chan_handle_t rx_
     };
     ESP_RETURN_ON_ERROR(i2c_new_master_bus(&i2c_mst_cfg, &s_i2c_bus), TAG,
         "i2c_new_master_bus");
+
+    if (espd_waveshare_exio_apply_usb_mux(s_i2c_bus) != ESP_OK)
+        ESP_LOGW(TAG, "TCA9554 EXIO mux failed (USB may not enumerate on Type-C)");
 
     audio_codec_i2c_cfg_t i2c_cfg = {
         .port = I2C_NUM_0,

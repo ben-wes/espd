@@ -362,10 +362,7 @@ void app_main(void)
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
 #ifdef ESPD_BOARD_WAVESHARE_S3
-    espd_waveshare_usb_vbus_init();
-    if (espd_waveshare_usb_vbus_monitoring_configured()
-        && espd_waveshare_usb_vbus_present())
-        espd_waveshare_s3_run_disc_mode_until_unplug();
+    espd_waveshare_s3_usb_boot_before_pd();
 #endif
 
     pdmain_init();

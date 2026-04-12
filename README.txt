@@ -106,6 +106,7 @@ then (for either type of board):
 
 (optional:) idf.py menuconfig
 idf.py build
+To verify the firmware without writing flash, stop after **idf.py build**.
 idf.py flash
 idf.py monitor
 

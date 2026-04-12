@@ -320,7 +320,19 @@ void canvas_finderror(const void *error_object) {}
 void canvas_setcursor(t_canvas *x, unsigned int cursornum) {}
 void canvas_setgraph(t_glist *x, int flag, int nogoprect) {}
 int canvas_hitbox(t_canvas *x, t_gobj *y, int xpos, int ypos,
-    int *x1p, int *y1p, int *x2p, int *y2p) {return (0);}
+    int *x1p, int *y1p, int *x2p, int *y2p, int extrapix)
+{
+    (void)x;
+    (void)y;
+    (void)xpos;
+    (void)ypos;
+    (void)x1p;
+    (void)y1p;
+    (void)x2p;
+    (void)y2p;
+    (void)extrapix;
+    return (0);
+}
 void canvas_restoreconnections(t_canvas *x) {}
 void canvas_reload(t_symbol *name, t_symbol *dir, t_glist *except) {}
 
@@ -333,6 +345,20 @@ int sys_zoom_open = 1;
 int sys_zoomfontwidth(int fontsize, int zoom, int worstcase) { return (1);}
 int sys_zoomfontheight(int fontsize, int zoom, int worstcase) { return (1);}
 int sys_load_lib(t_canvas *canvas, const char *classname) { return (0);}
+
+t_rtext *glist_textedfor(t_glist *gl)
+{
+    (void)gl;
+    return 0;
+}
+
+void glist_settexted(t_glist *gl, t_rtext *x)
+{
+    (void)gl;
+    (void)x;
+}
+
+int sys_batch;
 
 void s_inter_newpdinstance( void) {}
 void x_midi_newpdinstance( void) {}
@@ -544,6 +570,8 @@ struct _instanceeditor
 
 extern t_class *text_class;
 
+#define THISED (pd_this->pd_gui->i_editor)
+
 void canvas_startmotion(t_canvas *x)
 {
     int xval, yval;
@@ -557,25 +585,25 @@ void canvas_startmotion(t_canvas *x)
 
 void g_editor_newpdinstance(void)
 {
-    EDITOR = getbytes(sizeof(*EDITOR));
+    THISED = getbytes(sizeof(*THISED));
         /* other stuff is null-checked but this needs to exist: */
-    EDITOR->copy_binbuf = binbuf_new();
+    THISED->copy_binbuf = binbuf_new();
 }
 
 void g_editor_freepdinstance(void)
 {
-    if (EDITOR->copy_binbuf)
-        binbuf_free(EDITOR->copy_binbuf);
-    if (EDITOR->canvas_undo_buf)
+    if (THISED->copy_binbuf)
+        binbuf_free(THISED->copy_binbuf);
+    if (THISED->canvas_undo_buf)
     {
-        if (!EDITOR->canvas_undo_fn)
+        if (!THISED->canvas_undo_fn)
             bug("g_editor_freepdinstance");
-        else (*EDITOR->canvas_undo_fn)
-            (EDITOR->canvas_undo_canvas, EDITOR->canvas_undo_buf, UNDO_FREE);
+        else (*THISED->canvas_undo_fn)
+            (THISED->canvas_undo_canvas, THISED->canvas_undo_buf, UNDO_FREE);
     }
-    if (EDITOR->canvas_findbuf)
-        binbuf_free(EDITOR->canvas_findbuf);
-    freebytes(EDITOR, sizeof(*EDITOR));
+    if (THISED->canvas_findbuf)
+        binbuf_free(THISED->canvas_findbuf);
+    freebytes(THISED, sizeof(*THISED));
 }
 
 void canvas_connect(t_canvas *x, t_floatarg fwhoout, t_floatarg foutno,
@@ -586,8 +614,9 @@ void canvas_connect(t_canvas *x, t_floatarg fwhoout, t_floatarg foutno,
     t_object *objsrc, *objsink;
     t_outconnect *oc;
     int nin = whoin, nout = whoout;
-    if (EDITOR->paste_canvas == x) whoout += EDITOR->paste_onset,
-        whoin += EDITOR->paste_onset;
+    if (THISED->paste_canvas == x)
+        whoout += THISED->paste_onset,
+        whoin += THISED->paste_onset;
     for (src = x->gl_list; whoout; src = src->g_next, whoout--)
         if (!src->g_next) {
             src = NULL;

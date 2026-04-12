@@ -60,6 +60,7 @@ set(MAIN_SRCS
 if(DEFINED ENV{ESPD_BOARD} AND "$ENV{ESPD_BOARD}" STREQUAL "waveshare_s3")
     list(APPEND MAIN_SRCS
         "boards/waveshare_s3/waveshare_s3_audio.c"
+        "boards/waveshare_s3/waveshare_s3_exio.c"
         "boards/waveshare_s3/waveshare_s3_usb_state.c")
     set(CMAKE_C_FLAGS
         "${CMAKE_C_FLAGS} -DESPD_BOARD_WAVESHARE_S3=1")
@@ -67,18 +68,25 @@ endif()
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable")
 
+set(MAIN_REQUIRES
+    console
+    driver
+    nvs_flash
+    esp_timer
+    esp_event
+    esp_netif
+    esp_wifi
+    esp_driver_i2s
+    esp_driver_i2c
+    esp_codec_dev
+    lwip
+)
+if(DEFINED ENV{ESPD_BOARD} AND "$ENV{ESPD_BOARD}" STREQUAL "waveshare_s3")
+    list(APPEND MAIN_REQUIRES esp_tinyusb)
+endif()
+
 idf_component_register(
     SRCS ${MAIN_SRCS}
     INCLUDE_DIRS "."
-    REQUIRES
-        driver
-        nvs_flash
-        esp_timer
-        esp_event
-        esp_netif
-        esp_wifi
-        esp_driver_i2s
-        esp_driver_i2c
-        esp_codec_dev
-        lwip
+    REQUIRES ${MAIN_REQUIRES}
 )

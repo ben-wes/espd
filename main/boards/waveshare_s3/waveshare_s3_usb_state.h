@@ -15,6 +15,9 @@ void espd_waveshare_usb_vbus_init(void);
 bool espd_waveshare_usb_vbus_monitoring_configured(void);
 bool espd_waveshare_usb_vbus_present(void);
 
+/* GPIO/UPS VBUS stub, then optional TinyUSB host-enumeration wait (see board_profile.h). */
+void espd_waveshare_s3_usb_boot_before_pd(void);
+
 /* After ES8311 has created the shared I2C master bus (same SCL/SDA as UPS). */
 void espd_waveshare_usb_state_register_i2c_bus(i2c_master_bus_handle_t bus);
 

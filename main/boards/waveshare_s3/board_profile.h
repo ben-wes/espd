@@ -24,6 +24,40 @@
 #define ESPD_WAVESHARE_I2C_SDA_GPIO 11
 
 /*
+ * BAT_ADC: Waveshare v1.1 pinout table names GPIO1 (with a 0 Ω solder option);
+ * some older charger-page crops said GPIO6 — treat as a doc revision mismatch
+ * and confirm on your PCB before wiring ADC reads in firmware.
+ */
+
+/*
+ * TCA9554 on the same I2C bus as ES8311 (address per schematic: A0=0 A1=1 A2=0).
+ * EXIO6/EXIO7 feed the FSUSB42UMX switch (Camera_SEL / USB path).
+ */
+#define ESPD_WAVESHARE_TCA9554_I2C_ADDR 0x22
+
+/* EXIO7 level that routes Type-C D+/D− to the SoC USB pins (GPIO19/20), not UART43/44. */
+#ifndef ESPD_WAVESHARE_EXIO7_USB_ROUTE_LEVEL
+#define ESPD_WAVESHARE_EXIO7_USB_ROUTE_LEVEL 1
+#endif
+
+/* EXIO6 = Camera_SEL on the USB switch; set per schematic if USB enumeration fails. */
+#ifndef ESPD_WAVESHARE_EXIO6_CAMERA_SEL_LEVEL
+#define ESPD_WAVESHARE_EXIO6_CAMERA_SEL_LEVEL 0
+#endif
+
+/*
+ * Boot-time “cable plugged” check: bring up TinyUSB CDC briefly and wait for host
+ * enumeration (bounded). No cable / no host completes within the timeout (~500 ms).
+ */
+#ifndef ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE
+#define ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE 1
+#endif
+
+#ifndef ESPD_WAVESHARE_USB_BOOT_HOST_WAIT_MS
+#define ESPD_WAVESHARE_USB_BOOT_HOST_WAIT_MS 500
+#endif
+
+/*
  * VBUS source for USB-disk vs audio (see waveshare_s3_usb_state):
  *   NONE — default. Right choice for stock board + battery only (no add-ons);
  *           no I2C device at 0x2D on this PCB, and the audio wiki does not name a

@@ -5,12 +5,21 @@
 #include "waveshare_s3_usb_state.h"
 
 #include "board_profile.h"
+#include "waveshare_s3_exio.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
+#if ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE
+#include "tinyusb.h"
+#include "tinyusb_cdc_acm.h"
+#include "tinyusb_default_config.h"
+#include "tusb.h"
+#endif
 
 static const char *TAG = "waveshare_usb";
 
@@ -168,6 +177,78 @@ void espd_waveshare_s3_run_disc_mode_until_unplug(void)
     while (espd_waveshare_usb_vbus_present())
         vTaskDelay(pdMS_TO_TICKS(200));
     ESP_LOGI(TAG, "VBUS released — continuing with audio startup.");
+}
+
+#if ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE
+
+static void espd_waveshare_usb_boot_tinyusb_cable_path(void)
+{
+    if (ESPD_WAVESHARE_USB_BOOT_HOST_WAIT_MS <= 0)
+        return;
+
+    esp_err_t ex = espd_waveshare_exio_apply_usb_mux_ephemeral();
+    if (ex != ESP_OK)
+        ESP_LOGW(TAG, "EXIO mux before TinyUSB: %s", esp_err_to_name(ex));
+
+    const tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
+    if (tinyusb_driver_install(&tusb_cfg) != ESP_OK) {
+        ESP_LOGW(TAG, "tinyusb_driver_install failed");
+        return;
+    }
+
+    const tinyusb_config_cdcacm_t acm_cfg = {
+        .cdc_port = TINYUSB_CDC_ACM_0,
+        .callback_rx = NULL,
+        .callback_rx_wanted_char = NULL,
+        .callback_line_state_changed = NULL,
+        .callback_line_coding_changed = NULL,
+    };
+    if (tinyusb_cdcacm_init(&acm_cfg) != ESP_OK) {
+        ESP_LOGW(TAG, "tinyusb_cdcacm_init failed");
+        tinyusb_driver_uninstall();
+        return;
+    }
+
+    const int64_t deadline_us =
+        esp_timer_get_time() + (int64_t)ESPD_WAVESHARE_USB_BOOT_HOST_WAIT_MS * 1000;
+    bool host_configured = false;
+
+    while (esp_timer_get_time() < deadline_us) {
+        if (tud_mounted()) {
+            host_configured = true;
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+
+    if (host_configured) {
+        ESP_LOGW(TAG,
+                 "USB host enumerated this device — MSC disk mode is not implemented yet. "
+                 "Unplug Type-C (or disconnect USB) to start Pd.");
+        while (tud_mounted())
+            vTaskDelay(pdMS_TO_TICKS(50));
+        ESP_LOGI(TAG, "USB device session ended — continuing with Pd startup.");
+    }
+
+    if (tinyusb_cdcacm_deinit(TINYUSB_CDC_ACM_0) != ESP_OK)
+        ESP_LOGW(TAG, "tinyusb_cdcacm_deinit failed");
+    if (tinyusb_driver_uninstall() != ESP_OK)
+        ESP_LOGW(TAG, "tinyusb_driver_uninstall failed");
+}
+
+#endif /* ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE */
+
+void espd_waveshare_s3_usb_boot_before_pd(void)
+{
+    espd_waveshare_usb_vbus_init();
+
+    if (espd_waveshare_usb_vbus_monitoring_configured()
+        && espd_waveshare_usb_vbus_present())
+        espd_waveshare_s3_run_disc_mode_until_unplug();
+
+#if ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE
+    espd_waveshare_usb_boot_tinyusb_cable_path();
+#endif
 }
 
 void espd_waveshare_s3_poll_usb_hotplug_restart(void)
