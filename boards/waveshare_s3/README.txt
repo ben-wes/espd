@@ -128,7 +128,8 @@ Implemented today (GPIO optional)
 - **main/boards/waveshare_s3/waveshare_s3_usb_state.c** — optional VBUS monitoring:
   - **ESPD_WAVESHARE_VBUS_BACKEND** in **board_profile.h**: **NONE** (default),
     **GPIO** (set **ESPD_WAVESHARE_USB_VBUS_GPIO** ≥ 0), or **UPS_HAT_E** for
-    Waveshare **UPS HAT (E)** on the same I2C bus as ES8311: slave **0x2D**,
+    Waveshare **UPS HAT (E)** add-on (not described on the ESP32-S3-AUDIO-Board
+    wiki as onboard): same I2C bus as ES8311, slave **0x2D**,
     read-only register **0x02**, **bit 5 == 1** ⇒ Type-C VBUS powered (per
     Waveshare register wiki). Ephemeral I2C is used before audio init; after
     **espd_waveshare_s3_audio_init** the shared bus registers a second device at
