@@ -23,6 +23,10 @@
 #endif /* OBSOLETEAPI */
 
 #include "esp_log.h"
+#include "esp_err.h"
+#ifdef ESPD_BOARD_WAVESHARE_S3
+#include "boards/waveshare_s3/waveshare_s3_audio.h"
+#endif
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "esp_timer.h"
@@ -190,7 +194,12 @@ static void initdacs( void)
 
 static void initdacs( void)
 {
-    
+#if defined(ESPD_BOARD_WAVESHARE_S3)
+    esp_err_t e = espd_waveshare_s3_audio_init(&tx_handle, &rx_handle);
+    if (e != ESP_OK)
+        ESP_LOGE(TAG, "waveshare audio init failed: %s", esp_err_to_name(e));
+    return;
+#endif
     /* Get the default channel configuration by the helper macro.
     * This helper macro is defined in `i2s_common.h` and shared by all the I2S
      communication modes. */

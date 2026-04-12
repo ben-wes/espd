@@ -7,5 +7,11 @@ cmake_minimum_required(VERSION 3.5)
 # include($ENV{ADF_PATH}/CMakeLists.txt)
 #
 
+# Optional board-specific sdkconfig defaults (see boards/*/README.txt)
+if(DEFINED ENV{ESPD_BOARD} AND "$ENV{ESPD_BOARD}" STREQUAL "waveshare_s3")
+  set(SDKCONFIG_DEFAULTS
+    "${CMAKE_SOURCE_DIR}/sdkconfig.defaults;${CMAKE_SOURCE_DIR}/boards/waveshare_s3/sdkconfig.defaults")
+endif()
+
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(espd)

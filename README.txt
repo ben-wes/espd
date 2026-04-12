@@ -55,6 +55,11 @@ boards are included as "sdkconfig.lyrat" and "sdkconfig.lyratmini", and a sample
 for a bare WROOM module is included as "sdkconfig.wroom".   You can rename one
 of these as "sdkconfig" before invoking the compiler.
 
+For the Waveshare ESP32-S3-AUDIO / AI Smart Speaker board, use ESP-IDF (not full
+ADF) with the Component Manager codec package: set the environment variable
+ESPD_BOARD=waveshare_s3 and follow boards/waveshare_s3/README.txt. That keeps
+LyraT / WROOM sdkconfig.* samples unchanged for other hardware.
+
 In addition to the sources youre looking at you'll need Pd, preferably the
 latest version, although I'm testing this with Pd commit
 177350fc4999b74ea28a12ba2981baa6ae04c6f0 (0.55-1 with a couple of tweaks added).

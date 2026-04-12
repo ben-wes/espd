@@ -1,3 +1,9 @@
+#ifndef ESPD_H
+#define ESPD_H
+
+#if defined(ESPD_BOARD_WAVESHARE_S3)
+#include "boards/waveshare_s3/board_profile.h"
+#else
 /* #define PD_USE_BLUETOOTH */  /* messages to Pd over bluetooth */
 #define PD_USE_WIFI             /* messages to/from Pd over wifi TCP */
 #define PD_USE_CONSOLE          /* messages to Pd over "console" (USB serial) */
@@ -7,6 +13,7 @@
 /* #define PD_USE_GYRO */       /* complex Arts board with BNO085 gyro */
 #define IOCHANS 2
 #define OBSOLETEAPI       /* need this for LyraT boards */
+#endif
 
 /* task priorities */
 #define  PRIORITY_WIFI 2
@@ -49,3 +56,5 @@ extern char wifi_ipaddr[];
 #define PIN_DATA_OUT 32     /* data out from ESP32 to DAC */
 #define PIN_DATA_IN 35      /* data in from ADC to ESP32 */
 #endif /* PIN_BIT_CLOCK */
+
+#endif /* ESPD_H */

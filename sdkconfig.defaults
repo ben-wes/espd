@@ -1,0 +1,3 @@
+# Optional project-wide Kconfig defaults (all boards).
+# Board-specific fragments live under boards/*/sdkconfig.defaults and are
+# merged when ESPD_BOARD is set (see root CMakeLists.txt).
