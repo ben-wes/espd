@@ -99,6 +99,7 @@ void pdmain_init( void)
         binbuf_eval(b, &pd_canvasmaker, 0, 0);
         canvas_loadbang((t_canvas *)s__X.s_thing);
         vmess(s__X.s_thing, gensym("pop"), "i", 0);
+        canvas_update_dsp();
         glob_setfilename(0, &s_, &s_);
         binbuf_free(b);
     }
@@ -108,7 +109,7 @@ void pdmain_init( void)
 
 void pdmain_tick( void)
 {
-    memset(soundout, 0, 64*sizeof(float));
+    memset(soundout, 0, (size_t)sys_get_outchannels() * DEFDACBLKSIZE * sizeof(t_sample));
     sched_tick();
 }
 
@@ -131,6 +132,8 @@ static void glob_endnew(void *dummy)
     {
         canvas_loadbang((t_canvas *)s__X.s_thing);
         vmess(s__X.s_thing, gensym("pop"), "i", 0);
+        /* loadbang may send dsp 1; rebuild graph once canvas is complete */
+        canvas_update_dsp();
     }
     glob_setfilename(0, &s_, &s_);
 }

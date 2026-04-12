@@ -20,8 +20,8 @@
 
     /* if WIFI is enabled we need to define the WIFI name and password,
     the peer machine, and the send and receive ports.  This can be done
-    using a "locale.h" or by defining CONFIG_ESP_WIFI_SSID, etc., in
-    some other way, such as in the sdkconfig file. */
+    using main/locale.h (copy from locale.h.example) or by defining
+    CONFIG_ESP_WIFI_SSID, etc., in sdkconfig / compile flags. */
 #if defined(PD_USE_WIFI)
 #include "sdkconfig.h"
 #endif
@@ -93,6 +93,8 @@ extern char wifi_ipaddr[];
 extern int espd_main_pd_loaded_from_store;
 #ifdef PD_USE_WIFI
 extern int espd_wifi_net_enabled;
+/** True after net_init() has finished (TCP patch link up). Safe gate for net_send*. */
+int espd_net_send_ready(void);
 #endif
 
 #endif /* ESPD_H */

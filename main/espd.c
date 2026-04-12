@@ -113,8 +113,16 @@ void senddacs( void)
     if (ret != ESP_OK)
         ESP_LOGE(TAG, "error writing");
 #else
+#if defined(ESPD_BOARD_WAVESHARE_S3)
+    if (espd_waveshare_s3_codec_write(poodle, (int)sizeof(poodle)) != 0)
+        ESP_LOGE(TAG, "waveshare codec write failed");
+#ifndef USEADC
+    (void)transferred;
+#endif
+#else
     i2s_channel_write(tx_handle, poodle, sizeof(poodle), &transferred,
         portMAX_DELAY);
+#endif
 #endif
 
 #ifdef USEADC
@@ -124,8 +132,15 @@ void senddacs( void)
     if (ret != ESP_OK)
         ESP_LOGE(TAG, "error reading");
 #else
+#if defined(ESPD_BOARD_WAVESHARE_S3)
+    if (espd_waveshare_s3_codec_read(poodle, (int)sizeof(poodle)) != 0) {
+        i2s_channel_read(rx_handle, poodle, sizeof(poodle), &transferred,
+            portMAX_DELAY);
+    }
+#else
     i2s_channel_read(rx_handle, poodle, sizeof(poodle), &transferred,
         portMAX_DELAY);
+#endif
 #endif
     
     for (i = j = 0; i < BLKSIZE; i++, j += IOCHANS)
@@ -364,8 +379,10 @@ void pdmain_print( const char *s)
         pd_bt_writeback((unsigned char *)y, strlen(y));
 #endif
 #ifdef PD_USE_WIFI
-    net_sendudp(y, strlen(y), CONFIG_ESP_WIFI_SENDPORT); 
-    net_sendtcp(y, strlen(y));
+    if (espd_wifi_net_enabled && espd_net_send_ready()) {
+        net_sendudp(y, strlen(y), CONFIG_ESP_WIFI_SENDPORT);
+        net_sendtcp(y, strlen(y));
+    }
 #endif
 }
 
