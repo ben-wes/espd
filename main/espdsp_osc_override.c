@@ -1,20 +1,25 @@
 /* espdsp_osc_override.c - ESP32-friendly tilde overrides (float DSP, no double)
  *
- * Stock d_osc.c / d_osc.h use double + UNITBIT32 phase tricks; Xtensa has no
- * hardware double, so those inner loops are costly.
+ * After d_osc_setup() (and after d_array_setup() has registered tabread4~),
+ * we re-register these names so embedded builds use the fast paths. Stock
+ * classes remain available as *~_aliased (see m_class.c).
  *
- * After d_osc_setup(), we re-register osc~, phasor~, cos~, vcf~, tabosc4~.
- * Vanilla creators move to *~_aliased (see m_class.c). Patches keep the same
- * object names.
+ *   Overridden: osc~, phasor~, cos~, vcf~, tabosc4~, tabread4~
+ *
+ * d_osc.c / d_osc.h use double + UNITBIT32 in hot loops; tabread4~ used
+ * double for index sum. Xtensa has no hardware double.
  *
  * Convention (small delta vs desktop Pd): our phasor~ outputs phase in [0,1)
- * per cycle; cos~ treats input as phase in cycles (0..1 = one cycle), same
- * scaling as feeding our phasor straight into cos~. Chains that relied on the
- * exact Hölderich bit layout may differ slightly; use *~_aliased if needed.
+ * per cycle; cos~ treats input as phase in cycles (0..1 = one cycle). Chains
+ * that relied on the exact Hölderich bit layout may differ; use *~_aliased.
+ *
+ * tabread4~ uses duplicated d_array.c arrayvec helpers (they are static there);
+ * keep in sync when updating the pd submodule.
  */
 
 #include "../pd/src/m_pd.h"
 #include "../pd/src/m_imp.h"
+#include "../pd/src/g_canvas.h"
 #include <math.h>
 
 #ifndef M_PI
@@ -33,6 +38,250 @@ static t_class *espdsp_phasor_class;
 static t_class *espdsp_cos_class;
 static t_class *espdsp_sigvcf_class;
 static t_class *espdsp_tabosc4_class;
+static t_class *espdsp_tabread4_class;
+
+#ifndef ESPDSP_MAX_PHASE
+#define ESPDSP_MAX_PHASE 0x7fffffff
+#endif
+
+/* ----- tabread4~ : arrayvec copy (d_array.c helpers are file-static there) -- */
+
+typedef struct _espdsp_dsparray
+{
+    t_symbol *d_symbol;
+    t_gpointer d_gp;
+    int d_phase;
+    void *d_owner;
+} t_espdsp_dsparray;
+
+typedef struct _espdsp_arrayvec
+{
+    int v_n;
+    t_espdsp_dsparray *v_vec;
+} t_espdsp_arrayvec;
+
+static int espdsp_dsparray_get_array(t_espdsp_dsparray *d, int *npoints,
+    t_word **vec, int recover)
+{
+    t_garray *a;
+
+    if (gpointer_check(&d->d_gp, 0))
+    {
+        *vec = (t_word *)d->d_gp.gp_stub->gs_un.gs_array->a_vec;
+        *npoints = d->d_gp.gp_stub->gs_un.gs_array->a_n;
+        return 1;
+    }
+    else if (recover || d->d_gp.gp_stub)
+    {
+        if (!(a = (t_garray *)pd_findbyclass(d->d_symbol, garray_class)))
+        {
+            if (d->d_owner && *d->d_symbol->s_name)
+                pd_error(d->d_owner, "%s: no such array", d->d_symbol->s_name);
+            gpointer_unset(&d->d_gp);
+            return 0;
+        }
+        else if (!garray_getfloatwords(a, npoints, vec))
+        {
+            if (d->d_owner)
+                pd_error(d->d_owner, "%s: bad template", d->d_symbol->s_name);
+            gpointer_unset(&d->d_gp);
+            return 0;
+        }
+        else
+        {
+            gpointer_setarray(&d->d_gp, garray_getarray(a), *vec);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void espdsp_arrayvec_testvec(t_espdsp_arrayvec *v)
+{
+    int i, vecsize;
+    t_word *vec;
+    for (i = 0; i < v->v_n; i++)
+    {
+        if (*v->v_vec[i].d_symbol->s_name)
+            espdsp_dsparray_get_array(&v->v_vec[i], &vecsize, &vec, 1);
+    }
+}
+
+static void espdsp_arrayvec_set(t_espdsp_arrayvec *v, int argc, t_atom *argv)
+{
+    int i, oldsize = v->v_n;
+    void *owner = v->v_vec[0].d_owner;
+    if (!argc)
+    {
+        for (i = 0; i < v->v_n; i++)
+        {
+            gpointer_unset(&v->v_vec[i].d_gp);
+            v->v_vec[i].d_symbol = &s_;
+        }
+        return;
+    }
+    for (i = 0; i < v->v_n; i++)
+        gpointer_unset(&v->v_vec[i].d_gp);
+    if (argc != oldsize)
+    {
+        v->v_vec = (t_espdsp_dsparray *)resizebytes(v->v_vec,
+            oldsize * sizeof(*v->v_vec), argc * sizeof(*v->v_vec));
+        v->v_n = argc;
+        for (i = oldsize; i < v->v_n; i++)
+        {
+            gpointer_init(&v->v_vec[i].d_gp);
+            v->v_vec[i].d_owner = owner;
+            v->v_vec[i].d_phase = ESPDSP_MAX_PHASE;
+        }
+    }
+    for (i = 0; i < v->v_n; i++)
+    {
+        if (argv[i].a_type != A_SYMBOL)
+            pd_error(owner,
+                "expected symbolic array name, got number instead"),
+                v->v_vec[i].d_symbol = &s_;
+        else
+        {
+            v->v_vec[i].d_phase = ESPDSP_MAX_PHASE;
+            v->v_vec[i].d_symbol = argv[i].a_w.w_symbol;
+        }
+    }
+    if (pd_getdspstate())
+        espdsp_arrayvec_testvec(v);
+}
+
+static void espdsp_arrayvec_init(t_espdsp_arrayvec *v, void *x,
+    int rawargc, t_atom *rawargv)
+{
+    int i, argc;
+    t_atom a, *argv;
+    if (rawargc == 0)
+    {
+        argc = 1;
+        SETSYMBOL(&a, &s_);
+        argv = &a;
+    }
+    else
+        argc = rawargc, argv = rawargv;
+
+    v->v_vec = (t_espdsp_dsparray *)getbytes(argc * sizeof(*v->v_vec));
+    v->v_n = argc;
+    for (i = 0; i < v->v_n; i++)
+    {
+        v->v_vec[i].d_owner = x;
+        v->v_vec[i].d_phase = ESPDSP_MAX_PHASE;
+        gpointer_init(&v->v_vec[i].d_gp);
+    }
+    espdsp_arrayvec_set(v, argc, argv);
+}
+
+static void espdsp_arrayvec_free(t_espdsp_arrayvec *v)
+{
+    int i;
+    for (i = 0; i < v->v_n; i++)
+        gpointer_unset(&v->v_vec[i].d_gp);
+    freebytes(v->v_vec, v->v_n * sizeof(*v->v_vec));
+}
+
+typedef struct _espdsp_tabread4
+{
+    t_object x_obj;
+    t_espdsp_arrayvec x_v;
+    t_float x_f;
+} t_espdsp_tabread4;
+
+static void *espdsp_tabread4_new(t_symbol *s, int argc, t_atom *argv)
+{
+    t_espdsp_tabread4 *x = (t_espdsp_tabread4 *)pd_new(espdsp_tabread4_class);
+    (void)s;
+    espdsp_arrayvec_init(&x->x_v, x, argc, argv);
+    signalinlet_new(&x->x_obj, 0);
+    outlet_new(&x->x_obj, gensym("signal"));
+    x->x_f = 0;
+    return (x);
+}
+
+static t_int *espdsp_tabread4_perform(t_int *w)
+{
+    t_espdsp_dsparray *d = (t_espdsp_dsparray *)(w[1]);
+    t_sample *in = (t_sample *)(w[2]);
+    t_sample *onset = (t_sample *)(w[3]);
+    t_sample *out = (t_sample *)(w[4]);
+    int n = (int)(w[5]);
+    int maxindex, i;
+    t_word *buf, *wp;
+    const t_sample one_over_six = 1.f / 6.f;
+
+    if (!espdsp_dsparray_get_array(d, &maxindex, &buf, 0))
+        goto zero;
+
+    maxindex -= 3;
+    if (maxindex < 1)
+        goto zero;
+
+    for (i = 0; i < n; i++)
+    {
+        t_float findex = *in++ + *onset++;
+        int index = (int)findex;
+        t_sample frac, a, b, c, d, cminusb;
+        if (index < 1)
+            index = 1, frac = 0;
+        else if (index > maxindex)
+            index = maxindex, frac = 1;
+        else
+            frac = findex - (t_float)index;
+        wp = buf + index;
+        a = wp[-1].w_float;
+        b = wp[0].w_float;
+        c = wp[1].w_float;
+        d = wp[2].w_float;
+        cminusb = c - b;
+        *out++ = b + frac * (
+            cminusb - one_over_six * ((t_sample)1.f - frac) * (
+                (d - a - (t_sample)3.0f * cminusb) * frac +
+                (d + a * (t_sample)2.0f - b * (t_sample)3.0f)
+            )
+        );
+    }
+    return (w + 6);
+ zero:
+    while (n--)
+        *out++ = 0;
+
+    return (w + 6);
+}
+
+static void espdsp_tabread4_set(t_espdsp_tabread4 *x, t_symbol *s,
+    int argc, t_atom *argv)
+{
+    int nchans = x->x_v.v_n;
+    (void)s;
+    espdsp_arrayvec_set(&x->x_v, argc, argv);
+    if (x->x_v.v_n != nchans)
+        canvas_update_dsp();
+}
+
+static void espdsp_tabread4_dsp(t_espdsp_tabread4 *x, t_signal **sp)
+{
+    int i, length = sp[0]->s_length;
+    int nchans = x->x_v.v_n;
+    if (sp[0]->s_nchans > nchans)
+        nchans = sp[0]->s_nchans;
+    if (sp[1]->s_nchans > nchans)
+        nchans = sp[1]->s_nchans;
+    signal_setmultiout(&sp[2], nchans);
+    espdsp_arrayvec_testvec(&x->x_v);
+    for (i = 0; i < nchans; i++)
+        dsp_add(espdsp_tabread4_perform, 5, x->x_v.v_vec + (i % x->x_v.v_n),
+            sp[0]->s_vec + (i % sp[0]->s_nchans) * length,
+            sp[1]->s_vec + (i % sp[1]->s_nchans) * length,
+            sp[2]->s_vec + i * length, (t_int)length);
+}
+
+static void espdsp_tabread4_free(t_espdsp_tabread4 *x)
+{
+    espdsp_arrayvec_free(&x->x_v);
+}
 
 /* ----- shared cosine table (linear interp; tab[i+1] valid for i < TABSIZE) */
 
@@ -538,4 +787,13 @@ void espdsp_osc_override_setup(void)
         gensym("set"), A_SYMBOL, 0);
     class_addmethod(espdsp_tabosc4_class, (t_method)espdsp_tabosc4_ft1,
         gensym("ft1"), A_FLOAT, 0);
+
+    espdsp_tabread4_class = class_new(gensym("tabread4~"),
+        (t_newmethod)espdsp_tabread4_new, (t_method)espdsp_tabread4_free,
+        sizeof(t_espdsp_tabread4), CLASS_MULTICHANNEL, A_GIMME, 0);
+    CLASS_MAINSIGNALIN(espdsp_tabread4_class, t_espdsp_tabread4, x_f);
+    class_addmethod(espdsp_tabread4_class, (t_method)espdsp_tabread4_dsp,
+        gensym("dsp"), A_CANT, 0);
+    class_addmethod(espdsp_tabread4_class, (t_method)espdsp_tabread4_set,
+        gensym("set"), A_GIMME, 0);
 }

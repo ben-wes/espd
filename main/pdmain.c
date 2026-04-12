@@ -237,9 +237,9 @@ void conf_init(void)
     d_dac_setup();
     d_ctl_setup();
     d_osc_setup();
-    espdsp_osc_override_setup();
     d_arithmetic_setup();
     d_array_setup();
+    espdsp_osc_override_setup();
     clone_setup();
     d_delay_setup();
     d_filter_setup();
