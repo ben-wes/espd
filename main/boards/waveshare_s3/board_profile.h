@@ -24,9 +24,24 @@
 #define ESPD_WAVESHARE_I2C_SDA_GPIO 11
 
 /*
- * Optional Type-C VBUS sense for USB-disk vs audio (see waveshare_s3_usb_state).
- * Set to the GPIO wired from VBUS (via divider or comparator) per schematic; -1
- * leaves the legacy behaviour (always start audio; no VBUS hotplug).
+ * VBUS source for USB-disk vs audio (see waveshare_s3_usb_state):
+ *   NONE — no monitoring (always audio unless you add MSC boot policy later).
+ *   GPIO — ESPD_WAVESHARE_USB_VBUS_GPIO >= 0, divider/comparator from Type-C VBUS.
+ *   UPS_HAT_E — Waveshare UPS HAT (E) on the same I2C bus as ES8311 (addr 0x2D);
+ *               charging register 0x02, bit 5 == 1 means VBUS powered (wiki).
+ */
+#define ESPD_WAVESHARE_VBUS_BACKEND_NONE 0
+#define ESPD_WAVESHARE_VBUS_BACKEND_GPIO 1
+#define ESPD_WAVESHARE_VBUS_BACKEND_UPS_HAT_E 2
+#define ESPD_WAVESHARE_VBUS_BACKEND ESPD_WAVESHARE_VBUS_BACKEND_NONE
+
+#define ESPD_WAVESHARE_UPS_HAT_I2C_ADDR 0x2D
+#define ESPD_WAVESHARE_UPS_HAT_REG_CHARGING 0x02
+#define ESPD_WAVESHARE_UPS_HAT_VBUS_BIT 5
+
+/*
+ * Used when ESPD_WAVESHARE_VBUS_BACKEND == ESPD_WAVESHARE_VBUS_BACKEND_GPIO.
+ * -1 = N/A (ignored unless backend is GPIO).
  */
 #define ESPD_WAVESHARE_USB_VBUS_GPIO (-1)
 

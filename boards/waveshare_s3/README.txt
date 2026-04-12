@@ -67,8 +67,9 @@ Hardware (Waveshare ESP32-S3-AUDIO-Board)
   without guessing, open the **official schematic** (linked from the wiki) and
   check whether **VBUS** (or a USB power-detect line from the Type-C front-end)
   reaches the ESP32-S3 or the **TCA9555** expander. If you find a net (e.g.
-  divider into a GPIO), record that pin as **ESPD_USB_VBUS_GPIO** (or expander
-  bit + I2C read) for the firmware.
+  divider into a GPIO), use **ESPD_WAVESHARE_VBUS_BACKEND_GPIO** and
+  **ESPD_WAVESHARE_USB_VBUS_GPIO** in **board_profile.h** (or expander + I2C).
+  If you stack **UPS HAT (E)** on the ES8311 I2C bus, use **UPS_HAT_E** instead.
 - Espressif’s USB device guide (ESP32-S3) states that **self-powered** devices
   should monitor **VBUS** (comparator or resistor divider to 3.3 V-safe logic)
   and wire it to TinyUSB via **vbus_monitor_io** in **tinyusb_config_t**. That
@@ -124,9 +125,15 @@ Software architecture (IDF)
 Implemented today (GPIO optional)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- **main/boards/waveshare_s3/waveshare_s3_usb_state.c** — optional VBUS GPIO
-  (see **ESPD_WAVESHARE_USB_VBUS_GPIO** in **board_profile.h**, default **-1**
-  = disabled). When set to a valid GPIO after schematic review:
+- **main/boards/waveshare_s3/waveshare_s3_usb_state.c** — optional VBUS monitoring:
+  - **ESPD_WAVESHARE_VBUS_BACKEND** in **board_profile.h**: **NONE** (default),
+    **GPIO** (set **ESPD_WAVESHARE_USB_VBUS_GPIO** ≥ 0), or **UPS_HAT_E** for
+    Waveshare **UPS HAT (E)** on the same I2C bus as ES8311: slave **0x2D**,
+    read-only register **0x02**, **bit 5 == 1** ⇒ Type-C VBUS powered (per
+    Waveshare register wiki). Ephemeral I2C is used before audio init; after
+    **espd_waveshare_s3_audio_init** the shared bus registers a second device at
+    0x2D for polling.
+  When GPIO backend is used with a valid GPIO after schematic review:
   - **Boot with VBUS present:** blocks in a **placeholder “disc” loop** until
     unplugged, then continues with normal Pd + audio init. (MSC is still TODO.)
   - **Hotplug while running audio:** debounced VBUS change calls **esp_restart()**
@@ -134,6 +141,7 @@ Implemented today (GPIO optional)
     teardown exists). On battery power, unplugging USB still runs the SoC so
     this path can fire.
 
-Next step: schematic **VBUS net → GPIO** (or TCA9555 bit), set
-**ESPD_WAVESHARE_USB_VBUS_GPIO**, then replace the placeholder with TinyUSB MSC
-+ FAT partition per **examples/peripherals/usb/device/tusb_msc**.
+Next step: either set **ESPD_WAVESHARE_VBUS_BACKEND** to **UPS_HAT_E** when
+the UPS module shares **GPIO10/11** I2C with ES8311, or find **VBUS → GPIO**
+from the S3-Audio schematic and use the **GPIO** backend, then replace the
+placeholder with TinyUSB MSC + FAT per **examples/peripherals/usb/device/tusb_msc**.
