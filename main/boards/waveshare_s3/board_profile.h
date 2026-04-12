@@ -22,3 +22,13 @@
 #define ESPD_WAVESHARE_I2S_MCLK_GPIO 12
 #define ESPD_WAVESHARE_I2C_SCL_GPIO 10
 #define ESPD_WAVESHARE_I2C_SDA_GPIO 11
+
+/*
+ * Optional Type-C VBUS sense for USB-disk vs audio (see waveshare_s3_usb_state).
+ * Set to the GPIO wired from VBUS (via divider or comparator) per schematic; -1
+ * leaves the legacy behaviour (always start audio; no VBUS hotplug).
+ */
+#define ESPD_WAVESHARE_USB_VBUS_GPIO (-1)
+
+/* 1 = GPIO high when USB VBUS is present (common with a resistor divider). */
+#define ESPD_WAVESHARE_USB_VBUS_ACTIVE_HIGH 1

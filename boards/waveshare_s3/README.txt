@@ -121,6 +121,19 @@ Software architecture (IDF)
    triggers the expected path on your IDF version (see Espressif TinyUSB / MSC
    issues around **tud_umount_cb** and VBUS if problems appear).
 
-Next step for this board: **schematic check** → fix **VBUS GPIO** (or expander
-  bit) in **board_profile.h**, then prototype MSC + mode switch in a small
-  module under **main/boards/waveshare_s3/** before threading into **app_main**.
+Implemented today (GPIO optional)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **main/boards/waveshare_s3/waveshare_s3_usb_state.c** — optional VBUS GPIO
+  (see **ESPD_WAVESHARE_USB_VBUS_GPIO** in **board_profile.h**, default **-1**
+  = disabled). When set to a valid GPIO after schematic review:
+  - **Boot with VBUS present:** blocks in a **placeholder “disc” loop** until
+    unplugged, then continues with normal Pd + audio init. (MSC is still TODO.)
+  - **Hotplug while running audio:** debounced VBUS change calls **esp_restart()**
+    so the next boot re-evaluates VBUS (simple and safe before real MSC + FAT
+    teardown exists). On battery power, unplugging USB still runs the SoC so
+    this path can fire.
+
+Next step: schematic **VBUS net → GPIO** (or TCA9555 bit), set
+**ESPD_WAVESHARE_USB_VBUS_GPIO**, then replace the placeholder with TinyUSB MSC
++ FAT partition per **examples/peripherals/usb/device/tusb_msc**.

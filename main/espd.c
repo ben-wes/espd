@@ -26,6 +26,7 @@
 #include "esp_err.h"
 #ifdef ESPD_BOARD_WAVESHARE_S3
 #include "boards/waveshare_s3/waveshare_s3_audio.h"
+#include "boards/waveshare_s3/waveshare_s3_usb_state.h"
 #endif
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -360,6 +361,13 @@ void app_main(void)
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
+#ifdef ESPD_BOARD_WAVESHARE_S3
+    espd_waveshare_usb_vbus_init();
+    if (espd_waveshare_usb_vbus_gpio_configured()
+        && espd_waveshare_usb_vbus_present())
+        espd_waveshare_s3_run_disc_mode_until_unplug();
+#endif
+
     pdmain_init();
     initdacs();
 
@@ -394,6 +402,9 @@ void app_main(void)
         pd_pollhost();
         pdmain_tick();
         senddacs();
+#ifdef ESPD_BOARD_WAVESHARE_S3
+        espd_waveshare_s3_poll_usb_hotplug_restart();
+#endif
 #ifdef PD_USE_WIFI
         net_alive();
 #endif

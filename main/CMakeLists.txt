@@ -58,7 +58,9 @@ set(MAIN_SRCS
 )
 
 if(DEFINED ENV{ESPD_BOARD} AND "$ENV{ESPD_BOARD}" STREQUAL "waveshare_s3")
-    list(APPEND MAIN_SRCS "boards/waveshare_s3/waveshare_s3_audio.c")
+    list(APPEND MAIN_SRCS
+        "boards/waveshare_s3/waveshare_s3_audio.c"
+        "boards/waveshare_s3/waveshare_s3_usb_state.c")
     set(CMAKE_C_FLAGS
         "${CMAKE_C_FLAGS} -DESPD_BOARD_WAVESHARE_S3=1")
 endif()
