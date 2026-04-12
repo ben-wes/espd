@@ -47,3 +47,80 @@ Switching boards
 Unset ESPD_BOARD or set it to another value later defined in CMakeLists.txt.
 Remove **build/** and **sdkconfig** (or run **idf.py fullclean**) when changing
 target or board defaults so CMake does not reuse a stale merged sdkconfig.
+
+USB “disc” vs audio + Pd (hotplug, future work)
+-----------------------------------------------
+
+Goal: when USB is connected to a host, behave as a USB mass-storage volume
+(FAT on flash); when USB is unplugged, run audio + Pd. Prefer **no reset
+button** — that implies **reliable plug / unplug detection** and **clean
+teardown** of one stack before starting the other.
+
+Hardware (Waveshare ESP32-S3-AUDIO-Board)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- The wiki lists a single **USB Type-C** for power and flashing (native S3
+  D+/D−, not a separate UART bridge). There is also **battery** power — i.e.
+  the board can run **without** USB, which matches a **self-powered** USB
+  device model.
+- The public pin tables **do not** name a **VBUS sense** GPIO. For **hotplug**
+  without guessing, open the **official schematic** (linked from the wiki) and
+  check whether **VBUS** (or a USB power-detect line from the Type-C front-end)
+  reaches the ESP32-S3 or the **TCA9555** expander. If you find a net (e.g.
+  divider into a GPIO), record that pin as **ESPD_USB_VBUS_GPIO** (or expander
+  bit + I2C read) for the firmware.
+- Espressif’s USB device guide (ESP32-S3) states that **self-powered** devices
+  should monitor **VBUS** (comparator or resistor divider to 3.3 V-safe logic)
+  and wire it to TinyUSB via **vbus_monitor_io** in **tinyusb_config_t**. That
+  gives plug/unplug callbacks the stack expects. See:
+  https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-reference/peripherals/usb_device.html
+
+If there is **no** usable VBUS GPIO after schematic review, fallback options
+are weaker: e.g. treat **USB bus reset / enumeration** (TinyUSB “mounted”) as
+“host present” and use **timeouts** when the cable is removed without VBUS
+(known edge cases on some IDF versions — prefer VBUS when possible).
+
+Software architecture (IDF)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+1. **Partitioning**  
+   Add a dedicated **FAT** region (flash + wear levelling, or a separate data
+   partition) for the “disc” contents (e.g. **main.pd**). Extend
+   **partitions_pd.csv** and Kconfig flash layout accordingly.
+
+2. **USB stack**  
+   Use the IDF **USB Device** stack (TinyUSB): MSC device pointing at the
+   block device behind that FAT volume. Reference tree:
+   **examples/peripherals/usb/device/tusb_msc** (SPI flash + MSC).
+
+3. **Mutual exclusion**  
+   While the host has the LUN mounted, the ESP must **not** use the same FAT
+   through **esp_vfs_fat** for writes (and usually not at all until the host
+   has released the volume). Typical flow:
+   - **Audio mode:** mount FAT internally, optional **main.pd**, run I2S + Pd;
+     **do not** expose MSC (or keep USB device off).
+   - **Transition to disc:** stop DSP / Pd, **unmount** FAT on the device,
+     deinit I2S if needed, start TinyUSB MSC only.
+   - **Transition to audio:** stop TinyUSB / MSC, wait until stack reports
+     disconnect, **remount** FAT, restart I2S + Pd.
+
+4. **Where to branch in espd**  
+   Today **app_main** in **main/espd.c** calls **pdmain_init()** then
+   **initdacs()** then the main loop. A Waveshare-only path would wrap that in
+   a **state machine** (e.g. FreeRTOS task + queue): **DISC** vs **AUDIO**,
+   driven by VBUS / TinyUSB callbacks instead of a single linear boot.
+
+5. **Console / download**  
+   USB-Serial-JTAG and TinyUSB **share one PHY** on S3. MSC + CDC composite is
+   possible but must be planned so **menuconfig** (console on USB vs UART) and
+   TinyUSB descriptors stay consistent. Flashing may still use ROM USB
+   download in boot mode.
+
+6. **Hotplug testing**  
+   After enabling **self_powered** and **vbus_monitor_io**, verify unplug
+   triggers the expected path on your IDF version (see Espressif TinyUSB / MSC
+   issues around **tud_umount_cb** and VBUS if problems appear).
+
+Next step for this board: **schematic check** → fix **VBUS GPIO** (or expander
+  bit) in **board_profile.h**, then prototype MSC + mode switch in a small
+  module under **main/boards/waveshare_s3/** before threading into **app_main**.
