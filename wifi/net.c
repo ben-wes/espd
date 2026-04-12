@@ -18,6 +18,13 @@
 static const char *TAG = "ESPD";
 int tcp_socket;
 
+static int s_net_send_ready;
+
+int espd_net_send_ready(void)
+{
+    return s_net_send_ready;
+}
+
 void tcpreceivertask(void *z)
 {
     char rx_buffer[4000];
@@ -122,6 +129,7 @@ static struct sockaddr_in udp_out_addr;
 
 void net_init( void)
 {
+    s_net_send_ready = 0;
     esp_log_level_set(TAG, ESP_LOG_INFO);
     ESP_LOGI(TAG, "net_init...");
         /* socket for sending UDP messages */
@@ -132,13 +140,18 @@ void net_init( void)
         /* this will get overridden later: */
     udp_out_addr.sin_port = htons(CONFIG_ESP_WIFI_SENDPORT);
 
-    xTaskCreate(tcpreceivertask, "tcprcv", 6000, NULL, PRIORITY_WIFI, NULL);
-    xTaskCreate(udpreceivertask, "udprcv", 3000, NULL, PRIORITY_WIFI, NULL);
+    /*
+     * Stack size is in bytes (ESP-IDF). tcprcv holds rx_buffer[4000] plus
+     * lwIP/socket and pd_fromhost() — 6000 was far too small (overflow).
+     */
+    xTaskCreate(tcpreceivertask, "tcprcv", 20480, NULL, PRIORITY_WIFI, NULL);
+    xTaskCreate(udpreceivertask, "udprcv", 8192, NULL, PRIORITY_WIFI, NULL);
     while (!tcp_socket)
     {
         ESP_LOGI(TAG, "sendtcp: waiting for socket");
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
+    s_net_send_ready = 1;
 }
 
 static int64_t whensent;
@@ -146,6 +159,8 @@ static int64_t whensent;
 void net_sendudp(void *msg, int len, int port)
 {
     int err;
+    if (!s_net_send_ready || udp_out_sock < 0)
+        return;
     udp_out_addr.sin_port = htons(port);
     err = sendto(udp_out_sock, msg, len, 0,
         (struct sockaddr *)&udp_out_addr, sizeof(udp_out_addr));
@@ -164,11 +179,8 @@ void net_sendudp(void *msg, int len, int port)
 void net_sendtcp(void *msg, int len)
 {
     int err;
-    if (!tcp_socket)
-    {
-        ESP_LOGE(TAG, "sendtcp: no socket yet");
+    if (!s_net_send_ready || !tcp_socket)
         return;
-    }
     err = send(tcp_socket, msg, len, 0);
     if (err < 0)
     {

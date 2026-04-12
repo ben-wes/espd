@@ -8,6 +8,7 @@
 */
 #include "../main/espd.h"
 #ifdef PD_USE_WIFI
+#include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -107,20 +108,12 @@ void wifi_init_sta(void)
     ESP_ERROR_CHECK(esp_wifi_start() );
     ESP_ERROR_CHECK(esp_wifi_get_config(WIFI_IF_STA, &wifi_config) );
 
-    ESP_LOGI(TAG, "wifi_init_sta finished, MAC %02x:%02x:%02x:%02x:%02x:%02x",
-        wifi_config.sta.bssid[0],
-        wifi_config.sta.bssid[1],
-        wifi_config.sta.bssid[2],
-        wifi_config.sta.bssid[3],
-        wifi_config.sta.bssid[4],
-        wifi_config.sta.bssid[5]);
-    sprintf(wifi_mac, "%02x:%02x:%02x:%02x:%02x:%02x",
-        wifi_config.sta.bssid[0],
-        wifi_config.sta.bssid[1],
-        wifi_config.sta.bssid[2],
-        wifi_config.sta.bssid[3],
-        wifi_config.sta.bssid[4],
-        wifi_config.sta.bssid[5]);
+    uint8_t sta_mac[6];
+    ESP_ERROR_CHECK(esp_wifi_get_mac(WIFI_IF_STA, sta_mac));
+    ESP_LOGI(TAG, "wifi_init_sta finished, STA MAC %02x:%02x:%02x:%02x:%02x:%02x",
+             sta_mac[0], sta_mac[1], sta_mac[2], sta_mac[3], sta_mac[4], sta_mac[5]);
+    snprintf(wifi_mac, sizeof(wifi_mac), "%02x:%02x:%02x:%02x:%02x:%02x",
+             sta_mac[0], sta_mac[1], sta_mac[2], sta_mac[3], sta_mac[4], sta_mac[5]);
     
     /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
      * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
