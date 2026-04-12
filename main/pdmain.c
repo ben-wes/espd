@@ -229,6 +229,7 @@ void conf_init(void)
     x_gui_setup();
     x_list_setup();
     x_scalar_setup();
+    g_io_setup();
     d_global_setup();
     d_soundfile_setup();
     d_ugen_setup();
