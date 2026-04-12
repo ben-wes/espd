@@ -1,6 +1,7 @@
 /*
- * I2S + I2C bring-up for Waveshare ESP32-S3-AUDIO-Board (ES8311).
- * Uses esp_codec_dev (ESP-IDF component manager), not full ADF.
+ * I2S + I2C bring-up for Waveshare ESP32-S3-AUDIO-Board.
+ * Playback: ES8311 via esp_codec_dev.
+ * Capture: ES7210 (onboard mics → GPIO15 / I2S DIN per wiki); ES8311 is DAC-only here.
  */
 
 #include "boards/waveshare_s3/board_profile.h"
@@ -11,8 +12,10 @@
 #include "esp_check.h"
 #include "esp_codec_dev.h"
 #include "esp_codec_dev_defaults.h"
+#include "esp_codec_dev_types.h"
 #include "esp_codec_dev_vol.h"
 #include "esp_log.h"
+#include "es7210_adc.h"
 #include "es8311_codec.h"
 
 static const char *TAG = "waveshare_s3";
@@ -21,11 +24,14 @@ static const char *TAG = "waveshare_s3";
 #define MCLK_MULTIPLE 256
 
 static i2c_master_bus_handle_t s_i2c_bus;
-static esp_codec_dev_handle_t s_codec;
+static esp_codec_dev_handle_t s_codec_dac;
+#ifdef USEADC
+static esp_codec_dev_handle_t s_codec_mic;
+#endif
 
-static esp_err_t es8311_codec_init(i2s_chan_handle_t tx_h, i2s_chan_handle_t rx_h)
+static esp_err_t waveshare_codecs_init(i2s_chan_handle_t tx_h, i2s_chan_handle_t rx_h)
 {
-    const audio_codec_ctrl_if_t *ctrl_if;
+    const audio_codec_ctrl_if_t *ctrl8311;
     const audio_codec_data_if_t *data_if;
     const audio_codec_if_t *es8311_if;
     const audio_codec_gpio_if_t *gpio_if;
@@ -50,15 +56,15 @@ static esp_err_t es8311_codec_init(i2s_chan_handle_t tx_h, i2s_chan_handle_t rx_
         "i2c_new_master_bus");
 
     if (espd_waveshare_exio_apply_usb_mux(s_i2c_bus) != ESP_OK)
-        ESP_LOGW(TAG, "TCA9554 EXIO mux failed (USB may not enumerate on Type-C)");
+        ESP_LOGW(TAG, "TCA9555 EXIO mux / PA failed (USB or speaker may not work)");
 
-    audio_codec_i2c_cfg_t i2c_cfg = {
+    audio_codec_i2c_cfg_t i2c8311 = {
         .port = I2C_NUM_0,
         .addr = ES8311_CODEC_DEFAULT_ADDR,
         .bus_handle = s_i2c_bus,
     };
-    ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
-    ESP_RETURN_ON_FALSE(ctrl_if, ESP_FAIL, TAG, "audio_codec_new_i2c_ctrl");
+    ctrl8311 = audio_codec_new_i2c_ctrl(&i2c8311);
+    ESP_RETURN_ON_FALSE(ctrl8311, ESP_FAIL, TAG, "audio_codec_new_i2c_ctrl ES8311");
 
     audio_codec_i2s_cfg_t i2s_cfg = {
         .port = I2S_NUM_0,
@@ -72,9 +78,9 @@ static esp_err_t es8311_codec_init(i2s_chan_handle_t tx_h, i2s_chan_handle_t rx_
     ESP_RETURN_ON_FALSE(gpio_if, ESP_FAIL, TAG, "audio_codec_new_gpio");
 
     es8311_cfg = (es8311_codec_cfg_t){
-        .ctrl_if = ctrl_if,
+        .ctrl_if = ctrl8311,
         .gpio_if = gpio_if,
-        .codec_mode = ESP_CODEC_DEV_WORK_MODE_BOTH,
+        .codec_mode = ESP_CODEC_DEV_WORK_MODE_DAC,
         .master_mode = false,
         .use_mclk = true,
         .pa_pin = -1,
@@ -85,19 +91,61 @@ static esp_err_t es8311_codec_init(i2s_chan_handle_t tx_h, i2s_chan_handle_t rx_
     es8311_if = es8311_codec_new(&es8311_cfg);
     ESP_RETURN_ON_FALSE(es8311_if, ESP_FAIL, TAG, "es8311_codec_new");
 
-    dev_cfg.dev_type = ESP_CODEC_DEV_TYPE_IN_OUT;
+    dev_cfg.dev_type = ESP_CODEC_DEV_TYPE_OUT;
     dev_cfg.codec_if = es8311_if;
     dev_cfg.data_if = data_if;
-    s_codec = esp_codec_dev_new(&dev_cfg);
-    ESP_RETURN_ON_FALSE(s_codec, ESP_FAIL, TAG, "esp_codec_dev_new");
+    s_codec_dac = esp_codec_dev_new(&dev_cfg);
+    ESP_RETURN_ON_FALSE(s_codec_dac, ESP_FAIL, TAG, "esp_codec_dev_new dac");
 
-    ESP_RETURN_ON_ERROR(esp_codec_dev_open(s_codec, &sample_cfg), TAG,
-        "esp_codec_dev_open");
-    ESP_RETURN_ON_ERROR(esp_codec_dev_set_out_vol(s_codec, 75.0f), TAG,
+    ESP_RETURN_ON_ERROR(esp_codec_dev_open(s_codec_dac, &sample_cfg), TAG,
+        "esp_codec_dev_open dac");
+    ESP_RETURN_ON_ERROR(esp_codec_dev_set_out_vol(s_codec_dac, 100), TAG,
         "esp_codec_dev_set_out_vol");
+
+    if (espd_waveshare_exio_apply_usb_mux(s_i2c_bus) != ESP_OK)
+        ESP_LOGW(TAG, "TCA9555 re-apply after codec open failed (speaker may stay off)");
+
 #ifdef USEADC
-    ESP_RETURN_ON_ERROR(esp_codec_dev_set_in_gain(s_codec, 30.0f), TAG,
-        "esp_codec_dev_set_in_gain");
+    audio_codec_i2c_cfg_t i2c7210 = {
+        .port = I2C_NUM_0,
+        .addr = ES7210_CODEC_DEFAULT_ADDR,
+        .bus_handle = s_i2c_bus,
+    };
+    const audio_codec_ctrl_if_t *ctrl7210 = audio_codec_new_i2c_ctrl(&i2c7210);
+    if (!ctrl7210) {
+        ESP_LOGW(TAG, "ES7210: no I2C ctrl (mic capture disabled)");
+        s_codec_mic = NULL;
+    } else {
+        es7210_codec_cfg_t es7210_cfg = {
+            .ctrl_if = ctrl7210,
+            .master_mode = false,
+            .mic_selected = ES7210_SEL_MIC1 | ES7210_SEL_MIC2,
+            .mclk_src = ES7210_MCLK_FROM_PAD,
+            .mclk_div = MCLK_MULTIPLE,
+        };
+        const audio_codec_if_t *es7210_if = es7210_codec_new(&es7210_cfg);
+        if (!es7210_if) {
+            ESP_LOGW(TAG, "ES7210: codec_new failed (mic capture disabled)");
+            s_codec_mic = NULL;
+        } else {
+            esp_codec_dev_cfg_t mic_cfg = {
+                .dev_type = ESP_CODEC_DEV_TYPE_IN,
+                .codec_if = es7210_if,
+                .data_if = data_if,
+            };
+            s_codec_mic = esp_codec_dev_new(&mic_cfg);
+            if (!s_codec_mic) {
+                ESP_LOGW(TAG, "ES7210: esp_codec_dev_new failed");
+            } else if (esp_codec_dev_open(s_codec_mic, &sample_cfg) != ESP_CODEC_DEV_OK) {
+                ESP_LOGW(TAG, "ES7210: esp_codec_dev_open failed");
+                s_codec_mic = NULL;
+            } else if (esp_codec_dev_set_in_gain(s_codec_mic, 30.0f) != ESP_CODEC_DEV_OK) {
+                ESP_LOGW(TAG, "ES7210: set_in_gain failed");
+            } else {
+                ESP_LOGI(TAG, "ES7210 mic capture enabled (stereo)");
+            }
+        }
+    }
 #endif
     return ESP_OK;
 }
@@ -135,8 +183,36 @@ esp_err_t espd_waveshare_s3_audio_init(i2s_chan_handle_t *tx, i2s_chan_handle_t 
     ESP_RETURN_ON_ERROR(i2s_channel_enable(*rx), TAG, "i2s_channel_enable rx");
 #endif
 
-    ESP_RETURN_ON_ERROR(es8311_codec_init(*tx, *rx), TAG, "es8311_codec_init");
+    ESP_RETURN_ON_ERROR(waveshare_codecs_init(*tx, *rx), TAG, "waveshare_codecs_init");
     espd_waveshare_usb_state_register_i2c_bus(s_i2c_bus);
-    ESP_LOGI(TAG, "Waveshare S3 audio ready (%d Hz, ES8311)", ESPD_SAMPLE_RATE_HZ);
+    ESP_LOGI(TAG, "Waveshare S3 audio ready (%d Hz, ES8311 + ES7210)", ESPD_SAMPLE_RATE_HZ);
     return ESP_OK;
 }
+
+int espd_waveshare_s3_codec_write(void *data, int len_bytes)
+{
+    if (!s_codec_dac || !data || len_bytes <= 0)
+        return -1;
+    int r = esp_codec_dev_write(s_codec_dac, data, len_bytes);
+    if (r != ESP_CODEC_DEV_OK) {
+        static int s_wr_err_log;
+        if (s_wr_err_log++ < 8)
+            ESP_LOGE(TAG, "esp_codec_dev_write failed: %d (len=%d)", r, len_bytes);
+    }
+    return (r == ESP_CODEC_DEV_OK) ? 0 : -1;
+}
+
+#ifdef USEADC
+int espd_waveshare_s3_codec_read(void *data, int len_bytes)
+{
+    if (!s_codec_mic || !data || len_bytes <= 0)
+        return -1;
+    int r = esp_codec_dev_read(s_codec_mic, data, len_bytes);
+    if (r != ESP_CODEC_DEV_OK) {
+        static int s_rd_err_log;
+        if (s_rd_err_log++ < 8)
+            ESP_LOGE(TAG, "esp_codec_dev_read failed: %d (len=%d)", r, len_bytes);
+    }
+    return (r == ESP_CODEC_DEV_OK) ? 0 : -1;
+}
+#endif
