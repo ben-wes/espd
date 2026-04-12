@@ -44,9 +44,65 @@ defaults merge again (factory app slot is **2048K** in **partitions_pd.csv**).
 This board fragment enables octal PSRAM (per the WROVER-class S3 module on the
 kit) and uses a 32 KB main task stack.
 
-Flash / monitor (pick your USB serial port):
+Flash / monitor (pick your USB serial port)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-  idf.py -p /dev/ttyACM0 flash monitor
+On macOS the port is usually **/dev/cu.usbmodem*** (use **cu.**, not **tty.**,
+for flashing). On Linux it is often **/dev/ttyACM0**.
+
+  idf.py -p /dev/cu.usbmodemXXXX flash monitor
+
+Serial monitor: UART vs USB (why logs “stop” after boot)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Merged **sdkconfig** defaults use **UART0** as the **primary** console (this
+target often binds UART0 to **GPIO43/44** — see the **cpu_start** line in the
+boot log). Application **ESP_LOGI** output goes there, not necessarily to
+**/dev/cu.usbmodem***.
+
+If **idf.py monitor** on **usbmodem** prints ROM / second-stage lines then goes
+quiet right after “Loaded app” / “Disabling RNG…”, you are still on USB while
+the firmware is talking on **UART**:
+
+1. Use a **3.3 V USB–UART** on the board’s **UART0** pins named in that boot line
+   (adapter **RX** → ESP **TX**, adapter **TX** → ESP **RX**, **GND** common;
+   confirm TX/RX pins on the Waveshare wiki / schematic), and run **idf.py -p
+   /dev/cu.usbserial-… monitor**, or
+
+2. Run **idf.py menuconfig** → **Component config → ESP System Settings →
+   Channel for console output** → set primary console to **USB Serial/JTAG**,
+   rebuild, flash, then **usbmodem** will show app logs end-to-end.
+
+**esptool: “No serial data received” / “Failed to connect”**
+
+1. **Confirm the port** — Unplug the board, list serial-style **cu** devices,
+   plug the board in again, and flash the path that **newly appears**. On **zsh**,
+   a command like **ls /dev/cu.wchusbserial*** errors if that pattern matches
+   nothing; use one of these instead:
+
+     ls /dev/cu.* 2>/dev/null | grep -E 'usbmodem|wchusb|SLAB|usbserial'
+
+   or (zsh only, optional globs):
+
+     print -rl /dev/cu.usbmodem*(N) /dev/cu.wchusbserial*(N) /dev/cu.SLAB*(N)
+
+   If several **usbmodem** devices exist, pick the one tied to this board (a
+   name like **usbmodem1234561** is often **not** the Espressif device).
+
+2. **Manual download mode** — Hold **BOOT**, tap **RESET**, release **BOOT**,
+   then run **idf.py flash** within a few seconds (same USB port the ROM uses).
+
+3. **Slower baud** — **idf.py -p … flash -b 115200** (or **460800**) can help
+   on long or marginal cables.
+
+4. **Power / cable** — Use a **data** USB-C cable, try another host port or a
+   **powered hub**. If a battery is fitted, disconnect it once so the chip gets a
+   clean USB-only power cycle.
+
+5. **UART fallback** — This kit’s main connector is native USB on the S3; if
+   the USB-serial-JTAG path stays broken, use any **3.3 V UART** wired to the
+   module’s **TX/RX/GND** (see wiki for test points or headers) and flash with
+   **idf.py -p /dev/cu.usbserial-… flash** for that adapter.
 
 Audio test
 ----------
@@ -101,7 +157,7 @@ Hardware (Waveshare ESP32-S3-AUDIO-Board)
 - The public pin tables **do not** name a **VBUS sense** GPIO. For **hotplug**
   without guessing, open the **official schematic** (linked from the wiki) and
   check whether **VBUS** (or a USB power-detect line from the Type-C front-end)
-  reaches the ESP32-S3 or the **TCA9555** expander. If you find a net (e.g.
+  reaches the ESP32-S3 or the **TCA9554/TCA9555** I²C expander. If you find a net (e.g.
   divider into a GPIO), use **ESPD_WAVESHARE_VBUS_BACKEND_GPIO** and
   **ESPD_WAVESHARE_USB_VBUS_GPIO** in **board_profile.h** (or expander + I2C).
   If you stack **UPS HAT (E)** on the ES8311 I2C bus, use **UPS_HAT_E** instead.
@@ -164,11 +220,16 @@ Implemented today (GPIO optional + boot TinyUSB probe)
   and **UART console** (USB-Serial-JTAG is disabled) because TinyUSB and JTAG
   USB both use the same internal PHY on ESP32-S3.
 
-- **main/boards/waveshare_s3/waveshare_s3_exio.c** — programs **TCA9554 @ 0x22**
-  (I2C **GPIO10/11**) so **EXIO6/EXIO7** route Type-C **D+/D−** to the SoC USB
-  pins (**GPIO19/20**) before enumeration. Levels are overridable in
-  **board_profile.h** (**ESPD_WAVESHARE_EXIO7_USB_ROUTE_LEVEL**,
-  **ESPD_WAVESHARE_EXIO6_CAMERA_SEL_LEVEL**).
+- **main/boards/waveshare_s3/waveshare_s3_exio.c** — probes the I²C expander on
+  **GPIO10/11** (addresses **0x20–0x27**, preferred **0x22** / **0x20** from
+  **board_profile.h**). **TCA9555** (16 GPIO): reads **CONFIG@0x06**; drives
+  **EXIO6/EXIO7** for Type-C **D+/D−** routing to **GPIO19/20** and **port1**
+  bits for the **NS4150** speaker enable (mask **ESPD_WAVESHARE_TCA9555_PA_PORT1_MASK**,
+  default **EXIO8+EXIO9**). **TCA9554** (8 GPIO): only regs **0x00–0x03** — the
+  same **EXIO6/7** USB mux is applied; **port1** does not exist, so the PA mask
+  is ignored and you need a **9555-class** board or a direct GPIO for the amp if
+  silence persists. USB route levels: **ESPD_WAVESHARE_EXIO7_USB_ROUTE_LEVEL**,
+  **ESPD_WAVESHARE_EXIO6_CAMERA_SEL_LEVEL** in **board_profile.h**.
 
 - **main/boards/waveshare_s3/waveshare_s3_usb_state.c** — optional VBUS monitoring:
   - **ESPD_WAVESHARE_VBUS_BACKEND** in **board_profile.h**: **NONE** (default),
