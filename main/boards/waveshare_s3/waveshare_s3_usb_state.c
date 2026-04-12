@@ -15,6 +15,8 @@
 #include "freertos/task.h"
 
 #if ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE
+#include "esp_private/usb_phy.h"
+#include "soc/soc_caps.h"
 #include "tinyusb.h"
 #include "tinyusb_cdc_acm.h"
 #include "tinyusb_default_config.h"
@@ -181,6 +183,35 @@ void espd_waveshare_s3_run_disc_mode_until_unplug(void)
 
 #if ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE
 
+#if SOC_USB_SERIAL_JTAG_SUPPORTED
+/*
+ * After TinyUSB tears down the shared FSLS PHY, re-claim it for USB Serial/JTAG so
+ * the host sees a stable “USB JTAG/serial” device again (notably macOS; IDFGH-15248).
+ * The handle is kept for the rest of the boot; do not usb_del_phy() here.
+ */
+static void espd_waveshare_usb_restore_serial_jtag_phy_after_tinyusb(void)
+{
+    usb_phy_config_t cfg = {
+        .controller = USB_PHY_CTRL_SERIAL_JTAG,
+        .target = USB_PHY_TARGET_INT,
+        .otg_mode = USB_PHY_MODE_DEFAULT,
+        .otg_speed = USB_PHY_SPEED_UNDEFINED,
+        .ext_io_conf = NULL,
+        .otg_io_conf = NULL,
+    };
+    usb_phy_handle_t h = NULL;
+    esp_err_t err = usb_new_phy(&cfg, &h);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "usb_new_phy(USB_PHY_CTRL_SERIAL_JTAG) after TinyUSB: %s",
+                 esp_err_to_name(err));
+        return;
+    }
+    (void)h;
+}
+#else
+static void espd_waveshare_usb_restore_serial_jtag_phy_after_tinyusb(void) {}
+#endif /* SOC_USB_SERIAL_JTAG_SUPPORTED */
+
 static void espd_waveshare_usb_boot_tinyusb_cable_path(void)
 {
     if (ESPD_WAVESHARE_USB_BOOT_HOST_WAIT_MS <= 0)
@@ -206,6 +237,7 @@ static void espd_waveshare_usb_boot_tinyusb_cable_path(void)
     if (tinyusb_cdcacm_init(&acm_cfg) != ESP_OK) {
         ESP_LOGW(TAG, "tinyusb_cdcacm_init failed");
         tinyusb_driver_uninstall();
+        espd_waveshare_usb_restore_serial_jtag_phy_after_tinyusb();
         return;
     }
 
@@ -234,6 +266,8 @@ static void espd_waveshare_usb_boot_tinyusb_cable_path(void)
         ESP_LOGW(TAG, "tinyusb_cdcacm_deinit failed");
     if (tinyusb_driver_uninstall() != ESP_OK)
         ESP_LOGW(TAG, "tinyusb_driver_uninstall failed");
+
+    espd_waveshare_usb_restore_serial_jtag_phy_after_tinyusb();
 }
 
 #endif /* ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE */

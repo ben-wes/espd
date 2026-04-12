@@ -39,10 +39,17 @@
  */
 
 /*
- * TCA9554 on the same I2C bus as ES8311 (address per schematic: A0=0 A1=1 A2=0).
- * EXIO6/EXIO7 feed the FSUSB42UMX switch (Camera_SEL / USB path).
+ * TCA9555 (Waveshare schematic U4; wiki “TCA9555PWR”) on the same I2C bus as ES8311
+ * (A2=L A1=H A0=L → 0x22 on v1.1; some builds strap 0x20 — firmware tries both).
+ * EXIO6/EXIO7: USB switch. NS4150 amp enable is on TCA9555 port1 (EXIO8..15);
+ * community defs use EXIO9; ESPHome used bit 8 — default mask enables both.
  */
-#define ESPD_WAVESHARE_TCA9554_I2C_ADDR 0x22
+#define ESPD_WAVESHARE_TCA9555_I2C_ADDR 0x22
+#ifndef ESPD_WAVESHARE_TCA9555_I2C_ADDR_ALT
+#define ESPD_WAVESHARE_TCA9555_I2C_ADDR_ALT 0x20
+#endif
+/* Legacy name used in early bring-up (chip is TCA9555, not TCA9554). */
+#define ESPD_WAVESHARE_TCA9554_I2C_ADDR ESPD_WAVESHARE_TCA9555_I2C_ADDR
 
 /* EXIO7 level that routes Type-C D+/D− to the SoC USB pins (GPIO19/20), not UART43/44. */
 #ifndef ESPD_WAVESHARE_EXIO7_USB_ROUTE_LEVEL
@@ -55,11 +62,29 @@
 #endif
 
 /*
+ * TCA9555 port1 data bits (EXIO8..15) tied to NS4150 enable / strap lines.
+ * 0 = leave port1 PA bits untouched. Default 0x03 = EXIO8+EXIO9 driven high.
+ */
+#ifndef ESPD_WAVESHARE_TCA9555_PA_PORT1_MASK
+#define ESPD_WAVESHARE_TCA9555_PA_PORT1_MASK 0x03u
+#endif
+/* 1: OR mask onto OUT1 when enabling speaker path; 0: clear those bits (active-low amp). */
+#ifndef ESPD_WAVESHARE_PA_PORT1_ACTIVE_HIGH
+#define ESPD_WAVESHARE_PA_PORT1_ACTIVE_HIGH 1
+#endif
+
+/*
  * Boot-time “cable plugged” check: bring up TinyUSB CDC briefly and wait for host
  * enumeration (bounded). No cable / no host completes within the timeout (~500 ms).
+ *
+ * Default off: on ESP32-S3 the internal USB PHY is shared with USB Serial/JTAG.
+ * A TinyUSB install/uninstall cycle at boot can leave macOS unable to re-enumerate
+ * /dev/cu.usbmodem* until a full replug (IDFGH-15248 / IDFGH-8354). Set to 1 if you
+ * need host-enumeration detection; firmware calls usb_new_phy(SERIAL_JTAG) after
+ * teardown to improve handoff back to the built-in CDC.
  */
 #ifndef ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE
-#define ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE 1
+#define ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE 0
 #endif
 
 #ifndef ESPD_WAVESHARE_USB_BOOT_HOST_WAIT_MS

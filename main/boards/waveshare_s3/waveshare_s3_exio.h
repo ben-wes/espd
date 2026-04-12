@@ -1,6 +1,6 @@
 /*
- * Waveshare ESP32-S3-AUDIO-Board: TCA9554 I/O expander (I2C) drives EXIO6/EXIO7,
- * which select Type-C D+/D− routing (see board README / schematic).
+ * Waveshare ESP32-S3-AUDIO-Board: TCA9555 I/O expander (I2C) drives EXIO6/EXIO7
+ * (Type-C D+/D− routing) and port1 lines for the NS4150 speaker amp (see board_profile.h).
  */
 
 #pragma once
