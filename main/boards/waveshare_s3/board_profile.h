@@ -25,10 +25,12 @@
 
 /*
  * VBUS source for USB-disk vs audio (see waveshare_s3_usb_state):
- *   NONE — no monitoring (always audio unless you add MSC boot policy later).
+ *   NONE — default. Right choice for stock board + battery only (no add-ons);
+ *           no I2C device at 0x2D on this PCB, and the audio wiki does not name a
+ *           VBUS GPIO — keep NONE until the schematic gives a sense pin, if any.
  *   GPIO — ESPD_WAVESHARE_USB_VBUS_GPIO >= 0, divider/comparator from Type-C VBUS.
- *   UPS_HAT_E — Waveshare UPS HAT (E) on the same I2C bus as ES8311 (addr 0x2D);
- *               charging register 0x02, bit 5 == 1 means VBUS powered (wiki).
+ *   UPS_HAT_E — optional separate Waveshare UPS HAT (E) stacked on the same I2C
+ *               as ES8311 (addr 0x2D); not part of the bare S3-Audio board.
  */
 #define ESPD_WAVESHARE_VBUS_BACKEND_NONE 0
 #define ESPD_WAVESHARE_VBUS_BACKEND_GPIO 1
