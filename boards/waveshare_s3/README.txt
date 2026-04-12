@@ -23,6 +23,9 @@ the environment (not only on the first cmake run; delete **build/** and
 and keep using your existing **sdkconfig.lyrat** / **sdkconfig.wroom** workflow
 (copy one to **sdkconfig** as before).
 
+This board fragment enables octal PSRAM (per the WROVER-class S3 module on the
+kit) and uses a 32 KB main task stack.
+
 Flash / monitor (pick your USB serial port):
 
   idf.py -p /dev/ttyACM0 flash monitor

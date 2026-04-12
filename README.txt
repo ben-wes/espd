@@ -55,6 +55,13 @@ boards are included as "sdkconfig.lyrat" and "sdkconfig.lyratmini", and a sample
 for a bare WROOM module is included as "sdkconfig.wroom".   You can rename one
 of these as "sdkconfig" before invoking the compiler.
 
+Per Espressif (e.g. ADF hardware reference), ESP32-LyraT V4.3 and ESP32-LyraT-Mini
+V1.2 use ESP32-WROVER-E with integrated 8 MB PSRAM; the LyraT sdkconfig samples
+enable SPI RAM (quad, 40 MHz) and a 32 KB main task stack for heavier Pd use.
+The "sdkconfig.wroom" preset targets modules without PSRAM and keeps SPI RAM
+off. "sdkconfig.bn085" enables PSRAM for WROVER-class ESP32; if your Arts board
+uses a WROOM-only module, turn off PSRAM in menuconfig before flashing.
+
 For the Waveshare ESP32-S3-AUDIO / AI Smart Speaker board, use ESP-IDF (not full
 ADF) with the Component Manager codec package: set the environment variable
 ESPD_BOARD=waveshare_s3 and follow boards/waveshare_s3/README.txt. That keeps
