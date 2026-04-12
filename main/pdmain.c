@@ -204,6 +204,7 @@ void d_misc_setup(void);
 void d_osc_setup(void);
 void d_soundfile_setup(void);
 void d_ugen_setup(void);
+void espdsp_osc_override_setup(void);
 
 void conf_init(void)
 {
@@ -236,6 +237,7 @@ void conf_init(void)
     d_dac_setup();
     d_ctl_setup();
     d_osc_setup();
+    espdsp_osc_override_setup();
     d_arithmetic_setup();
     d_array_setup();
     clone_setup();

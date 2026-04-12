@@ -1,4 +1,4 @@
-set(COMPONENT_SRCS "espd.c pdmain.c \
+set(COMPONENT_SRCS "espd.c pdmain.c espdsp_osc_override.c \
 ../pd/src/g_canvas.c \
 ../pd/src/g_graph.c \
 ../pd/src/g_text.c \
