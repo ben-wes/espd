@@ -77,4 +77,22 @@ extern char wifi_ipaddr[];
 #define PIN_DATA_IN 35      /* data in from ADC to ESP32 */
 #endif /* PIN_BIT_CLOCK */
 
+#ifndef ESPD_PATCH_STORE_MOUNT
+#define ESPD_PATCH_STORE_MOUNT "/espd_pd"
+#endif
+#ifndef ESPD_PATCH_SPIFFS_PARTITION_LABEL
+#define ESPD_PATCH_SPIFFS_PARTITION_LABEL "pdstore"
+#endif
+#ifndef ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
+#define ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK 0
+#endif
+#define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"
+
+#include "espd_patch_store.h"
+
+extern int espd_main_pd_loaded_from_store;
+#ifdef PD_USE_WIFI
+extern int espd_wifi_net_enabled;
+#endif
+
 #endif /* ESPD_H */

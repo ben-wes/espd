@@ -53,8 +53,25 @@ Audio test
 
 **main/boards/waveshare_s3/board_profile.h** enables **PD_INCLUDEPATCH**, so the
 firmware runs the embedded patch from **main/testpatch.c** (dac~ + osc~ etc.)
-after boot. When the board is connected, you should hear output on the
-onboard speaker path if ES8311 init matches your hardware revision.
+after boot **unless** a file **main.pd** exists on the SPIFFS patch store.
+
+**main.pd on SPIFFS (overrides embedded patch)**
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **partitions_pd.csv** adds a **512K** SPIFFS partition labeled **pdstore**,
+  mounted at **`/espd_pd`** at boot (see **main/espd_patch_store.c**).
+- If **`/espd_pd/main.pd`** is present, it is opened with Pd’s normal file
+  loader (**glob_evalfile**); the embedded **testpatch.c** patch is **not** run.
+- Populate SPIFFS with Espressif’s **SPIFFS image generation** tools (see the
+  ESP-IDF “SPIFFS” docs): build an image containing **main.pd** and flash the
+  **pdstore** region, or use **format_if_mount_failed** (enabled) on a fresh
+  chip and flash a prebuilt SPIFFS binary at the **pdstore** offset from the
+  partition table.
+- **ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK** in **board_profile.h** (default **1**)
+  skips **wifi_init** / **net_init** / **net_hello** when **main.pd** was loaded
+  from SPIFFS so the board does not join WiFi or wait for host-sent patches.
+  Set it to **0** in **board_profile.h** if you want WiFi + TCP/UDP patch
+  transport even with a local **main.pd**.
 
 If you need stock Pd behaviour for A/B tests, use the *~_aliased objects from
 **main/espdsp_osc_override.c** (see comments there).

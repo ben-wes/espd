@@ -1,5 +1,6 @@
 set(MAIN_SRCS
     "espd.c"
+    "espd_patch_store.c"
     "pdmain.c"
     "espdsp_osc_override.c"
     "../pd/src/g_canvas.c"
@@ -70,6 +71,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HE
 
 set(MAIN_REQUIRES
     console
+    spiffs
     driver
     nvs_flash
     esp_timer

@@ -13,6 +13,15 @@
 #define USEADC
 #define IOCHANS 2
 
+/*
+ * When main.pd is loaded from SPIFFS (see espd_patch_store), skip bringing up
+ * WiFi and the TCP/UDP patch transport so the board runs standalone. Set to 0
+ * to keep WiFi + network patch loading even with a local main.pd.
+ */
+#ifndef ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
+#define ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK 1
+#endif
+
 /* I2S ↔ ES8311 (wiki “SPEAKER” / “MIC” tables; ESP is I2S master) */
 #define PIN_BIT_CLOCK 13
 #define PIN_WORD_SELECT 14

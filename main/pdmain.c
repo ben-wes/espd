@@ -85,8 +85,14 @@ void pdmain_init( void)
     STUFF->st_soundout = soundout;
     STUFF->st_soundin = soundin;
 
+    espd_main_pd_loaded_from_store = 0;
+
+    if (espd_patch_store_main_pd_exists()) {
+        glob_evalfile(0, gensym("main.pd"), gensym(ESPD_PATCH_STORE_MOUNT));
+        espd_main_pd_loaded_from_store = 1;
+    }
 #ifdef PD_INCLUDEPATCH
-    {
+    else {
         t_binbuf *b = binbuf_new();
         glob_setfilename(0, gensym("main-patch"), gensym("."));
         binbuf_text(b, patchfile, strlen(patchfile));

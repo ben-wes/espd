@@ -37,6 +37,21 @@
 #endif
 static const char *TAG = "ESPD";
 
+int espd_main_pd_loaded_from_store;
+#ifdef PD_USE_WIFI
+int espd_wifi_net_enabled = 1;
+#endif
+
+static void espd_nvs_flash_init(void)
+{
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+}
+
 extern void pdmain_tick( void);
 void pdmain_init( void);
 
@@ -361,6 +376,9 @@ void app_main(void)
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
+    espd_nvs_flash_init();
+    espd_patch_store_init();
+
 #ifdef ESPD_BOARD_WAVESHARE_S3
     espd_waveshare_s3_usb_boot_before_pd();
 #endif
@@ -375,10 +393,18 @@ void app_main(void)
     sd_init();
 #endif
 #ifdef PD_USE_WIFI
-    ESP_LOGI(TAG, "[ 1a ] start network");
-    wifi_init();
-    net_init();
-    net_hello();
+    if (espd_main_pd_loaded_from_store && ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK) {
+        espd_wifi_net_enabled = 0;
+        ESP_LOGI(TAG,
+                 "main.pd loaded from %s — skipping WiFi and TCP/UDP patch transport",
+                 ESPD_PATCH_STORE_MOUNT);
+    } else {
+        espd_wifi_net_enabled = 1;
+        ESP_LOGI(TAG, "[ 1a ] start network");
+        wifi_init();
+        net_init();
+        net_hello();
+    }
 #endif
 #ifdef PD_USE_CONSOLE
     console_init();
@@ -403,7 +429,8 @@ void app_main(void)
         espd_waveshare_s3_poll_usb_hotplug_restart();
 #endif
 #ifdef PD_USE_WIFI
-        net_alive();
+        if (espd_wifi_net_enabled)
+            net_alive();
 #endif
     }
 }
