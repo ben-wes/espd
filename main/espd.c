@@ -26,6 +26,7 @@
 #include "esp_err.h"
 #ifdef ESPD_BOARD_WAVESHARE_S3
 #include "boards/waveshare_s3/waveshare_s3_audio.h"
+#include "boards/waveshare_s3/waveshare_s3_sdcard.h"
 #include "boards/waveshare_s3/waveshare_s3_usb_state.h"
 #endif
 #include "nvs.h"
@@ -34,6 +35,12 @@
 #ifdef PD_USE_CONSOLE
 #include "driver/uart.h"
 #include "esp_console.h"
+#endif
+#ifdef PD_USE_SDCARD
+#include <dirent.h>
+#include <errno.h>
+#include <stdio.h>
+#include <sys/stat.h>
 #endif
 static const char *TAG = "ESPD";
 
@@ -453,16 +460,59 @@ void app_main(void)
 }
 
 #ifdef PD_USE_SDCARD
+static void espd_sdcard_debug_list_root(void)
+{
+    const char *root = ESPD_SDCARD_MOUNT;
+    DIR *d = opendir(root);
+    if (!d) {
+        ESP_LOGW(TAG, "SD card: cannot read %s (%s) — missing, unmounted, or not ready yet",
+                 root, strerror(errno));
+        return;
+    }
+    ESP_LOGI(TAG, "SD card listing (%s):", root);
+    struct dirent *de;
+    int n = 0;
+    while ((de = readdir(d)) != NULL) {
+        if (de->d_name[0] == '.' &&
+            (de->d_name[1] == '\0' ||
+             (de->d_name[1] == '.' && de->d_name[2] == '\0')))
+            continue;
+        char path[288];
+        struct stat st;
+        snprintf(path, sizeof(path), "%s/%s", root, de->d_name);
+        if (stat(path, &st) == 0) {
+            const char *kind = S_ISDIR(st.st_mode) ? "dir" : "file";
+            ESP_LOGI(TAG, "  [%s] %s", kind, de->d_name);
+        } else {
+            ESP_LOGI(TAG, "  %s", de->d_name);
+        }
+        n++;
+    }
+    closedir(d);
+    if (n == 0)
+        ESP_LOGI(TAG, "  (empty)");
+}
+
 void sd_init( void)
 {
-        /* initialize SD card */
+    /* initialize SD card */
     ESP_LOGI(TAG, "[ 1 ] Mount sdcard");
-    // Initialize peripherals management
+#ifdef PD_LYRAT
+    /* LyraT path: mount via ADF board helper. */
     esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
     esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
-
-    // Initialize SD Card peripheral
     audio_board_sdcard_init(set, SD_MODE_1_LINE);
+#elif defined(ESPD_BOARD_WAVESHARE_S3)
+    {
+        esp_err_t e = espd_waveshare_s3_sdcard_mount();
+        if (e != ESP_OK)
+            ESP_LOGW(TAG, "SD mount: %s", esp_err_to_name(e));
+    }
+#else
+    ESP_LOGW(TAG, "SD init not implemented for this board; checking %s only",
+             ESPD_SDCARD_MOUNT);
+#endif
+    espd_sdcard_debug_list_root();
     ESP_LOGI(TAG, "[ 1b ] done starting network");
 }
 #endif

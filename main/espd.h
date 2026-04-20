@@ -86,6 +86,10 @@ extern char wifi_ipaddr[];
 #ifndef ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
 #define ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK 0
 #endif
+/** VFS path where the SD card is mounted (ESP-ADF LyraT default: /sdcard). */
+#ifndef ESPD_SDCARD_MOUNT
+#define ESPD_SDCARD_MOUNT "/sdcard"
+#endif
 #define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"
 
 #include "espd_patch_store.h"

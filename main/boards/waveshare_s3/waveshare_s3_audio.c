@@ -189,6 +189,11 @@ esp_err_t espd_waveshare_s3_audio_init(i2s_chan_handle_t *tx, i2s_chan_handle_t 
     return ESP_OK;
 }
 
+i2c_master_bus_handle_t espd_waveshare_s3_i2c_bus(void)
+{
+    return s_i2c_bus;
+}
+
 int espd_waveshare_s3_codec_write(void *data, int len_bytes)
 {
     if (!s_codec_dac || !data || len_bytes <= 0)

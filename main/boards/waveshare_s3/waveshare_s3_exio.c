@@ -25,6 +25,8 @@ static const char *TAG = "waveshare_exio";
 
 #define EXIO_PIN_CAMSEL 6
 #define EXIO_PIN_USBSEL 7
+/** Wiki: SD_D3 / CS -> EXIO3 (TCA9555 port0 bit 3). */
+#define EXIO_PIN_SD_CS 3
 
 static esp_err_t ioexp_read_reg(i2c_master_dev_handle_t dev, uint8_t reg,
     uint8_t *out)
@@ -185,6 +187,95 @@ static void build_addr_list(uint8_t *out, unsigned *out_n, unsigned max_n)
     for (int a = 0x20; a <= 0x27; a++)
         push_unique(out, &n, max_n, (uint8_t)a);
     *out_n = n;
+}
+
+static esp_err_t apply_sd_cs_high_tca9555(i2c_master_dev_handle_t dev, uint8_t i2c_7bit)
+{
+    uint8_t cfg0, out0;
+    esp_err_t err = ioexp_read_reg(dev, TCA9555_REG_CONFIG0, &cfg0);
+    if (err != ESP_OK)
+        return err;
+    cfg0 &= (uint8_t)~(1U << EXIO_PIN_SD_CS);
+    err = ioexp_write_reg(dev, TCA9555_REG_CONFIG0, cfg0);
+    if (err != ESP_OK)
+        return err;
+    err = ioexp_read_reg(dev, TCA9555_REG_OUTPUT0, &out0);
+    if (err != ESP_OK)
+        return err;
+    out0 |= (uint8_t)(1U << EXIO_PIN_SD_CS);
+    err = ioexp_write_reg(dev, TCA9555_REG_OUTPUT0, out0);
+    if (err != ESP_OK)
+        return err;
+    ESP_LOGI(TAG, "TCA9555 @0x%02X: SD D3/CS (EXIO3) high", i2c_7bit);
+    return ESP_OK;
+}
+
+static esp_err_t apply_sd_cs_high_tca9554(i2c_master_dev_handle_t dev, uint8_t i2c_7bit)
+{
+    uint8_t cfg, out;
+    esp_err_t err = ioexp_read_reg(dev, TCA9554_REG_CONFIG, &cfg);
+    if (err != ESP_OK)
+        return err;
+    cfg &= (uint8_t)~(1U << EXIO_PIN_SD_CS);
+    err = ioexp_write_reg(dev, TCA9554_REG_CONFIG, cfg);
+    if (err != ESP_OK)
+        return err;
+    err = ioexp_read_reg(dev, TCA9554_REG_OUTPUT, &out);
+    if (err != ESP_OK)
+        return err;
+    out |= (uint8_t)(1U << EXIO_PIN_SD_CS);
+    err = ioexp_write_reg(dev, TCA9554_REG_OUTPUT, out);
+    if (err != ESP_OK)
+        return err;
+    ESP_LOGI(TAG, "TCA9554 @0x%02X: SD D3/CS (EXIO3) high", i2c_7bit);
+    return ESP_OK;
+}
+
+static esp_err_t apply_sd_cs_on_dev(i2c_master_dev_handle_t dev, uint8_t i2c_7bit)
+{
+    uint8_t cfg9555;
+    esp_err_t err = ioexp_read_reg(dev, TCA9555_REG_CONFIG0, &cfg9555);
+    if (err == ESP_OK)
+        return apply_sd_cs_high_tca9555(dev, i2c_7bit);
+    uint8_t cfg9554;
+    err = ioexp_read_reg(dev, TCA9554_REG_CONFIG, &cfg9554);
+    if (err == ESP_OK)
+        return apply_sd_cs_high_tca9554(dev, i2c_7bit);
+    return ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t espd_waveshare_exio_sd_cs_high(i2c_master_bus_handle_t bus)
+{
+    if (!bus)
+        return ESP_ERR_INVALID_ARG;
+
+    uint8_t addrs[16];
+    unsigned n = 0;
+    build_addr_list(addrs, &n, sizeof addrs);
+    esp_err_t last = ESP_ERR_NOT_FOUND;
+
+    for (unsigned k = 0; k < n; k++) {
+        uint8_t addr = addrs[k];
+        i2c_device_config_t dcfg = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            .device_address = addr,
+            .scl_speed_hz = 100000,
+        };
+        i2c_master_dev_handle_t dev = NULL;
+        esp_err_t err = i2c_master_bus_add_device(bus, &dcfg, &dev);
+        if (err != ESP_OK) {
+            last = err;
+            continue;
+        }
+        err = apply_sd_cs_on_dev(dev, addr);
+        i2c_master_bus_rm_device(dev);
+        if (err == ESP_OK)
+            return ESP_OK;
+        last = err;
+    }
+
+    ESP_LOGW(TAG, "SD CS/EXIO3: no TCA9554/9555 responded; SD may still work if D3 is pulled up");
+    return last;
 }
 
 static esp_err_t mux_device_apply(i2c_master_bus_handle_t bus)

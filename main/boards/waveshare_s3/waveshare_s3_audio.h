@@ -1,9 +1,13 @@
 #pragma once
 
+#include "driver/i2c_master.h"
 #include "driver/i2s_std.h"
 #include "esp_err.h"
 
 esp_err_t espd_waveshare_s3_audio_init(i2s_chan_handle_t *tx, i2s_chan_handle_t *rx);
+
+/** Shared I2C bus used by ES8311 / expander; NULL before audio init completes. */
+i2c_master_bus_handle_t espd_waveshare_s3_i2c_bus(void);
 
 /** Interleaved PCM (e.g. int16 stereo) to ES8311 via esp_codec_dev (volume + I2S lock). */
 int espd_waveshare_s3_codec_write(void *data, int len_bytes);

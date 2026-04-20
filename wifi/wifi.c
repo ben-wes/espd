@@ -43,10 +43,16 @@ static void event_handler(void* arg, esp_event_base_t event_base,
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        const wifi_event_sta_disconnected_t *d =
+            (const wifi_event_sta_disconnected_t *)event_data;
+        ESP_LOGW(TAG,
+            "STA disconnected: reason=%u rssi=%d (e.g. 201=no AP, 2=auth, 15=wrong pwd)",
+            (unsigned)d->reason, (int)d->rssi);
         if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
             esp_wifi_connect();
             s_retry_num++;
-            ESP_LOGI(TAG, "retry to connect to the AP");
+            ESP_LOGI(TAG, "retry to connect to the AP (%d/%d)", s_retry_num,
+                EXAMPLE_ESP_MAXIMUM_RETRY);
         } else {
             ESP_LOGI(TAG,"connect to the AP fail");
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
@@ -126,11 +132,10 @@ void wifi_init_sta(void)
     /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
      * happened. */
     if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "connected to ap SSID:%s password:%s",
-                 CONFIG_ESP_WIFI_SSID, CONFIG_ESP_WIFI_PASSWORD);
+        ESP_LOGI(TAG, "connected to ap SSID:%s", CONFIG_ESP_WIFI_SSID);
     } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGE(TAG, "Failed to connect to SSID:%s, password:%s",
-                 CONFIG_ESP_WIFI_SSID, CONFIG_ESP_WIFI_PASSWORD);
+        ESP_LOGE(TAG, "Failed to connect to SSID:%s (check password, 2.4 GHz, reason in log)",
+                 CONFIG_ESP_WIFI_SSID);
     } else {
         ESP_LOGE(TAG, "UNEXPECTED EVENT");
     }

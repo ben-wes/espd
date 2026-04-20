@@ -13,3 +13,9 @@ esp_err_t espd_waveshare_exio_apply_usb_mux(i2c_master_bus_handle_t bus);
 
 /* Same as above using a short-lived I2C bus (before ES8311 creates the shared bus). */
 esp_err_t espd_waveshare_exio_apply_usb_mux_ephemeral(void);
+
+/**
+ * Drive TCA9555/TCA9554 EXIO3 high (wiki: SD_D3/CS). Needed so the TF slot can use
+ * SDMMC instead of SPI chip-select held low. Call after the shared I2C bus exists.
+ */
+esp_err_t espd_waveshare_exio_sd_cs_high(i2c_master_bus_handle_t bus);

@@ -9,6 +9,7 @@
 
 #define PD_USE_WIFI
 #define PD_USE_CONSOLE
+#define PD_USE_SDCARD
 #define PD_INCLUDEPATCH
 #define USEADC
 #define IOCHANS 2
