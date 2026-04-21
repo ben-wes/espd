@@ -45,6 +45,7 @@
 static const char *TAG = "ESPD";
 
 int espd_main_pd_loaded_from_store;
+const char *espd_main_pd_loaded_dir;
 #ifdef PD_USE_WIFI
 int espd_wifi_net_enabled = 1;
 #endif
@@ -407,6 +408,15 @@ void app_main(void)
     espd_waveshare_s3_usb_boot_before_pd();
 #endif
 
+#if defined(PD_USE_SDCARD) && defined(ESPD_BOARD_WAVESHARE_S3)
+    /* Mount SD before Pd so main.pd can load from ESPD_SDCARD_MOUNT. */
+    {
+        esp_err_t e = espd_waveshare_s3_sdcard_mount();
+        if (e != ESP_OK)
+            ESP_LOGW(TAG, "SD card not mounted at boot: %s", esp_err_to_name(e));
+    }
+#endif
+
     pdmain_init();
     initdacs();
 
@@ -421,7 +431,7 @@ void app_main(void)
         espd_wifi_net_enabled = 0;
         ESP_LOGI(TAG,
                  "main.pd loaded from %s — skipping WiFi and TCP/UDP patch transport",
-                 ESPD_PATCH_STORE_MOUNT);
+                 espd_main_pd_loaded_dir ? espd_main_pd_loaded_dir : ESPD_PATCH_STORE_MOUNT);
     } else {
         espd_wifi_net_enabled = 1;
         ESP_LOGI(TAG, "[ 1a ] start network");

@@ -1,0 +1,23 @@
+/*
+ * Copy to main/locale.h (see .gitignore) and edit for your network.
+ * espd.h includes this when PD_USE_WIFI is set and sdkconfig does not
+ * define CONFIG_ESP_WIFI_SSID.
+ *
+ * Flow: ESP joins your AP (SSID/password), gets an IP, then opens a TCP
+ * client to CONFIG_ESP_WIFI_SENDADDR:CONFIG_ESP_WIFI_SENDPORT. Your laptop
+ * runs Pd with [netreceive] (or similar) listening on that port.
+ *
+ * Use your laptop's Wi-Fi IPv4 on the same subnet as the ESP (the **inet**
+ * line from ifconfig/ip, e.g. 192.168.x.y). Do **not** use the interface
+ * **ether** (MAC) address — tcp/ip cannot dial a MAC. This build uses IPv4
+ * only (AF_INET / inet_addr); IPv6 literals are not supported here.
+ *
+ * Prefer a static IP or DHCP reservation so SENDADDR does not change after reboot.
+ */
+
+#define CONFIG_ESP_WIFI_SSID "your-router-ssid"
+#define CONFIG_ESP_WIFI_PASSWORD "your-wifi-password"
+
+#define CONFIG_ESP_WIFI_SENDADDR "192.168.1.100"
+#define CONFIG_ESP_WIFI_SENDPORT 4498
+#define CONFIG_ESP_WIFI_LISTENPORT 4498

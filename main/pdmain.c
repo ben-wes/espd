@@ -86,10 +86,20 @@ void pdmain_init( void)
     STUFF->st_soundin = soundin;
 
     espd_main_pd_loaded_from_store = 0;
+    espd_main_pd_loaded_dir = NULL;
 
+#ifdef PD_USE_SDCARD
+    /* SD first (expects card mounted at boot on boards that support it). */
+    if (espd_sdcard_main_pd_exists()) {
+        glob_evalfile(0, gensym("main.pd"), gensym(ESPD_SDCARD_MOUNT));
+        espd_main_pd_loaded_from_store = 1;
+        espd_main_pd_loaded_dir = ESPD_SDCARD_MOUNT;
+    } else
+#endif
     if (espd_patch_store_main_pd_exists()) {
         glob_evalfile(0, gensym("main.pd"), gensym(ESPD_PATCH_STORE_MOUNT));
         espd_main_pd_loaded_from_store = 1;
+        espd_main_pd_loaded_dir = ESPD_PATCH_STORE_MOUNT;
     }
 #ifdef PD_INCLUDEPATCH
     else {

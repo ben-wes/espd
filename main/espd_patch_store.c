@@ -47,3 +47,15 @@ bool espd_patch_store_main_pd_exists(void)
         return false;
     return S_ISREG(st.st_mode);
 }
+
+bool espd_sdcard_main_pd_exists(void)
+{
+#ifdef PD_USE_SDCARD
+    struct stat st;
+    if (stat(ESPD_SDCARD_MAIN_PD_PATH, &st) != 0)
+        return false;
+    return S_ISREG(st.st_mode);
+#else
+    return false;
+#endif
+}

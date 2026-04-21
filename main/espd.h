@@ -90,11 +90,15 @@ extern char wifi_ipaddr[];
 #ifndef ESPD_SDCARD_MOUNT
 #define ESPD_SDCARD_MOUNT "/sdcard"
 #endif
+/** If present on the mounted SD card, loaded before SPIFFS (see pdmain_init). */
+#define ESPD_SDCARD_MAIN_PD_PATH ESPD_SDCARD_MOUNT "/main.pd"
 #define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"
 
 #include "espd_patch_store.h"
 
 extern int espd_main_pd_loaded_from_store;
+/** If a local main.pd was opened, which directory it was loaded from (e.g. /sdcard or /espd_pd). */
+extern const char *espd_main_pd_loaded_dir;
 #ifdef PD_USE_WIFI
 extern int espd_wifi_net_enabled;
 /** True after net_init() has finished (TCP patch link up). Safe gate for net_send*. */

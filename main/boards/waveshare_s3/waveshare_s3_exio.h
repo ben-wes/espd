@@ -19,3 +19,6 @@ esp_err_t espd_waveshare_exio_apply_usb_mux_ephemeral(void);
  * SDMMC instead of SPI chip-select held low. Call after the shared I2C bus exists.
  */
 esp_err_t espd_waveshare_exio_sd_cs_high(i2c_master_bus_handle_t bus);
+
+/** Drive EXIO3 before the codec creates the shared I2C bus (e.g. early SD mount). */
+esp_err_t espd_waveshare_exio_sd_cs_high_ephemeral(void);
