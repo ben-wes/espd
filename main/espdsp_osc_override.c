@@ -4,14 +4,17 @@
  * we re-register these names so embedded builds use the fast paths. Stock
  * classes remain available as *~_aliased (see m_class.c).
  *
- *   Overridden: osc~, phasor~, cos~, vcf~, tabosc4~, tabread4~
+ *   Overridden: osc~, cos~, vcf~, tabosc4~, tabread4~
+ *
+ *   phasor~ is left to stock d_osc.c: the float rewrite that lived here only
+ *   produced zeros on-device; stock uses double in the loop but is correct.
  *
  * d_osc.c / d_osc.h use double + UNITBIT32 in hot loops; tabread4~ used
  * double for index sum. Xtensa has no hardware double.
  *
- * Convention (small delta vs desktop Pd): our phasor~ outputs phase in [0,1)
- * per cycle; cos~ treats input as phase in cycles (0..1 = one cycle). Chains
- * that relied on the exact Hölderich bit layout may differ; use *~_aliased.
+ * Convention (small delta vs desktop Pd): cos~ treats input as phase in cycles
+ * (0..1 = one cycle). Chains that relied on the exact Hölderich bit layout may
+ * differ; use *~_aliased.
  *
  * tabread4~ uses duplicated d_array.c arrayvec helpers (they are static there);
  * keep in sync when updating the pd submodule.
@@ -34,7 +37,6 @@
 
 static float *espdsp_costab;
 static t_class *espdsp_osc_class;
-static t_class *espdsp_phasor_class;
 static t_class *espdsp_cos_class;
 static t_class *espdsp_sigvcf_class;
 static t_class *espdsp_tabosc4_class;
@@ -383,63 +385,6 @@ static void espdsp_osc_ft1(t_espdsp_osc *x, t_float f)
     x->x_phase = (t_float)ESPDSP_OSC_TABSIZE * f;
 }
 
-/* -------------------------- phasor~ -------------------------------- */
-
-typedef struct _espdsp_phasor
-{
-    t_object x_obj;
-    t_float x_phase; /* 0 .. 1 */
-    t_float x_conv;
-    t_float x_f;
-} t_espdsp_phasor;
-
-static void *espdsp_phasor_new(t_floatarg f)
-{
-    t_espdsp_phasor *x = (t_espdsp_phasor *)pd_new(espdsp_phasor_class);
-    x->x_f = f;
-    inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("ft1"));
-    x->x_phase = 0;
-    x->x_conv = 0;
-    outlet_new(&x->x_obj, gensym("signal"));
-    return (x);
-}
-
-static t_int *espdsp_phasor_perform(t_int *w)
-{
-    t_espdsp_phasor *x = (t_espdsp_phasor *)(w[1]);
-    t_sample *in = (t_sample *)(w[2]);
-    t_sample *out = (t_sample *)(w[3]);
-    int n = (int)(w[4]);
-    t_float ph = x->x_phase;
-    t_float conv = x->x_conv;
-
-    while (n--)
-    {
-        *out++ = ph;
-        ph += *in++ * conv;
-        while (ph >= 1.f)
-            ph -= 1.f;
-        while (ph < 0.f)
-            ph += 1.f;
-    }
-    x->x_phase = ph;
-    return (w + 5);
-}
-
-static void espdsp_phasor_dsp(t_espdsp_phasor *x, t_signal **sp)
-{
-    x->x_conv = 1.f / (t_float)sp[0]->s_sr;
-    dsp_add(espdsp_phasor_perform, 4, x, sp[0]->s_vec, sp[1]->s_vec, (t_int)sp[0]->s_n);
-}
-
-static void espdsp_phasor_ft1(t_espdsp_phasor *x, t_float f)
-{
-    t_float a = f - floorf(f);
-    if (a < 0.f)
-        a += 1.f;
-    x->x_phase = a;
-}
-
 /* -------------------------- cos~ ----------------------------------- */
 
 typedef struct _espdsp_cos
@@ -753,14 +698,6 @@ void espdsp_osc_override_setup(void)
         A_CANT, 0);
     class_addmethod(espdsp_osc_class, (t_method)espdsp_osc_ft1, gensym("ft1"),
         A_FLOAT, 0);
-
-    espdsp_phasor_class = class_new(gensym("phasor~"),
-        (t_newmethod)espdsp_phasor_new, 0, sizeof(t_espdsp_phasor), 0, A_DEFFLOAT, 0);
-    CLASS_MAINSIGNALIN(espdsp_phasor_class, t_espdsp_phasor, x_f);
-    class_addmethod(espdsp_phasor_class, (t_method)espdsp_phasor_dsp,
-        gensym("dsp"), A_CANT, 0);
-    class_addmethod(espdsp_phasor_class, (t_method)espdsp_phasor_ft1,
-        gensym("ft1"), A_FLOAT, 0);
 
     espdsp_cos_class = class_new(gensym("cos~"), (t_newmethod)espdsp_cos_new, 0,
         sizeof(t_espdsp_cos), CLASS_MULTICHANNEL, A_DEFFLOAT, 0);
