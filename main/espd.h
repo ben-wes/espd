@@ -10,6 +10,7 @@
 /* #define PD_INCLUDEPATCH */   /* load the patch defined in "testpatch.c" */
 /* #define PD_LYRAT */          /* using LyraT or LyraT mini board */
 #define USEADC                  /* enable audio input (output always enabled) */
+/* #define PD_USE_ANALOG0 */    /* send analog pin as "ain0 <raw>" */
 /* #define PD_USE_GYRO */       /* complex Arts board with BNO085 gyro */
 #define IOCHANS 2
 #define OBSOLETEAPI       /* need this for LyraT boards */
@@ -76,6 +77,45 @@ extern char wifi_ipaddr[];
 #define PIN_DATA_OUT 32     /* data out from ESP32 to DAC */
 #define PIN_DATA_IN 35      /* data in from ADC to ESP32 */
 #endif /* PIN_BIT_CLOCK */
+
+#ifndef ESPD_ANALOG_NUM_CHANNELS
+#define ESPD_ANALOG_NUM_CHANNELS 1
+#endif
+#ifndef ESPD_ANALOG_PIN_0
+#define ESPD_ANALOG_PIN_0 (-1)
+#endif
+#ifndef ESPD_ANALOG_PIN_1
+#define ESPD_ANALOG_PIN_1 (-1)
+#endif
+#ifndef ESPD_ANALOG_PIN_2
+#define ESPD_ANALOG_PIN_2 (-1)
+#endif
+#ifndef ESPD_ANALOG_PIN_3
+#define ESPD_ANALOG_PIN_3 (-1)
+#endif
+#ifndef ESPD_ANALOG_PIN_4
+#define ESPD_ANALOG_PIN_4 (-1)
+#endif
+#ifndef ESPD_ANALOG_PIN_5
+#define ESPD_ANALOG_PIN_5 (-1)
+#endif
+#ifndef ESPD_ANALOG_PIN_6
+#define ESPD_ANALOG_PIN_6 (-1)
+#endif
+#ifndef ESPD_ANALOG_PIN_7
+#define ESPD_ANALOG_PIN_7 (-1)
+#endif
+/* Backward compatibility for single-channel builds. */
+#ifndef PIN_ANALOG_IN
+#define PIN_ANALOG_IN ESPD_ANALOG_PIN_0
+#endif
+#ifndef ESPD_ANALOG_DEADBAND
+#define ESPD_ANALOG_DEADBAND 32
+#endif
+/* 1 = send on every Pd block when changed; N>1 = every N blocks. */
+#ifndef ESPD_ANALOG_REPORT_EVERY_N_BLOCKS
+#define ESPD_ANALOG_REPORT_EVERY_N_BLOCKS 8
+#endif
 
 #ifndef ESPD_PATCH_STORE_MOUNT
 #define ESPD_PATCH_STORE_MOUNT "/espd_pd"

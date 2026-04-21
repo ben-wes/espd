@@ -10,6 +10,7 @@
 #define PD_USE_WIFI
 #define PD_USE_CONSOLE
 #define PD_USE_SDCARD
+#define PD_USE_ANALOG0
 #define PD_INCLUDEPATCH
 #define USEADC
 #define IOCHANS 2
@@ -34,10 +35,22 @@
 #define ESPD_WAVESHARE_I2C_SDA_GPIO 11
 
 /*
- * BAT_ADC: Waveshare v1.1 pinout table names GPIO1 (with a 0 Ω solder option);
- * some older charger-page crops said GPIO6 — treat as a doc revision mismatch
- * and confirm on your PCB before wiring ADC reads in firmware.
+ * Analog inputs sent as ain0..ainN (ADC1 only). Keep to header-accessible pins.
+ * We avoid GPIO10/11 here because they are already used as the shared I2C bus.
+ * Default mapping:
+ *   ain0 GPIO4
+ *   ain1 GPIO5
+ *   ain2 GPIO6
+ *   ain3 GPIO7
+ *
+ * BAT_ADC on some board revisions is wired to GPIO1 via a solder option; if
+ * you want battery sensing instead, set ESPD_ANALOG_PIN_0 to 1 and adjust count.
  */
+#define ESPD_ANALOG_NUM_CHANNELS 4
+#define ESPD_ANALOG_PIN_0 4
+#define ESPD_ANALOG_PIN_1 5
+#define ESPD_ANALOG_PIN_2 6
+#define ESPD_ANALOG_PIN_3 7
 
 /*
  * TCA9555 (Waveshare schematic U4; wiki “TCA9555PWR”) on the same I2C bus as ES8311

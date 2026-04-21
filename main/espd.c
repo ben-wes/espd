@@ -8,6 +8,7 @@
 */
 
 #include "espd.h"
+#include "../pd/src/m_pd.h"
 #include <string.h>
 #include <math.h>
 #include "freertos/FreeRTOS.h"
@@ -32,6 +33,9 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "esp_timer.h"
+#ifdef PD_USE_ANALOG0
+#include "esp_adc/adc_oneshot.h"
+#endif
 #ifdef PD_USE_CONSOLE
 #include "driver/uart.h"
 #include "esp_console.h"
@@ -48,6 +52,143 @@ int espd_main_pd_loaded_from_store;
 const char *espd_main_pd_loaded_dir;
 #ifdef PD_USE_WIFI
 int espd_wifi_net_enabled = 1;
+#endif
+
+#ifdef PD_USE_ANALOG0
+static adc_oneshot_unit_handle_t pd_adc_handle;
+#define ESPD_ANALOG_MAX_CHANNELS 8
+static int pd_adc_pins[ESPD_ANALOG_MAX_CHANNELS] = {
+    ESPD_ANALOG_PIN_0, ESPD_ANALOG_PIN_1, ESPD_ANALOG_PIN_2, ESPD_ANALOG_PIN_3,
+    ESPD_ANALOG_PIN_4, ESPD_ANALOG_PIN_5, ESPD_ANALOG_PIN_6, ESPD_ANALOG_PIN_7
+};
+static adc_channel_t pd_adc_channels[ESPD_ANALOG_MAX_CHANNELS];
+static int pd_adc_active[ESPD_ANALOG_MAX_CHANNELS];
+static int pd_adc_last[ESPD_ANALOG_MAX_CHANNELS];
+static unsigned pd_analog_block_counter;
+
+static void pd_send_ain_value(int idx, int raw)
+{
+    char name[16];
+    t_symbol *sym;
+    t_pd *dest;
+    snprintf(name, sizeof(name), "ain%d", idx);
+    sym = gensym(name);
+    dest = sym ? sym->s_thing : NULL;
+    if (dest)
+        pd_float(dest, (t_float)raw);
+}
+
+static int pd_pin_to_adc1_channel(int pin, adc_channel_t *channel)
+{
+    switch (pin)
+    {
+    case 1:  *channel = ADC_CHANNEL_0; return 1;
+    case 2:  *channel = ADC_CHANNEL_1; return 1;
+    case 3:  *channel = ADC_CHANNEL_2; return 1;
+    case 4:  *channel = ADC_CHANNEL_3; return 1;
+    case 5:  *channel = ADC_CHANNEL_4; return 1;
+    case 6:  *channel = ADC_CHANNEL_5; return 1;
+    case 7:  *channel = ADC_CHANNEL_6; return 1;
+    case 8:  *channel = ADC_CHANNEL_7; return 1;
+    case 9:  *channel = ADC_CHANNEL_8; return 1;
+    case 10: *channel = ADC_CHANNEL_9; return 1;
+#if CONFIG_IDF_TARGET_ESP32
+    case 36: *channel = ADC_CHANNEL_0; return 1;
+    case 37: *channel = ADC_CHANNEL_1; return 1;
+    case 38: *channel = ADC_CHANNEL_2; return 1;
+    case 39: *channel = ADC_CHANNEL_3; return 1;
+    case 32: *channel = ADC_CHANNEL_4; return 1;
+    case 33: *channel = ADC_CHANNEL_5; return 1;
+    case 34: *channel = ADC_CHANNEL_6; return 1;
+    case 35: *channel = ADC_CHANNEL_7; return 1;
+#endif
+    default: return 0;
+    }
+}
+
+static void pd_analog0_init(void)
+{
+    adc_oneshot_unit_init_cfg_t unit_cfg = {
+        .unit_id = ADC_UNIT_1,
+        .ulp_mode = ADC_ULP_MODE_DISABLE,
+    };
+    adc_oneshot_chan_cfg_t chan_cfg = {
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+    };
+    int i;
+    int enabled = 0;
+    int nchan = ESPD_ANALOG_NUM_CHANNELS;
+    esp_err_t err = adc_oneshot_new_unit(&unit_cfg, &pd_adc_handle);
+    if (nchan < 0)
+        nchan = 0;
+    if (nchan > ESPD_ANALOG_MAX_CHANNELS)
+        nchan = ESPD_ANALOG_MAX_CHANNELS;
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "adc_oneshot_new_unit failed: %d", (int)err);
+        return;
+    }
+
+    for (i = 0; i < ESPD_ANALOG_MAX_CHANNELS; i++)
+    {
+        pd_adc_active[i] = 0;
+        pd_adc_last[i] = -100000;
+    }
+
+    for (i = 0; i < nchan; i++)
+    {
+        int pin = pd_adc_pins[i];
+        adc_channel_t ch;
+        if (pin < 0)
+            continue;
+        if (!pd_pin_to_adc1_channel(pin, &ch))
+        {
+            ESP_LOGW(TAG, "analog ain%d ignored: GPIO%d is not ADC1-capable", i, pin);
+            continue;
+        }
+        err = adc_oneshot_config_channel(pd_adc_handle, ch, &chan_cfg);
+        if (err != ESP_OK)
+        {
+            ESP_LOGW(TAG, "analog ain%d setup failed on GPIO%d: %d", i, pin, (int)err);
+            continue;
+        }
+        pd_adc_channels[i] = ch;
+        pd_adc_active[i] = 1;
+        enabled++;
+        ESP_LOGI(TAG, "analog ain%d enabled on GPIO%d", i, pin);
+    }
+    if (!enabled)
+        ESP_LOGW(TAG, "analog enabled but no valid channels configured");
+}
+
+static void pd_pollanalog0(void)
+{
+    int i;
+    int report_every = ESPD_ANALOG_REPORT_EVERY_N_BLOCKS;
+    if (!pd_adc_handle)
+        return;
+    if (report_every < 1)
+        report_every = 1;
+    if (++pd_analog_block_counter < (unsigned)report_every)
+        return;
+    pd_analog_block_counter = 0;
+
+    for (i = 0; i < ESPD_ANALOG_MAX_CHANNELS; i++)
+    {
+        int raw;
+        if (!pd_adc_active[i])
+            continue;
+        if (adc_oneshot_read(pd_adc_handle, pd_adc_channels[i], &raw) != ESP_OK)
+            continue;
+        if (raw < pd_adc_last[i] - ESPD_ANALOG_DEADBAND ||
+            raw > pd_adc_last[i] + ESPD_ANALOG_DEADBAND)
+        {
+            pd_adc_last[i] = raw;
+            pd_send_ain_value(i, raw);
+        }
+    }
+}
 #endif
 
 static void espd_nvs_flash_init(void)
@@ -419,6 +560,9 @@ void app_main(void)
 
     pdmain_init();
     initdacs();
+#ifdef PD_USE_ANALOG0
+    pd_analog0_init();
+#endif
 
 #ifdef PD_USE_BLUETOOTH
     bt_init();
@@ -457,6 +601,9 @@ void app_main(void)
             }
         */
         pd_pollhost();
+#ifdef PD_USE_ANALOG0
+        pd_pollanalog0();
+#endif
         pdmain_tick();
         senddacs();
 #ifdef ESPD_BOARD_WAVESHARE_S3

@@ -74,6 +74,7 @@ set(MAIN_REQUIRES
     console
     spiffs
     driver
+    esp_adc
     nvs_flash
     esp_timer
     esp_event
