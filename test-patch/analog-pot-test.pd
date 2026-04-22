@@ -1,15 +1,15 @@
 #N canvas 270 157 564 350 10;
 #X obj 49 37 loadbang;
 #X msg 49 58 \; pd dsp 1;
-#X obj 49 103 r ain0;
+#X obj 49 103 r espd/ain/0;
 #X obj 49 124 t f f;
-#X obj 49 145 print ain0;
+#X obj 49 145 print espd/ain/0;
 #X obj 156 145 * 990;
 #X obj 156 166 + 110;
 #X obj 156 187 osc~;
 #X obj 156 208 *~ 0.03;
 #X text 46 288 pot low -> ~110 Hz;
-#X text 46 306 expects firmware PD_USE_ANALOG0 and ain0 messages;
+#X text 46 306 expects firmware PD_USE_ANALOG0 and espd/ain/0 messages;
 #X obj 156 229 dac~;
 #X connect 0 0 1 0;
 #X connect 2 0 3 0;

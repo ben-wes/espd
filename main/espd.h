@@ -10,7 +10,7 @@
 /* #define PD_INCLUDEPATCH */   /* load the patch defined in "testpatch.c" */
 /* #define PD_LYRAT */          /* using LyraT or LyraT mini board */
 #define USEADC                  /* enable audio input (output always enabled) */
-/* #define PD_USE_ANALOG0 */    /* send analog pin as "ain0 <raw>" */
+/* #define PD_USE_ANALOG0 */    /* send analog pin as "espd/ain/0 <raw>" */
 /* #define PD_USE_GYRO */       /* complex Arts board with BNO085 gyro */
 #define IOCHANS 2
 #define OBSOLETEAPI       /* need this for LyraT boards */
@@ -109,10 +109,6 @@ extern int espd_wifi_force_enable;
 #ifndef ESPD_ANALOG_PIN_7
 #define ESPD_ANALOG_PIN_7 (-1)
 #endif
-/* Backward compatibility for single-channel builds. */
-#ifndef PIN_ANALOG_IN
-#define PIN_ANALOG_IN ESPD_ANALOG_PIN_0
-#endif
 #ifndef ESPD_ANALOG_DEADBAND
 #define ESPD_ANALOG_DEADBAND 32
 #endif
@@ -121,7 +117,7 @@ extern int espd_wifi_force_enable;
 #define ESPD_ANALOG_REPORT_EVERY_N_BLOCKS 8
 #endif
 
-/* Analog outputs (PWM-backed): [s aout0]..[s aoutN] expect normalized 0..1 floats. */
+/* Analog outputs (PWM-backed): [s espd/aout/0]..[s espd/aout/N] expect normalized 0..1 floats. */
 #ifndef ESPD_AOUT_NUM_CHANNELS
 #define ESPD_AOUT_NUM_CHANNELS 0
 #endif

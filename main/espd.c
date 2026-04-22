@@ -166,7 +166,7 @@ static void pd_aout_init(void)
             continue;
         pd_aout_receivers[i].x_pd = espd_aout_receiver_class;
         pd_aout_receivers[i].idx = i;
-        snprintf(name, sizeof(name), "aout%d", i);
+        snprintf(name, sizeof(name), "espd/aout/%d", i);
         pd_bind((t_pd *)&pd_aout_receivers[i], gensym(name));
     }
 }
@@ -270,7 +270,7 @@ static void pd_send_ain_value(int idx, int raw)
     t_symbol *sym;
     t_pd *dest;
     t_float v;
-    snprintf(name, sizeof(name), "ain%d", idx);
+    snprintf(name, sizeof(name), "espd/ain/%d", idx);
     sym = gensym(name);
     dest = sym ? sym->s_thing : NULL;
     v = (t_float)raw * (1.0f / 4095.0f);

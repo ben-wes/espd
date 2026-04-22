@@ -39,13 +39,14 @@
 #define ESPD_WAVESHARE_I2C_SDA_GPIO 11
 
 /*
- * Analog inputs sent as ain0..ainN (ADC1 only). Keep to header-accessible pins.
+ * Analog inputs sent as espd/ain/0..espd/ain/N (ADC1 only). Keep to
+ * header-accessible pins.
  * We avoid GPIO10/11 here because they are already used as the shared I2C bus.
  * Default mapping:
- *   ain0 GPIO4
- *   ain1 GPIO5
- *   ain2 GPIO6
- *   ain3 GPIO7
+ *   espd/ain/0 GPIO4
+ *   espd/ain/1 GPIO5
+ *   espd/ain/2 GPIO6
+ *   espd/ain/3 GPIO7
  *
  * BAT_ADC on some board revisions is wired to GPIO1 via a solder option; if
  * you want battery sensing instead, set ESPD_ANALOG_PIN_0 to 1 and adjust count.
@@ -57,7 +58,7 @@
 #define ESPD_ANALOG_PIN_3 7
 
 /*
- * PWM-backed analog-style outputs via [s aout0], [s aout1], ... in Pd.
+ * PWM-backed analog-style outputs via [s espd/aout/0], [s espd/aout/1], ... in Pd.
  * Default mapping uses header-accessible GPIO8 and GPIO9.
  */
 #define ESPD_AOUT_NUM_CHANNELS 2
