@@ -71,11 +71,17 @@ static void pd_send_ain_value(int idx, int raw)
     char name[16];
     t_symbol *sym;
     t_pd *dest;
+    t_float v;
     snprintf(name, sizeof(name), "ain%d", idx);
     sym = gensym(name);
     dest = sym ? sym->s_thing : NULL;
+    v = (t_float)raw * (1.0f / 4095.0f);
+    if (v < 0)
+        v = 0;
+    else if (v > 1)
+        v = 1;
     if (dest)
-        pd_float(dest, (t_float)raw);
+        pd_float(dest, v);
 }
 
 static int pd_pin_to_adc1_channel(int pin, adc_channel_t *channel)

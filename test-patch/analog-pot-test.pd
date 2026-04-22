@@ -4,12 +4,11 @@
 #X obj 49 103 r ain0;
 #X obj 49 124 t f f;
 #X obj 49 145 print ain0;
-#X obj 156 145 / 4095;
-#X obj 156 166 * 990;
-#X obj 156 187 + 110;
-#X obj 156 208 osc~;
-#X obj 156 229 *~ 0.03;
-#X obj 156 250 dac~ 1 2;
+#X obj 156 145 * 990;
+#X obj 156 166 + 110;
+#X obj 156 187 osc~;
+#X obj 156 208 *~ 0.03;
+#X obj 156 229 dac~ 1 2;
 #X text 46 288 pot low -> ~110 Hz, pot high -> ~1100 Hz;
 #X text 46 306 expects firmware PD_USE_ANALOG0 and ain0 messages;
 #X connect 0 0 1 0;
