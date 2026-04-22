@@ -8,12 +8,20 @@ set(MAIN_SRCS
     "../pd/src/g_text.c"
     "../pd/src/g_rtext.c"
     "../pd/src/g_array.c"
+    "../pd/src/g_bang.c"
     "../pd/src/g_template.c"
     "../pd/src/g_io.c"
     "../pd/src/g_scalar.c"
+    "../pd/src/g_all_guis.c"
+    "../pd/src/g_mycanvas.c"
+    "../pd/src/g_numbox.c"
+    "../pd/src/g_radio.c"
     "../pd/src/g_guiconnect.c"
     "../pd/src/g_readwrite.c"
     "../pd/src/g_clone.c"
+    "../pd/src/g_slider.c"
+    "../pd/src/g_toggle.c"
+    "../pd/src/g_vumeter.c"
     "../pd/src/m_pd.c"
     "../pd/src/m_class.c"
     "../pd/src/m_obj.c"
@@ -60,7 +68,7 @@ set(MAIN_SRCS
     "../wifi/net.c"
 )
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable -Wno-parentheses -Wno-maybe-uninitialized -Wno-unused-label")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable -Wno-parentheses -Wno-maybe-uninitialized -Wno-unused-label -Wno-char-subscripts")
 
 set(MAIN_REQUIRES
     console
