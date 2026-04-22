@@ -1,0 +1,8 @@
+#N canvas 1000 327 450 300 10;
+#X obj 48 146 netsend;
+#X msg 61 98 list bla bla;
+#X msg 48 45 connect 192.168.178.64 3000;
+#X msg 164 100 disconnect;
+#X connect 1 0 0 0;
+#X connect 2 0 0 0;
+#X connect 3 0 0 0;
