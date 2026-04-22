@@ -67,11 +67,21 @@ ADF) with the Component Manager codec package: set the environment variable
 ESPD_BOARD=waveshare_s3 and follow boards/waveshare_s3/README.txt. That keeps
 LyraT / WROOM sdkconfig.* samples unchanged for other hardware.
 
-In addition to the sources youre looking at you'll need Pd, preferably the
-latest version, although I'm testing this with Pd commit
-177350fc4999b74ea28a12ba2981baa6ae04c6f0 (0.55-1 with a couple of tweaks added).
-This is included as a git submodule ("git clone --recursive [...]") .  Or
-you can just copy the pd source into a subdirectory "pd" of this directory.
+In addition to the sources youre looking at you'll need Pd source code. This is
+included as a git submodule:
+
+git clone --recursive [...]
+
+or, from an existing clone:
+
+git submodule update --init --recursive
+
+The superproject pins a specific Pd commit for reproducible builds. After
+switching branches or pulling changes, run:
+
+git submodule update --init --recursive
+
+to move submodules to the commits recorded by the checked-out branch.
 
 Then you must apply three small patches to the Pd source, found in the
 subdirectory "patches".
@@ -112,3 +122,11 @@ idf.py monitor
 
 ... if idf.py doesn't find your TTY port you can try, for instance:
 idf.py -p /dev/ttyUSB0 flash
+
+Waveshare quick start (ESP32-S3-AUDIO)
+--------------------------------------
+
+For Waveshare-specific steps, including target/board setup and monitor notes,
+see:
+
+boards/waveshare_s3/README.txt

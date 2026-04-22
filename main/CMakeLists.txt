@@ -58,17 +58,7 @@ set(MAIN_SRCS
     "../wifi/net.c"
 )
 
-if(DEFINED ENV{ESPD_BOARD} AND "$ENV{ESPD_BOARD}" STREQUAL "waveshare_s3")
-    list(APPEND MAIN_SRCS
-        "boards/waveshare_s3/waveshare_s3_audio.c"
-        "boards/waveshare_s3/waveshare_s3_exio.c"
-        "boards/waveshare_s3/waveshare_s3_sdcard.c"
-        "boards/waveshare_s3/waveshare_s3_usb_state.c")
-    set(CMAKE_C_FLAGS
-        "${CMAKE_C_FLAGS} -DESPD_BOARD_WAVESHARE_S3=1")
-endif()
-
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable -Wno-parentheses -Wno-maybe-uninitialized")
 
 set(MAIN_REQUIRES
     console
@@ -86,10 +76,15 @@ set(MAIN_REQUIRES
     esp_codec_dev
     lwip
 )
-if(DEFINED ENV{ESPD_BOARD} AND "$ENV{ESPD_BOARD}" STREQUAL "waveshare_s3")
-    list(APPEND MAIN_REQUIRES fatfs esp_driver_sdmmc)
-    if(CONFIG_TINYUSB_CDC_ENABLED)
-        list(APPEND MAIN_REQUIRES esp_tinyusb usb)
+
+set(ESPD_BOARD "$ENV{ESPD_BOARD}")
+set(MAIN_BOARD_DEFS "")
+if(ESPD_BOARD)
+    set(BOARD_CMAKE "${CMAKE_CURRENT_LIST_DIR}/boards/${ESPD_BOARD}/board.cmake")
+    if(EXISTS "${BOARD_CMAKE}")
+        include("${BOARD_CMAKE}")
+    else()
+        message(FATAL_ERROR "Unsupported ESPD_BOARD='${ESPD_BOARD}': missing ${BOARD_CMAKE}")
     endif()
 endif()
 
@@ -98,3 +93,8 @@ idf_component_register(
     INCLUDE_DIRS "."
     REQUIRES ${MAIN_REQUIRES}
 )
+
+if(MAIN_BOARD_DEFS)
+    idf_component_get_property(main_lib ${COMPONENT_NAME} COMPONENT_LIB)
+    target_compile_definitions(${main_lib} PRIVATE ${MAIN_BOARD_DEFS})
+endif()

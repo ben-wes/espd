@@ -29,6 +29,17 @@ Then:
 **idf.py build** alone is enough to verify the firmware compiles; you do not
 need to flash.
 
+Repository / submodule sync
+---------------------------
+
+From a fresh clone, or after switching branches, update submodules to the
+commits pinned by the checked-out branch:
+
+  git submodule update --init --recursive
+
+This project pins a specific Pd submodule commit for reproducible firmware
+builds.
+
 The top-level CMakeLists.txt merges **sdkconfig.defaults** and
 **boards/waveshare_s3/sdkconfig.defaults** when ESPD_BOARD=waveshare_s3 is set in
 the environment (not only on the first cmake run; delete **build/** and
@@ -128,6 +139,23 @@ after boot **unless** a file **main.pd** exists on the SPIFFS patch store.
   from SPIFFS so the board does not join WiFi or wait for host-sent patches.
   Set it to **0** in **board_profile.h** if you want WiFi + TCP/UDP patch
   transport even with a local **main.pd**.
+
+SD card runtime WiFi config (optional)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When **PD_USE_WIFI** and **PD_USE_SDCARD** are enabled, firmware also checks
+for **`/sdcard/config.txt`** at boot. If present, it can override AP
+credentials at runtime:
+
+  wifi_ssid=YourNetwork
+  wifi_password=YourPassword
+  wifi_enable=1
+
+Notes:
+- `wifi_enable` is optional; non-zero forces WiFi on even when a local
+  **main.pd** would otherwise skip network startup.
+- Ports are intentionally not configured in this file; use Pd networking
+  objects / patch logic for transport behavior.
 
 If you need stock Pd behaviour for A/B tests, use the *~_aliased objects from
 **main/espdsp_osc_override.c** (see comments there).
