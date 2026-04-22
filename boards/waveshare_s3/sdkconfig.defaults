@@ -33,8 +33,24 @@ CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
 # Performance profile (runtime DSP-focused):
 # - prefer speed-oriented compiler optimization
 # - keep checks/asserts quiet
-# - keep default logs at INFO for UART debugging
+# - keep default logs at WARN (Pd [print] still works)
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
-CONFIG_LOG_DEFAULT_LEVEL_INFO=y
-CONFIG_LOG_DEFAULT_LEVEL=3
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+CONFIG_LOG_DEFAULT_LEVEL=2
+
+# Keep network/runtime footprint lean for headless Pd usage.
+# CONFIG_WS_TRANSPORT is not set
+# CONFIG_OPENTHREAD_ENABLED is not set
+
+# Keep only codecs used on Waveshare S3 audio path.
+CONFIG_CODEC_ES8311_SUPPORT=y
+CONFIG_CODEC_ES7210_SUPPORT=y
+# CONFIG_CODEC_ES7243_SUPPORT is not set
+# CONFIG_CODEC_ES7243E_SUPPORT is not set
+# CONFIG_CODEC_ES8156_SUPPORT is not set
+# CONFIG_CODEC_AW88298_SUPPORT is not set
+# CONFIG_CODEC_ES8389_SUPPORT is not set
+# CONFIG_CODEC_ES8374_SUPPORT is not set
+# CONFIG_CODEC_ES8388_SUPPORT is not set
+# CONFIG_CODEC_TAS5805M_SUPPORT is not set
