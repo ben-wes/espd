@@ -8,9 +8,9 @@
 #X obj 156 166 + 110;
 #X obj 156 187 osc~;
 #X obj 156 208 *~ 0.03;
-#X obj 156 229 dac~ 1 2;
-#X text 46 288 pot low -> ~110 Hz, pot high -> ~1100 Hz;
+#X text 46 288 pot low -> ~110 Hz;
 #X text 46 306 expects firmware PD_USE_ANALOG0 and ain0 messages;
+#X obj 156 229 dac~;
 #X connect 0 0 1 0;
 #X connect 2 0 3 0;
 #X connect 3 0 4 0;
@@ -18,6 +18,5 @@
 #X connect 5 0 6 0;
 #X connect 6 0 7 0;
 #X connect 7 0 8 0;
-#X connect 8 0 9 0;
-#X connect 9 0 10 0;
-#X connect 9 0 10 1;
+#X connect 8 0 11 0;
+#X connect 8 0 11 1;
