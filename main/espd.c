@@ -790,8 +790,12 @@ void app_main(void)
         espd_wifi_net_enabled = 1;
         ESP_LOGI(TAG, "[ 1a ] start network");
         wifi_init();
+#if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
         net_init();
         net_hello();
+#else
+        ESP_LOGI(TAG, "legacy espd TCP/UDP transport disabled (use Pd net objects)");
+#endif
     }
 #endif
 #ifdef PD_USE_CONSOLE
@@ -820,8 +824,10 @@ void app_main(void)
         espd_waveshare_s3_poll_usb_hotplug_restart();
 #endif
 #ifdef PD_USE_WIFI
+#if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
         if (espd_wifi_net_enabled)
             net_alive();
+#endif
 #endif
     }
 }

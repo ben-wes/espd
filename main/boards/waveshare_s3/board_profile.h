@@ -23,6 +23,10 @@
 #ifndef ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
 #define ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK 1
 #endif
+/* Keep WiFi available for Pd patches, but don't run legacy espd net transport. */
+#ifndef ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
+#define ESPD_ENABLE_LEGACY_WIFI_TRANSPORT 0
+#endif
 
 /* I2S ↔ ES8311 (wiki “SPEAKER” / “MIC” tables; ESP is I2S master) */
 #define PIN_BIT_CLOCK 13

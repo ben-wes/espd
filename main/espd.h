@@ -153,6 +153,10 @@ extern int espd_wifi_force_enable;
 #ifndef ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
 #define ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK 0
 #endif
+/* 1 = start legacy espd TCP/UDP transport tasks; 0 = WiFi only for Pd objects. */
+#ifndef ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
+#define ESPD_ENABLE_LEGACY_WIFI_TRANSPORT 1
+#endif
 /** VFS path where the SD card is mounted (ESP-ADF LyraT default: /sdcard). */
 #ifndef ESPD_SDCARD_MOUNT
 #define ESPD_SDCARD_MOUNT "/sdcard"
