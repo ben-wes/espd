@@ -1,0 +1,62 @@
+From 4a1d2b51de8f4f7d0f7793ec6f541f5f60d94419 Mon Sep 17 00:00:00 2001
+From: ESPD Maintainers <devnull@example.com>
+Date: Wed, 22 Apr 2026 16:05:00 +0200
+Subject: [PATCH 4/4] x_net: improve ESP socket compatibility
+
+---
+ src/x_net.c | 20 +++++++++++++++++---
+ 1 file changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/src/x_net.c b/src/x_net.c
+index 27fdc25b..e4cc7d7f 100644
+--- a/src/x_net.c
++++ b/src/x_net.c
+@@ -289,7 +289,13 @@ static void netsend_connect(t_netsend *x, t_symbol *s, int argc, t_atom *argv)
+ 
+ #ifndef _WIN32
+         if (fcntl(sockfd, F_SETFD, FD_CLOEXEC) < 0)
+-            pd_error(x, "netsend: CLOEXEC failed: %s", strerror(errno));
++        {
++            /* lwIP/newlib may not implement close-on-exec on embedded targets. */
++#ifdef ESP_PLATFORM
++            if (errno != ENOSYS && errno != ENOTSUP)
++#endif
++                pd_error(x, "netsend: CLOEXEC failed: %s", strerror(errno));
++        }
+ #endif
+ 
+ #if 0
+@@ -681,8 +687,14 @@ static void netreceive_listen(t_netreceive *x, t_symbol *s, int argc, t_atom *ar
+     }
+     else
+     {
+-        /* For the "any" address we want to prefer IPv6, so we can create a dual stack socket */
++        /* On embedded lwIP targets dual-stack listen is not always reliable.
++         * Prefer IPv4 first so default host-side netsend connections work. */
++#ifdef ESP_PLATFORM
++        addrinfo_sort_list(&ailist, addrinfo_ipv4_first);
++#else
++        /* For desktop targets we prefer IPv6 first for dual stack sockets. */
+         addrinfo_sort_list(&ailist, addrinfo_ipv6_first);
++#endif
+     }
+ #ifdef PRINT_ADDRINFO
+     addrinfo_print_list(ailist);
+@@ -697,7 +709,13 @@ static void netreceive_listen(t_netreceive *x, t_symbol *s, int argc, t_atom *ar
+ 
+ #ifndef _WIN32
+         if (fcntl(sockfd, F_SETFD, FD_CLOEXEC) < 0)
+-            pd_error(x, "netsend: CLOEXEC failed: %s", strerror(errno));
++        {
++            /* lwIP/newlib may not implement close-on-exec on embedded targets. */
++#ifdef ESP_PLATFORM
++            if (errno != ENOSYS && errno != ENOTSUP)
++#endif
++                pd_error(x, "netsend: CLOEXEC failed: %s", strerror(errno));
++        }
+ #endif
+     #if 0
+         fprintf(stderr, "receive socket %d\n", sockfd);
+-- 
+2.33.1
+

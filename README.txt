@@ -83,8 +83,11 @@ git submodule update --init --recursive
 
 to move submodules to the commits recorded by the checked-out branch.
 
-Then you must apply three small patches to the Pd source, found in the
-subdirectory "patches".
+Then apply the required Pd compatibility patch:
+
+./scripts/apply-pd-patches.sh
+
+This script is idempotent and safe to re-run after submodule updates.
 
 To compile, set up your environment variables and issue commands to compile,
 flash, and run the monitor program to see debugging output (see bottom of this

@@ -44,6 +44,7 @@ set(MAIN_SRCS
     "../pd/src/x_connective.c"
     "../pd/src/x_interface.c"
     "../pd/src/x_misc.c"
+    "../pd/src/x_net.c"
     "../pd/src/x_time.c"
     "../pd/src/x_acoustics.c"
     "../pd/src/x_gui.c"
@@ -58,24 +59,6 @@ set(MAIN_SRCS
     "../wifi/wifi.c"
     "../wifi/net.c"
 )
-
-set(PD_X_NET_SRC "${CMAKE_CURRENT_LIST_DIR}/../pd/src/x_net.c")
-set(PD_X_NET_GEN "${CMAKE_CURRENT_BINARY_DIR}/pd_x_net_esp.c")
-file(READ "${PD_X_NET_SRC}" PD_X_NET_CONTENT)
-string(REPLACE
-    "            pd_error(x, \"netsend: CLOEXEC failed: %s\", strerror(errno));"
-    "            if (errno != ENOSYS && errno != ENOTSUP)\n                pd_error(x, \"netsend: CLOEXEC failed: %s\", strerror(errno));"
-    PD_X_NET_CONTENT
-    "${PD_X_NET_CONTENT}"
-)
-string(REPLACE
-    "        addrinfo_sort_list(&ailist, addrinfo_ipv6_first);"
-    "#ifdef ESP_PLATFORM\n        addrinfo_sort_list(&ailist, addrinfo_ipv4_first);\n#else\n        addrinfo_sort_list(&ailist, addrinfo_ipv6_first);\n#endif"
-    PD_X_NET_CONTENT
-    "${PD_X_NET_CONTENT}"
-)
-file(WRITE "${PD_X_NET_GEN}" "${PD_X_NET_CONTENT}")
-list(APPEND MAIN_SRCS "${PD_X_NET_GEN}")
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable -Wno-parentheses -Wno-maybe-uninitialized -Wno-unused-label")
 
@@ -109,7 +92,7 @@ endif()
 
 idf_component_register(
     SRCS ${MAIN_SRCS}
-    INCLUDE_DIRS "." "../pd/src"
+    INCLUDE_DIRS "."
     REQUIRES ${MAIN_REQUIRES}
 )
 
