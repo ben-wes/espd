@@ -891,39 +891,6 @@ void espd_control_io_init(void)
 }
 
 #ifdef PD_USE_SDCARD
-static void espd_sdcard_debug_list_root(void)
-{
-    const char *root = ESPD_SDCARD_MOUNT;
-    DIR *d = opendir(root);
-    if (!d) {
-        ESP_LOGW(TAG, "SD card: cannot read %s (%s) — missing, unmounted, or not ready yet",
-                 root, strerror(errno));
-        return;
-    }
-    ESP_LOGI(TAG, "SD card listing (%s):", root);
-    struct dirent *de;
-    int n = 0;
-    while ((de = readdir(d)) != NULL) {
-        if (de->d_name[0] == '.' &&
-            (de->d_name[1] == '\0' ||
-             (de->d_name[1] == '.' && de->d_name[2] == '\0')))
-            continue;
-        char path[288];
-        struct stat st;
-        snprintf(path, sizeof(path), "%s/%s", root, de->d_name);
-        if (stat(path, &st) == 0) {
-            const char *kind = S_ISDIR(st.st_mode) ? "dir" : "file";
-            ESP_LOGI(TAG, "  [%s] %s", kind, de->d_name);
-        } else {
-            ESP_LOGI(TAG, "  %s", de->d_name);
-        }
-        n++;
-    }
-    closedir(d);
-    if (n == 0)
-        ESP_LOGI(TAG, "  (empty)");
-}
-
 void sd_init( void)
 {
     /* initialize SD card */
@@ -943,7 +910,6 @@ void sd_init( void)
     ESP_LOGW(TAG, "SD init not implemented for this board; checking %s only",
              ESPD_SDCARD_MOUNT);
 #endif
-    espd_sdcard_debug_list_root();
     ESP_LOGI(TAG, "[ 1b ] done starting network");
 }
 #endif
