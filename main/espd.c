@@ -26,6 +26,7 @@
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_task_wdt.h"
+#include "esp_heap_caps.h"
 #ifdef ESPD_BOARD_WAVESHARE_S3
 #include "boards/waveshare_s3/waveshare_s3_audio.h"
 #include "boards/waveshare_s3/waveshare_s3_sdcard.h"
@@ -421,12 +422,10 @@ static i2s_chan_handle_t rx_handle;
 
 #define BLKSIZE 64
 float soundin[IOCHANS * BLKSIZE], soundout[IOCHANS * BLKSIZE];
-static int espd_printdacs;
 
 void senddacs( void)
 {
     int i, j, ret;
-    static int count;
     size_t transferred;
     short poodle[IOCHANS * BLKSIZE];
 
@@ -455,12 +454,6 @@ void senddacs( void)
         soundout[i+BLKSIZE] = 0;
 #endif
     }
-    if (espd_printdacs && count++ > 250)
-    {
-        ESP_LOGI(TAG, "sample %lx", poodle[0]);
-        count = 0;
-    }
-
 #ifdef OBSOLETEAPI
     ret = i2s_write(I2S_NUM_0, poodle, sizeof(poodle), &transferred,
         portMAX_DELAY);
@@ -955,28 +948,82 @@ void sd_init( void)
 }
 #endif
 
-static void espd_printtimediff( void)
+static void espd_print_memdiag(void)
 {
-    static int64_t whensent;
-    int64_t newtime = esp_timer_get_time();
-    int elapsed = (newtime - whensent)/1000;
-    char msg[80];
-    whensent = newtime;
-    sprintf(msg, "elapsed msec %d\n", elapsed);
+    char msg[192];
+    size_t int_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t int_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
+    size_t all_free = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    size_t all_largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+#if CONFIG_SPIRAM
+    size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t psram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+    snprintf(msg, sizeof(msg),
+        "mem: int_free=%u int_largest=%u all_free=%u all_largest=%u psram_free=%u psram_largest=%u\n",
+        (unsigned)int_free, (unsigned)int_largest,
+        (unsigned)all_free, (unsigned)all_largest,
+        (unsigned)psram_free, (unsigned)psram_largest);
+#else
+    snprintf(msg, sizeof(msg),
+        "mem: int_free=%u int_largest=%u all_free=%u all_largest=%u\n",
+        (unsigned)int_free, (unsigned)int_largest,
+        (unsigned)all_free, (unsigned)all_largest);
+#endif
     pdmain_print(msg);
 }
 
-#define t_floatarg float
-void glob_foo(void *dummy, t_floatarg f)
+static void espd_print_cpudiag(void)
 {
-    if (f == 0)
-        espd_printdacs = 0;
-    else if (f == 1)
-        espd_printdacs = 1;
-    else if (f == 2)
-        trymem(2);
-    else if (f == 3)
-        espd_printtimediff();
+#if (configGENERATE_RUN_TIME_STATS == 1)
+    UBaseType_t ntasks = uxTaskGetNumberOfTasks();
+    TaskStatus_t *tasks;
+    uint32_t total = 0;
+    uint32_t idle = 0;
+    char msg[160];
+    UBaseType_t i;
+
+    tasks = pvPortMalloc(ntasks * sizeof(TaskStatus_t));
+    if (!tasks)
+    {
+        pdmain_print("cpu: no memory for task stats\n");
+        return;
+    }
+
+    ntasks = uxTaskGetSystemState(tasks, ntasks, &total);
+    for (i = 0; i < ntasks; i++)
+    {
+        if (!strncmp(tasks[i].pcTaskName, "IDLE", 4))
+            idle += tasks[i].ulRunTimeCounter;
+    }
+    vPortFree(tasks);
+
+    if (total > 0)
+    {
+        unsigned busy_x10 = (unsigned)(((uint64_t)(total - idle) * 1000ULL) / total);
+        unsigned idle_x10 = 1000U - busy_x10;
+        snprintf(msg, sizeof(msg), "cpu: busy=%u.%u%% idle=%u.%u%%\n",
+                 busy_x10 / 10, busy_x10 % 10, idle_x10 / 10, idle_x10 % 10);
+    }
+    else
+    {
+        snprintf(msg, sizeof(msg), "cpu: runtime stats unavailable (total=0)\n");
+    }
+    pdmain_print(msg);
+#else
+    pdmain_print("cpu: enable FreeRTOS runtime stats for idle measurement\n");
+#endif
+}
+
+void glob_mem(void *dummy)
+{
+    (void)dummy;
+    espd_print_memdiag();
+}
+
+void glob_cpu(void *dummy)
+{
+    (void)dummy;
+    espd_print_cpudiag();
 }
 
 

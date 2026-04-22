@@ -21,7 +21,6 @@ void pd_init(void);
 void glob_open(t_pd *ignore, t_symbol *name, t_symbol *dir, t_floatarg f);
 
 void pdmain_print( const char *s);
-void espd_printtimediff( void);
 /*
 sed command to prepare patch:
     sed 's/;$/;\\/' foo.pd | sed 's/#N //'
@@ -132,7 +131,8 @@ void pdmain_tick( void)
 
 t_class *glob_pdobject;
 
-void glob_foo(void *dummy, t_floatarg f);
+void glob_mem(void *dummy);
+void glob_cpu(void *dummy);
 
 static void glob_beginnew(void *dummy, t_symbol *pname, t_symbol *pdir)
 {
@@ -169,8 +169,8 @@ void glob_init( void)
         CLASS_DEFAULT, A_NULL);
     class_addmethod(glob_pdobject, (t_method)glob_dsp, gensym("dsp"),
         A_GIMME, 0);
-    class_addmethod(glob_pdobject, (t_method)glob_foo, gensym("foo"),
-        A_DEFFLOAT, 0);
+    class_addmethod(glob_pdobject, (t_method)glob_mem, gensym("espd/check/mem"), 0);
+    class_addmethod(glob_pdobject, (t_method)glob_cpu, gensym("espd/check/cpu"), 0);
     class_addmethod(glob_pdobject, (t_method)glob_beginnew, gensym("begin-new"),
         A_SYMBOL, A_SYMBOL, 0);
     class_addmethod(glob_pdobject, (t_method)glob_close, gensym("close"),
