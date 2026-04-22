@@ -59,6 +59,9 @@
 #define ESPD_AOUT_NUM_CHANNELS 2
 #define ESPD_AOUT_PIN_0 8
 #define ESPD_AOUT_PIN_1 9
+/* 12-bit LEDC limit on ESP32-S3 is 19.531 kHz max; keep below this to avoid fallback. */
+#define ESPD_AOUT_PWM_FREQ_HZ 19531
+#define ESPD_AOUT_PWM_FALLBACK_FREQ_HZ 10000
 
 /*
  * TCA9555 (Waveshare schematic U4; wiki “TCA9555PWR”) on the same I2C bus as ES8311

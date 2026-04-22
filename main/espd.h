@@ -134,6 +134,12 @@ extern char wifi_ipaddr[];
 #ifndef ESPD_AOUT_PIN_3
 #define ESPD_AOUT_PIN_3 (-1)
 #endif
+#ifndef ESPD_AOUT_PWM_FREQ_HZ
+#define ESPD_AOUT_PWM_FREQ_HZ 20000
+#endif
+#ifndef ESPD_AOUT_PWM_FALLBACK_FREQ_HZ
+#define ESPD_AOUT_PWM_FALLBACK_FREQ_HZ 10000
+#endif
 
 #ifndef ESPD_PATCH_STORE_MOUNT
 #define ESPD_PATCH_STORE_MOUNT "/espd_pd"

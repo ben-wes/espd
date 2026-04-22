@@ -50,7 +50,6 @@ static const char *TAG = "ESPD";
 #define ESPD_AOUT_MAX_CHANNELS 4
 #define ESPD_AOUT_PWM_RES LEDC_TIMER_12_BIT
 #define ESPD_AOUT_PWM_MAX_DUTY ((1u << 12) - 1u)
-#define ESPD_AOUT_PWM_FREQ_HZ 20000
 
 typedef struct _espd_aout_receiver
 {
@@ -107,10 +106,18 @@ static void pd_aout_init(void)
 
     if (nchan == 0)
         return;
+
     if (ledc_timer_config(&timer_cfg) != ESP_OK)
     {
-        ESP_LOGE(TAG, "aout: LEDC timer init failed");
-        return;
+        timer_cfg.freq_hz = ESPD_AOUT_PWM_FALLBACK_FREQ_HZ;
+        if (ledc_timer_config(&timer_cfg) != ESP_OK)
+        {
+            ESP_LOGE(TAG, "aout: LEDC timer init failed (freq=%d then %d)",
+                     ESPD_AOUT_PWM_FREQ_HZ, ESPD_AOUT_PWM_FALLBACK_FREQ_HZ);
+            return;
+        }
+        ESP_LOGW(TAG, "aout: %d Hz unavailable at %d-bit PWM; using %d Hz",
+                 ESPD_AOUT_PWM_FREQ_HZ, 12, ESPD_AOUT_PWM_FALLBACK_FREQ_HZ);
     }
 
     for (i = 0; i < nchan; i++)
