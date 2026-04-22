@@ -33,6 +33,7 @@
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "esp_timer.h"
+#include <stdlib.h>
 #ifdef PD_USE_ANALOG0
 #include "esp_adc/adc_oneshot.h"
 #endif
@@ -179,6 +180,74 @@ int espd_main_pd_loaded_from_store;
 const char *espd_main_pd_loaded_dir;
 #ifdef PD_USE_WIFI
 int espd_wifi_net_enabled = 1;
+char espd_wifi_ssid[33];
+char espd_wifi_password[65];
+int espd_wifi_force_enable = 0;
+
+static char *espd_trim(char *s)
+{
+    char *e;
+    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
+        s++;
+    e = s + strlen(s);
+    while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r' || e[-1] == '\n'))
+        *--e = '\0';
+    return s;
+}
+
+static void espd_wifi_config_defaults(void)
+{
+    snprintf(espd_wifi_ssid, sizeof(espd_wifi_ssid), "%s", CONFIG_ESP_WIFI_SSID);
+    snprintf(espd_wifi_password, sizeof(espd_wifi_password), "%s", CONFIG_ESP_WIFI_PASSWORD);
+    espd_wifi_force_enable = 0;
+}
+
+#ifdef PD_USE_SDCARD
+static void espd_wifi_try_load_sdcard_config(void)
+{
+    FILE *f = fopen(ESPD_SDCARD_CONFIG_PATH, "r");
+    char line[256];
+    int ssid_from_file = 0;
+    if (!f)
+        return;
+    while (fgets(line, sizeof(line), f))
+    {
+        char *eq;
+        char *k;
+        char *v;
+        char *comment = strchr(line, '#');
+        if (comment)
+            *comment = '\0';
+        k = espd_trim(line);
+        if (*k == '\0')
+            continue;
+        eq = strchr(k, '=');
+        if (!eq)
+            continue;
+        *eq++ = '\0';
+        v = espd_trim(eq);
+        k = espd_trim(k);
+        if (!strcmp(k, "wifi_ssid"))
+        {
+            snprintf(espd_wifi_ssid, sizeof(espd_wifi_ssid), "%s", v);
+            ssid_from_file = (espd_wifi_ssid[0] != '\0');
+        }
+        else if (!strcmp(k, "wifi_password"))
+        {
+            snprintf(espd_wifi_password, sizeof(espd_wifi_password), "%s", v);
+        }
+        else if (!strcmp(k, "wifi_enable"))
+        {
+            espd_wifi_force_enable = (atoi(v) != 0);
+        }
+    }
+    fclose(f);
+    if (ssid_from_file && !espd_wifi_force_enable)
+        espd_wifi_force_enable = 1;
+    ESP_LOGI(TAG, "loaded WiFi config from %s (ssid=%s, force=%d)",
+             ESPD_SDCARD_CONFIG_PATH, espd_wifi_ssid, espd_wifi_force_enable);
+}
+#endif
 #endif
 
 #ifdef PD_USE_ANALOG0
@@ -678,6 +747,9 @@ void app_main(void)
 
     espd_nvs_flash_init();
     espd_patch_store_init();
+#ifdef PD_USE_WIFI
+    espd_wifi_config_defaults();
+#endif
 
 #ifdef ESPD_BOARD_WAVESHARE_S3
     espd_waveshare_s3_usb_boot_before_pd();
@@ -690,6 +762,9 @@ void app_main(void)
         if (e != ESP_OK)
             ESP_LOGW(TAG, "SD card not mounted at boot: %s", esp_err_to_name(e));
     }
+#endif
+#if defined(PD_USE_WIFI) && defined(PD_USE_SDCARD)
+    espd_wifi_try_load_sdcard_config();
 #endif
 
     pdmain_init();
@@ -705,7 +780,8 @@ void app_main(void)
     sd_init();
 #endif
 #ifdef PD_USE_WIFI
-    if (espd_main_pd_loaded_from_store && ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK) {
+    if (espd_main_pd_loaded_from_store && ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK &&
+        !espd_wifi_force_enable) {
         espd_wifi_net_enabled = 0;
         ESP_LOGI(TAG,
                  "main.pd loaded from %s — skipping WiFi and TCP/UDP patch transport",

@@ -70,6 +70,9 @@ void net_alive( void);  /* send keep-alive packet if needed */
 void net_sendudp(void *msg, int len, int port); /* send whatev */
 void net_sendtcp(void *msg, int len);
 extern char wifi_ipaddr[];
+extern char espd_wifi_ssid[33];
+extern char espd_wifi_password[65];
+extern int espd_wifi_force_enable;
 #endif
 
 #ifndef PIN_BIT_CLOCK       /* fallback pin locations for I2S audio I/O */
@@ -156,6 +159,7 @@ extern char wifi_ipaddr[];
 #endif
 /** If present on the mounted SD card, loaded before SPIFFS (see pdmain_init). */
 #define ESPD_SDCARD_MAIN_PD_PATH ESPD_SDCARD_MOUNT "/main.pd"
+#define ESPD_SDCARD_CONFIG_PATH ESPD_SDCARD_MOUNT "/config.txt"
 #define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"
 
 #include "espd_patch_store.h"
