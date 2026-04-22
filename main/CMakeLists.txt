@@ -108,3 +108,9 @@ if(MAIN_BOARD_DEFS)
     idf_component_get_property(main_lib ${COMPONENT_NAME} COMPONENT_LIB)
     target_compile_definitions(${main_lib} PRIVATE ${MAIN_BOARD_DEFS})
 endif()
+
+# Keep aggressive math optimization scoped to DSP override kernels only.
+set_source_files_properties(
+    "espdsp_osc_override.c"
+    PROPERTIES COMPILE_OPTIONS "-ffast-math;-fno-math-errno"
+)

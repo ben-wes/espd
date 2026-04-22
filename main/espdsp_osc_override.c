@@ -346,12 +346,13 @@ static void *espdsp_osc_new(t_floatarg f)
 static t_int *espdsp_osc_perform(t_int *w)
 {
     t_espdsp_osc *x = (t_espdsp_osc *)(w[1]);
-    t_sample *in = (t_sample *)(w[2]);
-    t_sample *out = (t_sample *)(w[3]);
+    t_sample *restrict in = (t_sample *)(w[2]);
+    t_sample *restrict out = (t_sample *)(w[3]);
     int n = (int)(w[4]);
     float *tab = espdsp_costab;
     t_float ph = x->x_phase;
     t_float conv = x->x_conv;
+    const t_float tabsize = (t_float)ESPDSP_OSC_TABSIZE;
 
     if (!tab)
     {
@@ -363,10 +364,20 @@ static t_int *espdsp_osc_perform(t_int *w)
     while (n--)
     {
         ph += *in++ * conv;
-        while (ph >= (t_float)ESPDSP_OSC_TABSIZE)
-            ph -= (t_float)ESPDSP_OSC_TABSIZE;
-        while (ph < 0)
-            ph += (t_float)ESPDSP_OSC_TABSIZE;
+        if (ph >= tabsize)
+        {
+            ph -= tabsize;
+            if (ph >= tabsize)
+                while (ph >= tabsize)
+                    ph -= tabsize;
+        }
+        else if (ph < 0)
+        {
+            ph += tabsize;
+            if (ph < 0)
+                while (ph < 0)
+                    ph += tabsize;
+        }
         *out++ = espdsp_cos_lookup(tab, ph);
     }
     x->x_phase = ph;
@@ -417,8 +428,8 @@ static void espdsp_phasor_ft1(t_espdsp_phasor *x, t_float f)
 static t_int *espdsp_phasor_perform(t_int *w)
 {
     t_espdsp_phasor *x = (t_espdsp_phasor *)(w[1]);
-    t_sample *in = (t_sample *)(w[2]);
-    t_sample *out = (t_sample *)(w[3]);
+    t_sample *restrict in = (t_sample *)(w[2]);
+    t_sample *restrict out = (t_sample *)(w[3]);
     int n = (int)(w[4]);
     uint32_t phase = x->x_phase_u32;
     t_float sr_inv = x->x_sr_inv;
@@ -459,8 +470,8 @@ static void *espdsp_cos_new(t_floatarg f)
 
 static t_int *espdsp_cos_perform(t_int *w)
 {
-    t_sample *in = (t_sample *)(w[1]);
-    t_sample *out = (t_sample *)(w[2]);
+    t_sample *restrict in = (t_sample *)(w[1]);
+    t_sample *restrict out = (t_sample *)(w[2]);
     int n = (int)(w[3]);
     float *tab = espdsp_costab;
 
