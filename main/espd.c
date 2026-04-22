@@ -25,6 +25,7 @@
 
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_task_wdt.h"
 #ifdef ESPD_BOARD_WAVESHARE_S3
 #include "boards/waveshare_s3/waveshare_s3_audio.h"
 #include "boards/waveshare_s3/waveshare_s3_sdcard.h"
@@ -834,6 +835,27 @@ void app_main(void)
 #endif
 
     ESP_LOGI(TAG, "[ 2 ] now write some shit");
+
+    /* Pd DSP can legitimately run long bursts on CPU0.
+     * Reconfigure TWDT to monitor only IDLE1 (CPU1) to avoid false positives
+     * while preserving watchdog coverage. */
+    {
+        esp_task_wdt_config_t twdt_cfg = {
+            .timeout_ms = CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000,
+            .idle_core_mask = (1U << 1),
+#ifdef CONFIG_ESP_TASK_WDT_PANIC
+            .trigger_panic = true,
+#else
+            .trigger_panic = false,
+#endif
+        };
+        esp_err_t wdt_err = esp_task_wdt_reconfigure(&twdt_cfg);
+        if (wdt_err == ESP_OK) {
+            ESP_LOGI(TAG, "task_wdt: monitoring IDLE1 only for real-time Pd loop");
+        } else if (wdt_err != ESP_ERR_NOT_SUPPORTED) {
+            ESP_LOGW(TAG, "task_wdt: reconfigure failed (%s)", esp_err_to_name(wdt_err));
+        }
+    }
 
     while (1)
     {
