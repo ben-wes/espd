@@ -20,6 +20,7 @@ set(MAIN_SRCS
     "../pd/src/m_atom.c"
     "../pd/src/m_memory.c"
     "../pd/src/m_binbuf.c"
+    "../pd/src/s_net.c"
     "../pd/src/s_print.c"
     "../pd/src/s_utf8.c"
     "../pd/src/d_ugen.c"
@@ -43,6 +44,7 @@ set(MAIN_SRCS
     "../pd/src/x_connective.c"
     "../pd/src/x_interface.c"
     "../pd/src/x_misc.c"
+    "../pd/src/x_net.c"
     "../pd/src/x_time.c"
     "../pd/src/x_acoustics.c"
     "../pd/src/x_gui.c"
@@ -58,7 +60,7 @@ set(MAIN_SRCS
     "../wifi/net.c"
 )
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable -Wno-parentheses -Wno-maybe-uninitialized")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable -Wno-parentheses -Wno-maybe-uninitialized -Wno-unused-label")
 
 set(MAIN_REQUIRES
     console

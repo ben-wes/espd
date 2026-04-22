@@ -180,6 +180,7 @@ int espd_main_pd_loaded_from_store;
 const char *espd_main_pd_loaded_dir;
 #ifdef PD_USE_WIFI
 int espd_wifi_net_enabled = 1;
+static int espd_wifi_started;
 char espd_wifi_ssid[33];
 char espd_wifi_password[65];
 int espd_wifi_force_enable = 0;
@@ -687,13 +688,15 @@ void pd_pollhost( void)
     if (length > 0)
     {
         int i;
+        int to_read = length;
+        if (to_read > (int)sizeof(data))
+            to_read = (int)sizeof(data);
         /* ESP_LOGI(TAG, "serial in %d", length); */
         length = uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM,
-            data, length, 100);
+            data, to_read, 0);
         for (i = 0; i < length; i++)
         {
             char foo[80];
-            ESP_LOGI(TAG, " %d", data[i] & 0xff);
             sprintf(foo, "key %d;", data[i] & 0xff);
             pd_sendmsg(foo, strlen(foo));
         }
@@ -767,6 +770,31 @@ void app_main(void)
     espd_wifi_try_load_sdcard_config();
 #endif
 
+#ifdef PD_USE_WIFI
+#if !ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
+    {
+        int local_main_present = 0;
+#ifdef PD_USE_SDCARD
+        if (espd_sdcard_main_pd_exists())
+            local_main_present = 1;
+#endif
+        if (!local_main_present && espd_patch_store_main_pd_exists())
+            local_main_present = 1;
+        if (local_main_present && ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK &&
+            !espd_wifi_force_enable) {
+            espd_wifi_net_enabled = 0;
+            ESP_LOGI(TAG,
+                     "main.pd detected on disk — skipping WiFi before Pd init");
+        } else {
+            espd_wifi_net_enabled = 1;
+            ESP_LOGI(TAG, "[ 1a ] start network (early for Pd net objects)");
+            wifi_init();
+            espd_wifi_started = 1;
+        }
+    }
+#endif
+#endif
+
     pdmain_init();
     initdacs();
 #ifdef PD_USE_ANALOG0
@@ -788,8 +816,11 @@ void app_main(void)
                  espd_main_pd_loaded_dir ? espd_main_pd_loaded_dir : ESPD_PATCH_STORE_MOUNT);
     } else {
         espd_wifi_net_enabled = 1;
-        ESP_LOGI(TAG, "[ 1a ] start network");
-        wifi_init();
+        if (!espd_wifi_started) {
+            ESP_LOGI(TAG, "[ 1a ] start network");
+            wifi_init();
+            espd_wifi_started = 1;
+        }
 #if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
         net_init();
         net_hello();
@@ -806,6 +837,7 @@ void app_main(void)
 
     while (1)
     {
+        static unsigned loop_count = 0;
         /*
             int zz = 0;
             if (!((zz++)%1000))
@@ -829,6 +861,10 @@ void app_main(void)
             net_alive();
 #endif
 #endif
+        /* Avoid starving IDLE0 under heavy message/network traffic.
+         * Keep this sparse to minimize audio scheduling jitter. */
+        if ((++loop_count & 0x1FF) == 0)
+            vTaskDelay(1);
     }
 }
 

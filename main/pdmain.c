@@ -1,5 +1,6 @@
 #include "../pd/src/m_pd.h"
 #include "../pd/src/s_stuff.h"
+#include "../pd/src/s_net.h"
 #include "../pd/src/m_imp.h"
 #include "../pd/src/g_canvas.h"
 #include "../pd/src/g_undo.h"
@@ -13,6 +14,8 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <unistd.h>
+#include "lwip/sockets.h"
+#include "lwip/errno.h"
 
 void pd_init(void);
 void glob_open(t_pd *ignore, t_symbol *name, t_symbol *dir, t_floatarg f);
@@ -122,6 +125,7 @@ void pdmain_tick( void)
 {
     memset(soundout, 0, (size_t)sys_get_outchannels() * DEFDACBLKSIZE * sizeof(t_sample));
     sched_tick();
+    sys_pollgui();
 }
 
 /* ----------------- stuff to keep Pd happy -------------------- */
@@ -245,6 +249,7 @@ void conf_init(void)
     x_time_setup();
     x_arithmetic_setup();
     x_array_setup();
+    x_net_setup();
     x_misc_setup();
     x_qlist_setup();
     x_gui_setup();
@@ -293,9 +298,237 @@ t_symbol *sys_libdir = &s_;
 void sys_vgui(const char *format, ...) {}
 void sys_gui(const char *s) { }
 
+typedef struct _fdpoll
+{
+    int fd;
+    t_fdpollfn fn;
+    void *ptr;
+} t_fdpoll;
+
+#define ESPD_MAX_FDPOLL 32
+static t_fdpoll s_fdpolls[ESPD_MAX_FDPOLL];
+static int s_nfdpoll;
+static unsigned char s_recvbuf[NET_MAXPACKETSIZE];
+static t_binbuf *s_net_binbuf;
+
+struct _socketreceiver
+{
+    char *sr_inbuf;
+    int sr_inhead;
+    int sr_intail;
+    void *sr_owner;
+    int sr_udp;
+    struct sockaddr_storage *sr_fromaddr;
+    t_socketnotifier sr_notifier;
+    t_socketreceivefn sr_socketreceivefn;
+    t_socketfromaddrfn sr_fromaddrfn;
+};
+
+#define INBUFSIZE 4096
+
+unsigned char *sys_getrecvbuf(unsigned int *size)
+{
+    if (size)
+        *size = NET_MAXPACKETSIZE;
+    return s_recvbuf;
+}
+
+void sys_sockerror(const char *s)
+{
+    pd_error(0, "%s: %s (%d)", s, strerror(errno), errno);
+}
+
+void sys_closesocket(int fd)
+{
+    close(fd);
+}
+
+void sys_addpollfn(int fd, t_fdpollfn fn, void *ptr)
+{
+    int i;
+    for (i = 0; i < s_nfdpoll; i++)
+        if (s_fdpolls[i].fd == fd)
+            return;
+    if (s_nfdpoll >= ESPD_MAX_FDPOLL)
+    {
+        post("warning: fdpoll list full");
+        return;
+    }
+    s_fdpolls[s_nfdpoll].fd = fd;
+    s_fdpolls[s_nfdpoll].fn = fn;
+    s_fdpolls[s_nfdpoll].ptr = ptr;
+    s_nfdpoll++;
+}
+
+void sys_rmpollfn(int fd)
+{
+    int i;
+    for (i = 0; i < s_nfdpoll; i++)
+    {
+        if (s_fdpolls[i].fd == fd)
+        {
+            for (; i + 1 < s_nfdpoll; i++)
+                s_fdpolls[i] = s_fdpolls[i + 1];
+            s_nfdpoll--;
+            return;
+        }
+    }
+}
+
+static int socketreceiver_doread(t_socketreceiver *x)
+{
+    char messbuf[INBUFSIZE], *bp = messbuf;
+    int indx, first = 1;
+    int inhead = x->sr_inhead;
+    int intail = x->sr_intail;
+    char *inbuf = x->sr_inbuf;
+    for (indx = intail; first || (indx != inhead);
+        first = 0, (indx = (indx + 1) & (INBUFSIZE - 1)))
+    {
+        char c = *bp++ = inbuf[indx];
+        if (c == ';' && (!indx || inbuf[indx - 1] != '\\'))
+        {
+            x->sr_intail = (indx + 1) & (INBUFSIZE - 1);
+            binbuf_text(s_net_binbuf, messbuf, bp - messbuf);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+t_socketreceiver *socketreceiver_new(void *owner, t_socketnotifier notifier,
+    t_socketreceivefn socketreceivefn, int udp)
+{
+    t_socketreceiver *x = (t_socketreceiver *)getbytes(sizeof(*x));
+    x->sr_inhead = x->sr_intail = 0;
+    x->sr_owner = owner;
+    x->sr_notifier = notifier;
+    x->sr_socketreceivefn = socketreceivefn;
+    x->sr_udp = udp;
+    x->sr_fromaddr = NULL;
+    x->sr_fromaddrfn = NULL;
+    x->sr_inbuf = udp ? NULL : (char *)getbytes(INBUFSIZE);
+    if (!s_net_binbuf)
+        s_net_binbuf = binbuf_new();
+    return x;
+}
+
+void socketreceiver_set_fromaddrfn(t_socketreceiver *x,
+    t_socketfromaddrfn fromaddrfn)
+{
+    x->sr_fromaddrfn = fromaddrfn;
+    if (fromaddrfn && !x->sr_fromaddr)
+        x->sr_fromaddr = (struct sockaddr_storage *)getbytes(sizeof(struct sockaddr_storage));
+    else if (!fromaddrfn && x->sr_fromaddr)
+    {
+        freebytes(x->sr_fromaddr, sizeof(struct sockaddr_storage));
+        x->sr_fromaddr = NULL;
+    }
+}
+
+void socketreceiver_free(t_socketreceiver *x)
+{
+    if (x->sr_inbuf)
+        freebytes(x->sr_inbuf, INBUFSIZE);
+    if (x->sr_fromaddr)
+        freebytes(x->sr_fromaddr, sizeof(struct sockaddr_storage));
+    freebytes(x, sizeof(*x));
+}
+
+void socketreceiver_read(t_socketreceiver *x, int fd)
+{
+    if (x->sr_udp)
+    {
+        char *buf = (char *)sys_getrecvbuf(0);
+        socklen_t fromaddrlen = sizeof(struct sockaddr_storage);
+        int ret = (int)recvfrom(fd, buf, NET_MAXPACKETSIZE - 1, 0,
+            (struct sockaddr *)x->sr_fromaddr, (x->sr_fromaddr ? &fromaddrlen : 0));
+        if (ret <= 0)
+        {
+            if (ret < 0 && x->sr_notifier)
+                (*x->sr_notifier)(x->sr_owner, fd);
+            return;
+        }
+        buf[ret] = 0;
+        if (x->sr_fromaddrfn)
+            (*x->sr_fromaddrfn)(x->sr_owner, (const void *)x->sr_fromaddr);
+        binbuf_text(s_net_binbuf, buf, strlen(buf));
+        outlet_setstacklim();
+        if (x->sr_socketreceivefn)
+            (*x->sr_socketreceivefn)(x->sr_owner, s_net_binbuf);
+        return;
+    }
+    else
+    {
+        int readto = (x->sr_inhead >= x->sr_intail ? INBUFSIZE : x->sr_intail - 1);
+        int ret;
+        if (readto == x->sr_inhead)
+            x->sr_inhead = x->sr_intail = 0, readto = INBUFSIZE;
+        ret = (int)recv(fd, x->sr_inbuf + x->sr_inhead, readto - x->sr_inhead, 0);
+        if (ret <= 0)
+        {
+            if (x->sr_notifier)
+                (*x->sr_notifier)(x->sr_owner, fd);
+            sys_rmpollfn(fd);
+            sys_closesocket(fd);
+            return;
+        }
+        x->sr_inhead += ret;
+        if (x->sr_inhead >= INBUFSIZE)
+            x->sr_inhead = 0;
+        while (socketreceiver_doread(x))
+        {
+            if (x->sr_fromaddrfn && x->sr_fromaddr)
+            {
+                socklen_t fromaddrlen = sizeof(struct sockaddr_storage);
+                if (!getpeername(fd, (struct sockaddr *)x->sr_fromaddr, &fromaddrlen))
+                    (*x->sr_fromaddrfn)(x->sr_owner, (const void *)x->sr_fromaddr);
+            }
+            outlet_setstacklim();
+            if (x->sr_socketreceivefn)
+                (*x->sr_socketreceivefn)(x->sr_owner, s_net_binbuf);
+            else
+                binbuf_eval(s_net_binbuf, 0, 0, 0);
+            if (x->sr_inhead == x->sr_intail)
+                break;
+        }
+    }
+}
+
 int sys_havegui(void) {return (0);}
 int sys_havetkproc(void) {return (0);}
-int sys_pollgui( void) { return (0); }
+int sys_pollgui(void)
+{
+    fd_set readset;
+    struct timeval timeout = {0, 0};
+    int i, maxfd = -1, did = 0;
+    FD_ZERO(&readset);
+    for (i = 0; i < s_nfdpoll; i++)
+    {
+        FD_SET(s_fdpolls[i].fd, &readset);
+        if (s_fdpolls[i].fd > maxfd)
+            maxfd = s_fdpolls[i].fd;
+    }
+    if (maxfd < 0)
+        return 0;
+#ifdef ESP_PLATFORM
+    /* Use lwIP select directly on ESP-IDF to avoid VFS select lock contention. */
+    if (lwip_select(maxfd + 1, &readset, NULL, NULL, &timeout) <= 0)
+        return 0;
+#else
+    if (select(maxfd + 1, &readset, NULL, NULL, &timeout) <= 0)
+        return 0;
+#endif
+    for (i = 0; i < s_nfdpoll; i++)
+    {
+        if (FD_ISSET(s_fdpolls[i].fd, &readset))
+        {
+            s_fdpolls[i].fn(s_fdpolls[i].ptr, s_fdpolls[i].fd);
+            did = 1;
+        }
+    }
+    return did;
+}
 
 void sys_lock(void) {}
 void sys_unlock(void) {}
