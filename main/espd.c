@@ -36,9 +36,131 @@
 #ifdef PD_USE_ANALOG0
 #include "esp_adc/adc_oneshot.h"
 #endif
+static const char *TAG = "ESPD";
+
+#if ESPD_AOUT_NUM_CHANNELS > 0
+#include "driver/ledc.h"
+#endif
 #ifdef PD_USE_CONSOLE
 #include "driver/uart.h"
 #include "esp_console.h"
+#endif
+
+#if ESPD_AOUT_NUM_CHANNELS > 0
+#define ESPD_AOUT_MAX_CHANNELS 4
+#define ESPD_AOUT_PWM_RES LEDC_TIMER_12_BIT
+#define ESPD_AOUT_PWM_MAX_DUTY ((1u << 12) - 1u)
+#define ESPD_AOUT_PWM_FREQ_HZ 20000
+
+typedef struct _espd_aout_receiver
+{
+    t_pd x_pd;
+    int idx;
+} t_espd_aout_receiver;
+
+static t_class *espd_aout_receiver_class;
+static int pd_aout_pins[ESPD_AOUT_MAX_CHANNELS] = {
+    ESPD_AOUT_PIN_0, ESPD_AOUT_PIN_1, ESPD_AOUT_PIN_2, ESPD_AOUT_PIN_3
+};
+static int pd_aout_active[ESPD_AOUT_MAX_CHANNELS];
+static t_espd_aout_receiver pd_aout_receivers[ESPD_AOUT_MAX_CHANNELS];
+
+static void pd_aout_set_value(int idx, t_float f)
+{
+    uint32_t duty;
+    if (idx < 0 || idx >= ESPD_AOUT_MAX_CHANNELS || !pd_aout_active[idx])
+        return;
+    if (f < 0.f)
+        f = 0.f;
+    else if (f > 1.f)
+        f = 1.f;
+    duty = (uint32_t)(f * (t_float)ESPD_AOUT_PWM_MAX_DUTY + 0.5f);
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)idx, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)idx);
+}
+
+static void espd_aout_receiver_float(t_espd_aout_receiver *x, t_floatarg f)
+{
+    pd_aout_set_value(x->idx, (t_float)f);
+}
+
+static void pd_aout_init(void)
+{
+    ledc_timer_config_t timer_cfg = {
+        .speed_mode = LEDC_LOW_SPEED_MODE,
+        .duty_resolution = ESPD_AOUT_PWM_RES,
+        .timer_num = LEDC_TIMER_0,
+        .freq_hz = ESPD_AOUT_PWM_FREQ_HZ,
+        .clk_cfg = LEDC_AUTO_CLK,
+    };
+    int i;
+    int nchan = ESPD_AOUT_NUM_CHANNELS;
+    int enabled = 0;
+
+    if (nchan < 0)
+        nchan = 0;
+    if (nchan > ESPD_AOUT_MAX_CHANNELS)
+        nchan = ESPD_AOUT_MAX_CHANNELS;
+
+    for (i = 0; i < ESPD_AOUT_MAX_CHANNELS; i++)
+        pd_aout_active[i] = 0;
+
+    if (nchan == 0)
+        return;
+    if (ledc_timer_config(&timer_cfg) != ESP_OK)
+    {
+        ESP_LOGE(TAG, "aout: LEDC timer init failed");
+        return;
+    }
+
+    for (i = 0; i < nchan; i++)
+    {
+        int pin = pd_aout_pins[i];
+        if (pin < 0)
+            continue;
+        ledc_channel_config_t ch_cfg = {
+            .gpio_num = pin,
+            .speed_mode = LEDC_LOW_SPEED_MODE,
+            .channel = (ledc_channel_t)i,
+            .intr_type = LEDC_INTR_DISABLE,
+            .timer_sel = LEDC_TIMER_0,
+            .duty = 0,
+            .hpoint = 0,
+        };
+        if (ledc_channel_config(&ch_cfg) != ESP_OK)
+        {
+            ESP_LOGW(TAG, "aout%d setup failed on GPIO%d", i, pin);
+            continue;
+        }
+        pd_aout_active[i] = 1;
+        enabled++;
+        ESP_LOGI(TAG, "analog aout%d enabled on GPIO%d", i, pin);
+    }
+
+    if (!enabled)
+    {
+        ESP_LOGW(TAG, "aout enabled but no valid channels configured");
+        return;
+    }
+
+    if (!espd_aout_receiver_class)
+    {
+        espd_aout_receiver_class = class_new(gensym("_espd_aout_receiver"),
+            0, 0, sizeof(t_espd_aout_receiver), CLASS_PD, 0);
+        class_addfloat(espd_aout_receiver_class, (t_method)espd_aout_receiver_float);
+    }
+
+    for (i = 0; i < nchan; i++)
+    {
+        char name[16];
+        if (!pd_aout_active[i])
+            continue;
+        pd_aout_receivers[i].x_pd = espd_aout_receiver_class;
+        pd_aout_receivers[i].idx = i;
+        snprintf(name, sizeof(name), "aout%d", i);
+        pd_bind((t_pd *)&pd_aout_receivers[i], gensym(name));
+    }
+}
 #endif
 #ifdef PD_USE_SDCARD
 #include <dirent.h>
@@ -46,8 +168,6 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #endif
-static const char *TAG = "ESPD";
-
 int espd_main_pd_loaded_from_store;
 const char *espd_main_pd_loaded_dir;
 #ifdef PD_USE_WIFI
@@ -212,6 +332,7 @@ void pdmain_init( void);
 
 
 void sd_init( void);
+void espd_control_io_init(void);
 
 #ifndef OBSOLETEAPI
 static i2s_chan_handle_t tx_handle;
@@ -620,6 +741,13 @@ void app_main(void)
             net_alive();
 #endif
     }
+}
+
+void espd_control_io_init(void)
+{
+#if ESPD_AOUT_NUM_CHANNELS > 0
+    pd_aout_init();
+#endif
 }
 
 #ifdef PD_USE_SDCARD

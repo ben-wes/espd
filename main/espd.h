@@ -54,6 +54,7 @@
 #include <sys/types.h>
 void pd_sendmsg(char *buf, int bufsize);
 void pd_fromhost(char *data, size_t size);
+void espd_control_io_init(void);
 
 #ifdef PD_USE_BLUETOOTH
 void pd_bt_poll( void);
@@ -115,6 +116,23 @@ extern char wifi_ipaddr[];
 /* 1 = send on every Pd block when changed; N>1 = every N blocks. */
 #ifndef ESPD_ANALOG_REPORT_EVERY_N_BLOCKS
 #define ESPD_ANALOG_REPORT_EVERY_N_BLOCKS 8
+#endif
+
+/* Analog outputs (PWM-backed): [s aout0]..[s aoutN] expect normalized 0..1 floats. */
+#ifndef ESPD_AOUT_NUM_CHANNELS
+#define ESPD_AOUT_NUM_CHANNELS 0
+#endif
+#ifndef ESPD_AOUT_PIN_0
+#define ESPD_AOUT_PIN_0 (-1)
+#endif
+#ifndef ESPD_AOUT_PIN_1
+#define ESPD_AOUT_PIN_1 (-1)
+#endif
+#ifndef ESPD_AOUT_PIN_2
+#define ESPD_AOUT_PIN_2 (-1)
+#endif
+#ifndef ESPD_AOUT_PIN_3
+#define ESPD_AOUT_PIN_3 (-1)
 #endif
 
 #ifndef ESPD_PATCH_STORE_MOUNT

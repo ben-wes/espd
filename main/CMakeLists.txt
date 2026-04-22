@@ -80,6 +80,7 @@ set(MAIN_REQUIRES
     esp_event
     esp_netif
     esp_wifi
+    esp_driver_ledc
     esp_driver_i2s
     esp_driver_i2c
     esp_codec_dev

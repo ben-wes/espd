@@ -53,6 +53,14 @@
 #define ESPD_ANALOG_PIN_3 7
 
 /*
+ * PWM-backed analog-style outputs via [s aout0], [s aout1], ... in Pd.
+ * Default mapping uses header-accessible GPIO8 and GPIO9.
+ */
+#define ESPD_AOUT_NUM_CHANNELS 2
+#define ESPD_AOUT_PIN_0 8
+#define ESPD_AOUT_PIN_1 9
+
+/*
  * TCA9555 (Waveshare schematic U4; wiki “TCA9555PWR”) on the same I2C bus as ES8311
  * (A2=L A1=H A0=L → 0x22 on v1.1; some builds strap 0x20 — firmware tries both).
  * EXIO6/EXIO7: USB switch. NS4150 amp enable is on TCA9555 port1 (EXIO8..15);
