@@ -55,6 +55,24 @@ defaults merge again (factory app slot is **2048K** in **partitions_pd.csv**).
 This board fragment enables octal PSRAM (per the WROVER-class S3 module on the
 kit) and uses a 32 KB main task stack.
 
+Performance / memory profile
+----------------------------
+
+Current defaults are tuned for real-time Pd use:
+
+- compiler optimization favors speed (`CONFIG_COMPILER_OPTIMIZATION_PERF`)
+- ESP-IDF logs default to WARN to reduce UART overhead (Pd `[print]` still works)
+- websocket and OpenThread are disabled for lower baseline footprint
+- only ES8311/ES7210 codec targets are enabled
+- WiFi/LWIP buffer counts are reduced and selected allocations are allowed in PSRAM
+
+Watchdog rationale:
+
+- the watchdog is a safety net for deadlocks/hangs, not a speed feature
+- for this firmware, monitoring is tuned so heavy DSP bursts on CPU0 do not trigger
+  false positives, while watchdog coverage remains active
+- keep it enabled unless you are explicitly running bring-up experiments
+
 Flash / monitor (pick your USB serial port)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
