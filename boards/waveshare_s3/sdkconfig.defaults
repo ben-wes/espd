@@ -27,4 +27,14 @@ CONFIG_ESP_CONSOLE_UART=y
 CONFIG_ESP_CONSOLE_UART_NUM=0
 CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
 
-CONFIG_TINYUSB_CDC_ENABLED=y
+# TinyUSB is optional; keep off unless ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE is enabled.
+# CONFIG_TINYUSB_CDC_ENABLED is not set
+
+# Performance profile (runtime DSP-focused):
+# - prefer speed-oriented compiler optimization
+# - keep checks/asserts quiet
+# - reduce default log verbosity overhead
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+CONFIG_LOG_DEFAULT_LEVEL=2

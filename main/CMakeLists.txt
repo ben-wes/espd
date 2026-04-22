@@ -86,7 +86,10 @@ set(MAIN_REQUIRES
     lwip
 )
 if(DEFINED ENV{ESPD_BOARD} AND "$ENV{ESPD_BOARD}" STREQUAL "waveshare_s3")
-    list(APPEND MAIN_REQUIRES esp_tinyusb usb fatfs esp_driver_sdmmc)
+    list(APPEND MAIN_REQUIRES fatfs esp_driver_sdmmc)
+    if(CONFIG_TINYUSB_CDC_ENABLED)
+        list(APPEND MAIN_REQUIRES esp_tinyusb usb)
+    endif()
 endif()
 
 idf_component_register(

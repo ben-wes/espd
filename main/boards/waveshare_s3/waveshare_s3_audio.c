@@ -29,11 +29,6 @@ static esp_codec_dev_handle_t s_codec_dac;
 static esp_codec_dev_handle_t s_codec_mic;
 #endif
 
-static uint8_t waveshare_i2c_addr7(uint8_t addr)
-{
-    return (addr > 0x7f) ? (uint8_t)(addr >> 1) : addr;
-}
-
 static esp_err_t waveshare_codecs_init(i2s_chan_handle_t tx_h, i2s_chan_handle_t rx_h)
 {
     const audio_codec_ctrl_if_t *ctrl8311;
@@ -111,26 +106,26 @@ static esp_err_t waveshare_codecs_init(i2s_chan_handle_t tx_h, i2s_chan_handle_t
         ESP_LOGW(TAG, "TCA9555 re-apply after codec open failed (speaker may stay off)");
 
 #ifdef USEADC
-    uint8_t es7210_addr7 = waveshare_i2c_addr7((uint8_t)ES7210_CODEC_DEFAULT_ADDR);
     audio_codec_i2c_cfg_t i2c7210 = {
         .port = I2C_NUM_0,
-        .addr = es7210_addr7,
+        .addr = ES7210_CODEC_DEFAULT_ADDR,
         .bus_handle = s_i2c_bus,
     };
-    /* Some board revisions / wiring combos don't expose ES7210 reliably.
-     * Probe first to avoid noisy low-level I2C write-fail logs during init. */
-    esp_err_t mic_probe = i2c_master_probe(s_i2c_bus, es7210_addr7, 50);
-    if (mic_probe != ESP_OK) {
-        ESP_LOGW(TAG, "ES7210 not detected at 0x%02x (mic capture disabled)",
-                 es7210_addr7);
+    /* Advisory probe only: do not hard-disable, some stacks use 8-bit codec
+     * addresses and probe helpers can disagree on representation. */
+    {
+        uint8_t probe_addr = (uint8_t)ES7210_CODEC_DEFAULT_ADDR;
+        if (probe_addr > 0x7f)
+            probe_addr = (uint8_t)(probe_addr >> 1);
+        if (i2c_master_probe(s_i2c_bus, probe_addr, 50) != ESP_OK)
+            ESP_LOGW(TAG, "ES7210 probe miss at 0x%02x; trying codec init anyway",
+                     probe_addr);
+    }
+    const audio_codec_ctrl_if_t *ctrl7210 = audio_codec_new_i2c_ctrl(&i2c7210);
+    if (!ctrl7210) {
+        ESP_LOGW(TAG, "ES7210: no I2C ctrl (mic capture disabled)");
         s_codec_mic = NULL;
     } else {
-        const audio_codec_ctrl_if_t *ctrl7210 = audio_codec_new_i2c_ctrl(&i2c7210);
-        if (!ctrl7210) {
-            ESP_LOGW(TAG, "ES7210: no I2C ctrl (mic capture disabled)");
-            s_codec_mic = NULL;
-            return ESP_OK;
-        }
         es7210_codec_cfg_t es7210_cfg = {
             .ctrl_if = ctrl7210,
             .master_mode = false,
