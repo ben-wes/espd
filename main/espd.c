@@ -1021,12 +1021,9 @@ static void espd_print_cpudiag(void)
             rt_over_x10 = (unsigned)((rt_overruns * 1000ULL) / rt_blocks);
         if (elapsed_us > 0)
             xruns_per_s_x10 = (unsigned)((rt_overruns * 10000000ULL) / elapsed_us);
-        snprintf(msg, sizeof(msg),
-                 "cpu_load=%u.%u%% xruns=%u.%u/s rt_over=%u.%u%% rt_max=%uus budget=%uus\n",
-                 s_busy_ema_x10 / 10, s_busy_ema_x10 % 10,
+        snprintf(msg, sizeof(msg), "rt: xruns=%u.%u/s over=%u.%u%%\n",
                  xruns_per_s_x10 / 10, xruns_per_s_x10 % 10,
-                 rt_over_x10 / 10, rt_over_x10 % 10,
-                 (unsigned)rt_max_us, (unsigned)budget_us);
+                 rt_over_x10 / 10, rt_over_x10 % 10);
     }
     else if (total > 0)
     {
