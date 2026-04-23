@@ -68,6 +68,34 @@ void trymem(int foo)
 #endif
 }
 
+static void espd_add_patch_dir_to_searchpath(const char *dir)
+{
+    if (!dir || !*dir)
+        return;
+    STUFF->st_searchpath = namelist_append(STUFF->st_searchpath, dir, 0);
+    STUFF->st_temppath = namelist_append(STUFF->st_temppath, dir, 0);
+}
+
+static void espd_print_pd_paths(const char *label)
+{
+    char msg[256];
+    size_t used = 0;
+    t_namelist *nl;
+
+    used += (size_t)snprintf(msg + used, sizeof(msg) - used, "%s searchpath:", label);
+    for (nl = STUFF->st_searchpath; nl && used + 4 < sizeof(msg); nl = nl->nl_next)
+        used += (size_t)snprintf(msg + used, sizeof(msg) - used, " %s", nl->nl_string);
+    used += (size_t)snprintf(msg + used, sizeof(msg) - used, "\n");
+    pdmain_print(msg);
+
+    used = 0;
+    used += (size_t)snprintf(msg + used, sizeof(msg) - used, "%s temppath:", label);
+    for (nl = STUFF->st_temppath; nl && used + 4 < sizeof(msg); nl = nl->nl_next)
+        used += (size_t)snprintf(msg + used, sizeof(msg) - used, " %s", nl->nl_string);
+    used += (size_t)snprintf(msg + used, sizeof(msg) - used, "\n");
+    pdmain_print(msg);
+}
+
 void pd_sendmsg(char *buf, int bufsize)
 {
     static t_binbuf *b;
@@ -94,12 +122,16 @@ void pdmain_init( void)
 #ifdef PD_USE_SDCARD
     /* SD first (expects card mounted at boot on boards that support it). */
     if (espd_sdcard_main_pd_exists()) {
+        espd_add_patch_dir_to_searchpath(ESPD_SDCARD_MOUNT);
+        espd_print_pd_paths("pd");
         glob_evalfile(0, gensym("main.pd"), gensym(ESPD_SDCARD_MOUNT));
         espd_main_pd_loaded_from_store = 1;
         espd_main_pd_loaded_dir = ESPD_SDCARD_MOUNT;
     } else
 #endif
     if (espd_patch_store_main_pd_exists()) {
+        espd_add_patch_dir_to_searchpath(ESPD_PATCH_STORE_MOUNT);
+        espd_print_pd_paths("pd");
         glob_evalfile(0, gensym("main.pd"), gensym(ESPD_PATCH_STORE_MOUNT));
         espd_main_pd_loaded_from_store = 1;
         espd_main_pd_loaded_dir = ESPD_PATCH_STORE_MOUNT;
@@ -602,7 +634,97 @@ int sys_hostfontsize(int fontsize, int zoom) { return (1);}
 int sys_zoom_open = 1;
 int sys_zoomfontwidth(int fontsize, int zoom, int worstcase) { return (1);}
 int sys_zoomfontheight(int fontsize, int zoom, int worstcase) { return (1);}
-int sys_load_lib(t_canvas *canvas, const char *classname) { return (0);}
+
+void canvas_popabstraction(t_canvas *x);
+int pd_setloadingabstraction(t_symbol *sym);
+
+static t_pd *espd_create_abstraction(t_symbol *s, int argc, t_atom *argv)
+{
+    const char *objectname;
+    char dirbuf[MAXPDSTRING], classslashclass[MAXPDSTRING], *nameptr;
+    t_glist *glist;
+    t_canvas *canvas;
+    t_pd *was;
+    int fd;
+
+    if (!s || !s->s_name || !*s->s_name)
+        return 0;
+    if (pd_setloadingabstraction(s))
+    {
+        pd_error(0, "%s: can't load abstraction within itself\n", s->s_name);
+        pd_this->pd_newest = 0;
+        return 0;
+    }
+
+    objectname = s->s_name;
+    glist = (t_glist *)canvas_getcurrent();
+    canvas = (t_canvas *)glist_getcanvas(glist);
+    was = s__X.s_thing;
+    pd_snprintf(classslashclass, MAXPDSTRING, "%s/%s", objectname, objectname);
+    fd = canvas_open(canvas, objectname, ".pd", dirbuf, &nameptr, MAXPDSTRING, 0);
+    if (fd < 0)
+        fd = canvas_open(canvas, objectname, ".pat", dirbuf, &nameptr, MAXPDSTRING, 0);
+    if (fd < 0)
+        fd = canvas_open(canvas, classslashclass, ".pd", dirbuf, &nameptr, MAXPDSTRING, 0);
+    if (fd < 0)
+    {
+        pd_this->pd_newest = 0;
+        return 0;
+    }
+    close(fd);
+
+    canvas_setargs(argc, argv);
+    binbuf_evalfile(gensym(nameptr), gensym(dirbuf));
+    if (s__X.s_thing && was != s__X.s_thing)
+        canvas_popabstraction((t_canvas *)s__X.s_thing);
+    else
+        s__X.s_thing = was;
+    canvas_setargs(0, 0);
+    return pd_this->pd_newest;
+}
+
+static int espd_load_abstraction_class(t_canvas *canvas, const char *objectname)
+{
+    static t_gobj *abstraction_classes = 0;
+    t_class *c = 0;
+    char dirbuf[MAXPDSTRING], classslashclass[MAXPDSTRING], *nameptr;
+    int fd;
+
+    pd_snprintf(classslashclass, MAXPDSTRING, "%s/%s", objectname, objectname);
+    fd = canvas_open(canvas, objectname, ".pd", dirbuf, &nameptr, MAXPDSTRING, 0);
+    if (fd < 0)
+        fd = canvas_open(canvas, objectname, ".pat", dirbuf, &nameptr, MAXPDSTRING, 0);
+    if (fd < 0)
+        fd = canvas_open(canvas, classslashclass, ".pd", dirbuf, &nameptr, MAXPDSTRING, 0);
+    if (fd < 0)
+        return 0;
+    close(fd);
+
+    class_set_extern_dir(gensym(dirbuf));
+    c = class_new(gensym(objectname), (t_newmethod)espd_create_abstraction,
+        0, 0, 0, A_GIMME, 0);
+    class_set_extern_dir(&s_);
+    if (!c)
+        return 0;
+
+    /* Keep class references alive (mirrors upstream loader behavior). */
+    {
+        t_gobj *absclass = (t_gobj *)t_getbytes(sizeof(*absclass));
+        absclass->g_pd = c;
+        absclass->g_next = abstraction_classes;
+        abstraction_classes = absclass;
+    }
+    return 1;
+}
+
+int sys_load_lib(t_canvas *canvas, const char *classname)
+{
+    if (!classname || !*classname)
+        return 0;
+    if (zgetfn(&pd_objectmaker, gensym(classname)))
+        return 1;
+    return espd_load_abstraction_class(canvas, classname);
+}
 
 t_rtext *glist_textedfor(t_glist *gl)
 {
