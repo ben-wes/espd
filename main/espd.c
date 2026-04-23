@@ -422,6 +422,9 @@ static i2s_chan_handle_t rx_handle;
 
 #define BLKSIZE 64
 float soundin[IOCHANS * BLKSIZE], soundout[IOCHANS * BLKSIZE];
+static uint64_t s_rt_blocks;
+static uint64_t s_rt_overruns;
+static uint32_t s_rt_max_us;
 
 void senddacs( void)
 {
@@ -867,8 +870,22 @@ void app_main(void)
 #ifdef PD_USE_ANALOG0
         pd_pollanalog0();
 #endif
-        pdmain_tick();
-        senddacs();
+        {
+            uint64_t t0 = (uint64_t)esp_timer_get_time();
+            uint32_t sr = (uint32_t)sys_getsr();
+            uint32_t budget_us = (sr > 0) ? (uint32_t)((1000000ULL * BLKSIZE) / sr) : 0;
+            uint64_t dt;
+
+            pdmain_tick();
+            senddacs();
+
+            dt = (uint64_t)esp_timer_get_time() - t0;
+            s_rt_blocks++;
+            if ((uint32_t)dt > s_rt_max_us)
+                s_rt_max_us = (uint32_t)dt;
+            if (budget_us > 0 && dt > budget_us)
+                s_rt_overruns++;
+        }
 #ifdef ESPD_BOARD_WAVESHARE_S3
         espd_waveshare_s3_poll_usb_hotplug_restart();
 #endif
@@ -946,9 +963,26 @@ static void espd_print_cpudiag(void)
     UBaseType_t ntasks = uxTaskGetNumberOfTasks();
     TaskStatus_t *tasks;
     uint32_t total = 0;
-    uint32_t idle = 0;
-    char msg[160];
+    uint64_t idle_now = 0;
+    uint64_t total_now = 0;
+    static uint64_t s_prev_idle;
+    static uint64_t s_prev_total;
+    uint64_t rt_blocks = s_rt_blocks;
+    uint64_t rt_overruns = s_rt_overruns;
+    uint32_t rt_max_us = s_rt_max_us;
+    uint32_t sr = (uint32_t)sys_getsr();
+    uint32_t budget_us = (sr > 0) ? (uint32_t)((1000000ULL * BLKSIZE) / sr) : 0;
+    static uint64_t s_prev_diag_us;
+    static unsigned s_busy_ema_x10;
+    uint64_t now_us = (uint64_t)esp_timer_get_time();
+    uint64_t elapsed_us = (s_prev_diag_us > 0 && now_us > s_prev_diag_us) ?
+        (now_us - s_prev_diag_us) : 0;
+    char msg[240];
     UBaseType_t i;
+
+    s_rt_blocks = 0;
+    s_rt_overruns = 0;
+    s_rt_max_us = 0;
 
     tasks = pvPortMalloc(ntasks * sizeof(TaskStatus_t));
     if (!tasks)
@@ -960,22 +994,53 @@ static void espd_print_cpudiag(void)
     ntasks = uxTaskGetSystemState(tasks, ntasks, &total);
     for (i = 0; i < ntasks; i++)
     {
+        total_now += (uint64_t)tasks[i].ulRunTimeCounter;
         if (!strncmp(tasks[i].pcTaskName, "IDLE", 4))
-            idle += tasks[i].ulRunTimeCounter;
+            idle_now += (uint64_t)tasks[i].ulRunTimeCounter;
     }
     vPortFree(tasks);
 
-    if (total > 0)
+    if (total_now > s_prev_total && idle_now >= s_prev_idle)
     {
-        unsigned busy_x10 = (unsigned)(((uint64_t)(total - idle) * 1000ULL) / total);
-        unsigned idle_x10 = 1000U - busy_x10;
-        snprintf(msg, sizeof(msg), "cpu: busy=%u.%u%% idle=%u.%u%%\n",
-                 busy_x10 / 10, busy_x10 % 10, idle_x10 / 10, idle_x10 % 10);
+        uint64_t d_total = total_now - s_prev_total;
+        uint64_t d_idle = idle_now - s_prev_idle;
+        if (d_idle > d_total)
+            d_idle = d_total;
+        unsigned idle_x10 = (unsigned)((d_idle * 1000ULL) / d_total);
+        if (idle_x10 > 1000U)
+            idle_x10 = 1000U;
+        unsigned busy_x10 = 1000U - idle_x10;
+        unsigned rt_over_x10 = 0;
+        unsigned xruns_per_s_x10 = 0;
+        /* Low-pass the load indicator for readability. */
+        if (s_busy_ema_x10 == 0)
+            s_busy_ema_x10 = busy_x10;
+        else
+            s_busy_ema_x10 = (s_busy_ema_x10 * 3U + busy_x10) / 4U;
+        if (rt_blocks > 0)
+            rt_over_x10 = (unsigned)((rt_overruns * 1000ULL) / rt_blocks);
+        if (elapsed_us > 0)
+            xruns_per_s_x10 = (unsigned)((rt_overruns * 10000000ULL) / elapsed_us);
+        snprintf(msg, sizeof(msg),
+                 "cpu_load=%u.%u%% xruns=%u.%u/s rt_over=%u.%u%% rt_max=%uus budget=%uus\n",
+                 s_busy_ema_x10 / 10, s_busy_ema_x10 % 10,
+                 xruns_per_s_x10 / 10, xruns_per_s_x10 % 10,
+                 rt_over_x10 / 10, rt_over_x10 % 10,
+                 (unsigned)rt_max_us, (unsigned)budget_us);
+    }
+    else if (total > 0)
+    {
+        /* First sample (or counter reset) has no valid delta yet. */
+        snprintf(msg, sizeof(msg), "cpu: sampling...\n");
     }
     else
     {
         snprintf(msg, sizeof(msg), "cpu: runtime stats unavailable (total=0)\n");
     }
+
+    s_prev_total = total_now;
+    s_prev_idle = idle_now;
+    s_prev_diag_us = now_us;
     pdmain_print(msg);
 #else
     pdmain_print("cpu: disabled (set ESPD_ENABLE_CPU_STATS=1 for profiling builds)\n");
