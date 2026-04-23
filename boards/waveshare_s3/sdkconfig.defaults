@@ -27,17 +27,19 @@ CONFIG_ESP_CONSOLE_UART=y
 CONFIG_ESP_CONSOLE_UART_NUM=0
 CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
 
-# TinyUSB is optional; keep off unless ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE is enabled.
-# CONFIG_TINYUSB_CDC_ENABLED is not set
-
-# Performance profile (runtime DSP-focused):
-# - prefer speed-oriented compiler optimization
+# Size profile:
+# - prioritize smaller flash footprint
 # - keep checks/asserts quiet
 # - keep default logs at WARN (Pd [print] still works)
-CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
 CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
 CONFIG_LOG_DEFAULT_LEVEL_WARN=y
 CONFIG_LOG_DEFAULT_LEVEL=2
+
+# Explicitly disable Bluetooth and HTTPS features.
+# CONFIG_BT_ENABLED is not set
+# CONFIG_ESP_HTTP_CLIENT_ENABLE_HTTPS is not set
+# CONFIG_ESP_HTTPS_SERVER_ENABLE is not set
 
 # Keep network/runtime footprint lean for headless Pd usage.
 # CONFIG_WS_TRANSPORT is not set

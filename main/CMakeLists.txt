@@ -1,5 +1,6 @@
 set(MAIN_SRCS
     "espd.c"
+    "pd_lseek64_compat.c"
     "espd_patch_store.c"
     "pdmain.c"
     "espdsp_osc_override.c"
@@ -68,7 +69,8 @@ set(MAIN_SRCS
     "../wifi/net.c"
 )
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable -Wno-parentheses -Wno-maybe-uninitialized -Wno-unused-label -Wno-char-subscripts")
+# FIXME: remove these warning suppression flags once Pd is fixed
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DPD -DHAVE_UNISTD_H -DHAVE_ALLOCA_H -DPD_HEADLESS -DPD_INTERNAL -DSYMTABHASHSIZE=512 -DSTUPID_SORT -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function -Wno-format -Wno-stringop-truncation -Wno-unused-const-variable -Wno-parentheses -Wno-maybe-uninitialized -Wno-unused-label -Wno-char-subscripts -Wno-cast-function-type -Wno-compare-distinct-pointer-types -Wno-cpp -Wno-empty-body -Wno-type-limits -Wno-unterminated-string-initialization -Wno-missing-field-initializers -Wno-implicit-fallthrough")
 
 set(MAIN_REQUIRES
     console
@@ -83,6 +85,8 @@ set(MAIN_REQUIRES
     esp_driver_ledc
     esp_driver_i2s
     esp_driver_i2c
+    esp_driver_gpio
+    esp_driver_uart
     esp_codec_dev
     lwip
 )

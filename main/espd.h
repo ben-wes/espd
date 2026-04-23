@@ -13,7 +13,10 @@
 /* #define PD_USE_ANALOG0 */    /* send analog pin as "espd/ain/0 <raw>" */
 /* #define PD_USE_GYRO */       /* complex Arts board with BNO085 gyro */
 #define IOCHANS 2
-#define OBSOLETEAPI       /* need this for LyraT boards */
+/* Keep legacy I2S API opt-in; ESP-IDF 6 defaults to the new channel API. */
+#if defined(PD_LYRAT)
+#define OBSOLETEAPI
+#endif
 #endif
 
 /* task priorities */
