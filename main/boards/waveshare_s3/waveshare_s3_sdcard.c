@@ -15,6 +15,7 @@
 #include "esp_vfs_fat.h"
 
 static const char *TAG = "waveshare_sdcard";
+static const char *SD_HOST_TAG = "SD_HOST";
 
 static bool s_sd_mounted;
 
@@ -75,9 +76,16 @@ esp_err_t espd_waveshare_s3_sdcard_mount(void)
     slot_config.wp = SDMMC_SLOT_NO_WP;
     slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
 
+    /*
+     * ESP32-S3 SD host doesn't implement input delayline tuning, and IDF logs a
+     * one-time fallback warning from SD_HOST during mount. Keep warnings enabled
+     * globally, but silence this known benign fallback at the source tag.
+     */
+    esp_log_level_set(SD_HOST_TAG, ESP_LOG_ERROR);
     sdmmc_card_t *card = NULL;
     esp_err_t ret = esp_vfs_fat_sdmmc_mount(ESPD_SDCARD_MOUNT, &host, &slot_config,
                                             &mount_config, &card);
+    esp_log_level_set(SD_HOST_TAG, ESP_LOG_WARN);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to mount SD card at %s: %s", ESPD_SDCARD_MOUNT,
                  esp_err_to_name(ret));
