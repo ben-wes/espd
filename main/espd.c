@@ -720,6 +720,8 @@ void pd_pollhost( void)
 void pdmain_print( const char *s)
 {
     char y[81];
+    if (s && *s)
+        printf("%s", s);
     strncpy(y, s, 79);
     y[79]=0;
     strcat(y, ";");
@@ -940,7 +942,7 @@ static void espd_print_memdiag(void)
 
 static void espd_print_cpudiag(void)
 {
-#if (configGENERATE_RUN_TIME_STATS == 1)
+#if (ESPD_ENABLE_CPU_STATS == 1) && (configGENERATE_RUN_TIME_STATS == 1)
     UBaseType_t ntasks = uxTaskGetNumberOfTasks();
     TaskStatus_t *tasks;
     uint32_t total = 0;
@@ -976,7 +978,7 @@ static void espd_print_cpudiag(void)
     }
     pdmain_print(msg);
 #else
-    pdmain_print("cpu: enable FreeRTOS runtime stats for idle measurement\n");
+    pdmain_print("cpu: disabled (set ESPD_ENABLE_CPU_STATS=1 for profiling builds)\n");
 #endif
 }
 
