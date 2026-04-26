@@ -219,7 +219,7 @@ static void espd_led_receiver_list(t_espd_led_receiver *x,
         uint8_t g = espd_led_clamp(atom_getfloat(argv + 1));
         uint8_t b = espd_led_clamp(atom_getfloat(argv + 2));
         espd_waveshare_s3_leds_set(x->idx, r, g, b);
-        espd_waveshare_s3_leds_refresh();
+        espd_waveshare_s3_leds_mark_dirty();
         return;
     }
     /* Master receiver. */
@@ -228,14 +228,14 @@ static void espd_led_receiver_list(t_espd_led_receiver *x,
         uint8_t g = espd_led_clamp(atom_getfloat(argv + 1));
         uint8_t b = espd_led_clamp(atom_getfloat(argv + 2));
         espd_waveshare_s3_leds_fill(r, g, b);
-        espd_waveshare_s3_leds_refresh();
+        espd_waveshare_s3_leds_mark_dirty();
     } else if (argc >= 4) {
         int idx = (int)atom_getfloat(argv);
         uint8_t r = espd_led_clamp(atom_getfloat(argv + 1));
         uint8_t g = espd_led_clamp(atom_getfloat(argv + 2));
         uint8_t b = espd_led_clamp(atom_getfloat(argv + 3));
         espd_waveshare_s3_leds_set(idx, r, g, b);
-        espd_waveshare_s3_leds_refresh();
+        espd_waveshare_s3_leds_mark_dirty();
     }
 }
 
@@ -995,6 +995,7 @@ void app_main(void)
 #endif
 #ifdef ESPD_BOARD_WAVESHARE_S3
         espd_waveshare_s3_buttons_poll();
+        espd_waveshare_s3_leds_poll();
 #endif
         {
             uint64_t t0 = (uint64_t)esp_timer_get_time();

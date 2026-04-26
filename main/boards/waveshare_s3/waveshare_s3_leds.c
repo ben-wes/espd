@@ -3,10 +3,42 @@
 
 #include "esp_log.h"
 #include "led_strip.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "waveshare_leds";
 
 static led_strip_handle_t s_strip;
+static TaskHandle_t s_refresh_task;
+static volatile int s_dirty;
+
+#ifndef ESPD_LED_REFRESH_TASK_PRIO
+#define ESPD_LED_REFRESH_TASK_PRIO 2  /* well below audio task */
+#endif
+#ifndef ESPD_LED_REFRESH_TASK_CORE
+#define ESPD_LED_REFRESH_TASK_CORE 0  /* opposite core from Pd audio (core 1) */
+#endif
+#ifndef ESPD_LED_REFRESH_MIN_INTERVAL_MS
+#define ESPD_LED_REFRESH_MIN_INTERVAL_MS 10  /* coalesce bursts; ~100 fps cap */
+#endif
+
+static void espd_leds_refresh_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        /* Wait for a dirty signal. */
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        /* Coalesce: drop further wake-ups arriving during the cool-down. */
+        if (s_dirty) {
+            s_dirty = 0;
+            led_strip_refresh(s_strip);
+        }
+        vTaskDelay(pdMS_TO_TICKS(ESPD_LED_REFRESH_MIN_INTERVAL_MS));
+        /* If new updates landed during the cool-down, eat any pending notify
+         * so we run exactly once more without unbounded queueing. */
+        ulTaskNotifyTake(pdTRUE, 0);
+    }
+}
 
 esp_err_t espd_waveshare_s3_leds_init(void)
 {
@@ -57,6 +89,18 @@ esp_err_t espd_waveshare_s3_leds_init(void)
         (unsigned)ESPD_WAVESHARE_LED_BOOT_R,
         (unsigned)ESPD_WAVESHARE_LED_BOOT_G,
         (unsigned)ESPD_WAVESHARE_LED_BOOT_B);
+
+    /* Spawn the dedicated refresh task so RMT writes never run on the audio
+     * thread. Pinned to the opposite core to avoid sharing CPU with senddacs(). */
+    if (!s_refresh_task) {
+        BaseType_t ok = xTaskCreatePinnedToCore(espd_leds_refresh_task,
+            "led_refresh", 2048, NULL, ESPD_LED_REFRESH_TASK_PRIO,
+            &s_refresh_task, ESPD_LED_REFRESH_TASK_CORE);
+        if (ok != pdPASS) {
+            ESP_LOGW(TAG, "failed to create led_refresh task");
+            s_refresh_task = NULL;
+        }
+    }
     return ESP_OK;
 }
 
@@ -94,4 +138,16 @@ esp_err_t espd_waveshare_s3_leds_clear(void)
     if (!s_strip)
         return ESP_ERR_INVALID_STATE;
     return led_strip_clear(s_strip);
+}
+
+void espd_waveshare_s3_leds_mark_dirty(void)
+{
+    s_dirty = 1;
+    if (s_refresh_task)
+        xTaskNotifyGive(s_refresh_task);
+}
+
+void espd_waveshare_s3_leds_poll(void)
+{
+    /* No-op: refresh now happens on a dedicated task. Kept for ABI stability. */
 }
