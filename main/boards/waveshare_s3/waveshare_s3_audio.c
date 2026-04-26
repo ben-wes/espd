@@ -5,10 +5,12 @@
  */
 
 #include "boards/waveshare_s3/board_profile.h"
+#include "boards/waveshare_s3/waveshare_s3_buttons.h"
 #include "boards/waveshare_s3/waveshare_s3_exio.h"
 #include "boards/waveshare_s3/waveshare_s3_usb_state.h"
 #include "driver/i2c_master.h"
 #include "driver/i2s_std.h"
+#include "freertos/FreeRTOS.h"
 #include "esp_check.h"
 #include "esp_codec_dev.h"
 #include "esp_codec_dev_defaults.h"
@@ -57,6 +59,10 @@ static esp_err_t waveshare_codecs_init(i2s_chan_handle_t tx_h, i2s_chan_handle_t
 
     if (espd_waveshare_exio_apply_usb_mux(s_i2c_bus) != ESP_OK)
         ESP_LOGW(TAG, "TCA9555 EXIO mux / PA failed (USB or speaker may not work)");
+    /* Register the TCA9555 for buttons now, before the codec devices are added
+     * to the shared bus — repeated add_device / rm_device cycling on this
+     * IDF v6 i2c_master has been observed to start NACKing later on this board. */
+    espd_waveshare_s3_buttons_init();
 
     audio_codec_i2c_cfg_t i2c8311 = {
         .port = I2C_NUM_0,

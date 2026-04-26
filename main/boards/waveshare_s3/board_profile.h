@@ -43,19 +43,21 @@
  * header-accessible pins.
  * We avoid GPIO10/11 here because they are already used as the shared I2C bus.
  * Default mapping:
- *   espd/ain/0 GPIO4
- *   espd/ain/1 GPIO5
- *   espd/ain/2 GPIO6
- *   espd/ain/3 GPIO7
+ *   espd/ain/0 GPIO3  (ADC1_CH2; strapping pin — do not drive low at reset)
+ *   espd/ain/1 GPIO4
+ *   espd/ain/2 GPIO5
+ *   espd/ain/3 GPIO6
+ *   espd/ain/4 GPIO7
  *
  * BAT_ADC on some board revisions is wired to GPIO1 via a solder option; if
  * you want battery sensing instead, set ESPD_ANALOG_PIN_0 to 1 and adjust count.
  */
-#define ESPD_ANALOG_NUM_CHANNELS 4
-#define ESPD_ANALOG_PIN_0 4
-#define ESPD_ANALOG_PIN_1 5
-#define ESPD_ANALOG_PIN_2 6
-#define ESPD_ANALOG_PIN_3 7
+#define ESPD_ANALOG_NUM_CHANNELS 5
+#define ESPD_ANALOG_PIN_0 3
+#define ESPD_ANALOG_PIN_1 4
+#define ESPD_ANALOG_PIN_2 5
+#define ESPD_ANALOG_PIN_3 6
+#define ESPD_ANALOG_PIN_4 7
 
 /*
  * PWM-backed analog-style outputs via [s espd/aout/0], [s espd/aout/1], ... in Pd.
@@ -68,15 +70,36 @@
 #define ESPD_AOUT_PWM_FREQ_HZ 19531
 #define ESPD_AOUT_PWM_FALLBACK_FREQ_HZ 10000
 
+/* On-board WS2812 ring (7 RGB LEDs) on GPIO38. */
+#ifndef ESPD_WAVESHARE_LED_GPIO
+#define ESPD_WAVESHARE_LED_GPIO 38
+#endif
+#ifndef ESPD_WAVESHARE_LED_COUNT
+#define ESPD_WAVESHARE_LED_COUNT 7
+#endif
+/* Initial color at boot. Default is off (0,0,0) so Pd has full control;
+ * override any component to get a boot-alive indicator if desired. */
+#ifndef ESPD_WAVESHARE_LED_BOOT_R
+#define ESPD_WAVESHARE_LED_BOOT_R 0
+#endif
+#ifndef ESPD_WAVESHARE_LED_BOOT_G
+#define ESPD_WAVESHARE_LED_BOOT_G 0
+#endif
+#ifndef ESPD_WAVESHARE_LED_BOOT_B
+#define ESPD_WAVESHARE_LED_BOOT_B 0
+#endif
+
 /*
  * TCA9555 (Waveshare schematic U4; wiki “TCA9555PWR”) on the same I2C bus as ES8311
  * (A2=L A1=H A0=L → 0x22 on v1.1; some builds strap 0x20 — firmware tries both).
  * EXIO6/EXIO7: USB switch. NS4150 amp enable is on TCA9555 port1 (EXIO8..15);
  * community defs use EXIO9; ESPHome used bit 8 — default mask enables both.
  */
-#define ESPD_WAVESHARE_TCA9555_I2C_ADDR 0x22
+/* Primary verified on this Waveshare ESP32-S3 audio board: 0x20. 0x22 kept as
+ * alt for variants that strap A1 high. */
+#define ESPD_WAVESHARE_TCA9555_I2C_ADDR 0x20
 #ifndef ESPD_WAVESHARE_TCA9555_I2C_ADDR_ALT
-#define ESPD_WAVESHARE_TCA9555_I2C_ADDR_ALT 0x20
+#define ESPD_WAVESHARE_TCA9555_I2C_ADDR_ALT 0x22
 #endif
 /* Legacy name used in early bring-up (chip is TCA9555, not TCA9554). */
 #define ESPD_WAVESHARE_TCA9554_I2C_ADDR ESPD_WAVESHARE_TCA9555_I2C_ADDR

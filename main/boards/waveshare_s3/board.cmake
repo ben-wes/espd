@@ -1,6 +1,8 @@
 list(APPEND MAIN_SRCS
     "boards/waveshare_s3/waveshare_s3_audio.c"
+    "boards/waveshare_s3/waveshare_s3_buttons.c"
     "boards/waveshare_s3/waveshare_s3_exio.c"
+    "boards/waveshare_s3/waveshare_s3_leds.c"
     "boards/waveshare_s3/waveshare_s3_sdcard.c"
     "boards/waveshare_s3/waveshare_s3_usb_state.c")
 
