@@ -259,6 +259,8 @@ void d_osc_setup(void);
 void d_soundfile_setup(void);
 void d_ugen_setup(void);
 void espdsp_osc_override_setup(void);
+void espd_file_glob_setup(void);
+void espd_pdcontrol_setup(void);
 
 void conf_init(void)
 {
@@ -308,6 +310,8 @@ void conf_init(void)
     d_math_setup();
     d_misc_setup();
     expr_setup();
+    espd_file_glob_setup();
+    espd_pdcontrol_setup();
     trymem(11);
 }
 

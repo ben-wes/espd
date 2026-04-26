@@ -1,6 +1,8 @@
 set(MAIN_SRCS
     "espd.c"
     "pd_lseek64_compat.c"
+    "pd_file_glob_compat.c"
+    "pd_pdcontrol_compat.c"
     "espd_patch_store.c"
     "pdmain.c"
     "espdsp_osc_override.c"
@@ -89,6 +91,7 @@ set(MAIN_REQUIRES
     esp_driver_uart
     esp_codec_dev
     lwip
+    pthread
 )
 
 set(ESPD_BOARD "$ENV{ESPD_BOARD}")
