@@ -32,7 +32,6 @@
 #include "boards/waveshare_s3/waveshare_s3_buttons.h"
 #include "boards/waveshare_s3/waveshare_s3_leds.h"
 #include "boards/waveshare_s3/waveshare_s3_sdcard.h"
-#include "boards/waveshare_s3/waveshare_s3_usb_state.h"
 #endif
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -874,7 +873,6 @@ void app_main(void)
 #endif
 
 #ifdef ESPD_BOARD_WAVESHARE_S3
-    espd_waveshare_s3_usb_boot_before_pd();
     /* Light the on-board WS2812 ring early so we can confirm boot visually,
      * even before WiFi/Pd come up. Failures are non-fatal. */
     espd_waveshare_s3_leds_init();
@@ -1013,9 +1011,6 @@ void app_main(void)
             if (budget_us > 0 && dt > budget_us)
                 s_rt_overruns++;
         }
-#ifdef ESPD_BOARD_WAVESHARE_S3
-        espd_waveshare_s3_poll_usb_hotplug_restart();
-#endif
 #ifdef PD_USE_WIFI
 #if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
         if (espd_wifi_net_enabled)

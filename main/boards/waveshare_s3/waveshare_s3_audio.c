@@ -7,7 +7,6 @@
 #include "boards/waveshare_s3/board_profile.h"
 #include "boards/waveshare_s3/waveshare_s3_buttons.h"
 #include "boards/waveshare_s3/waveshare_s3_exio.h"
-#include "boards/waveshare_s3/waveshare_s3_usb_state.h"
 #include "driver/i2c_master.h"
 #include "driver/i2s_std.h"
 #include "freertos/FreeRTOS.h"
@@ -200,7 +199,6 @@ esp_err_t espd_waveshare_s3_audio_init(i2s_chan_handle_t *tx, i2s_chan_handle_t 
 #endif
 
     ESP_RETURN_ON_ERROR(waveshare_codecs_init(*tx, *rx), TAG, "waveshare_codecs_init");
-    espd_waveshare_usb_state_register_i2c_bus(s_i2c_bus);
     ESP_LOGI(TAG, "Waveshare S3 audio ready (%d Hz, ES8311 + ES7210)", ESPD_SAMPLE_RATE_HZ);
     return ESP_OK;
 }
