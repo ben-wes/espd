@@ -267,8 +267,8 @@ void d_osc_setup(void);
 void d_soundfile_setup(void);
 void d_ugen_setup(void);
 void espdsp_osc_override_setup(void);
-void espd_file_glob_setup(void);
 void espd_pdcontrol_setup(void);
+void x_file_setup(void);
 
 void conf_init(void)
 {
@@ -318,7 +318,7 @@ void conf_init(void)
     d_math_setup();
     d_misc_setup();
     expr_setup();
-    espd_file_glob_setup();
+    x_file_setup();
     espd_pdcontrol_setup();
     trymem(11);
 }
@@ -648,7 +648,6 @@ int sys_zoomfontwidth(int fontsize, int zoom, int worstcase) { return (1);}
 int sys_zoomfontheight(int fontsize, int zoom, int worstcase) { return (1);}
 
 void canvas_popabstraction(t_canvas *x);
-int pd_setloadingabstraction(t_symbol *sym);
 
 static t_pd *espd_create_abstraction(t_symbol *s, int argc, t_atom *argv)
 {
@@ -657,19 +656,16 @@ static t_pd *espd_create_abstraction(t_symbol *s, int argc, t_atom *argv)
     t_glist *glist;
     t_canvas *canvas;
     t_pd *was;
+    t_pd *created = 0;
     int fd;
 
     if (!s || !s->s_name || !*s->s_name)
         return 0;
-    if (pd_setloadingabstraction(s))
-    {
-        pd_error(0, "%s: can't load abstraction within itself\n", s->s_name);
-        pd_this->pd_newest = 0;
-        return 0;
-    }
-
     objectname = s->s_name;
     glist = (t_glist *)canvas_getcurrent();
+    if (!glist) {
+        return 0;
+    }
     canvas = (t_canvas *)glist_getcanvas(glist);
     was = s__X.s_thing;
     pd_snprintf(classslashclass, MAXPDSTRING, "%s/%s", objectname, objectname);
@@ -684,15 +680,18 @@ static t_pd *espd_create_abstraction(t_symbol *s, int argc, t_atom *argv)
         return 0;
     }
     close(fd);
-
     canvas_setargs(argc, argv);
     binbuf_evalfile(gensym(nameptr), gensym(dirbuf));
-    if (s__X.s_thing && was != s__X.s_thing)
-        canvas_popabstraction((t_canvas *)s__X.s_thing);
+    if (s__X.s_thing && s__X.s_thing != was)
+        created = (t_pd *)s__X.s_thing;
     else
-        s__X.s_thing = was;
+        created = 0;
+    if (created && *created == canvas_class)
+        canvas_popabstraction((t_canvas *)created);
+    s__X.s_thing = was;
     canvas_setargs(0, 0);
-    return pd_this->pd_newest;
+    pd_this->pd_newest = created;
+    return created;
 }
 
 static int espd_load_abstraction_class(t_canvas *canvas, const char *objectname)
@@ -704,13 +703,25 @@ static int espd_load_abstraction_class(t_canvas *canvas, const char *objectname)
 
     pd_snprintf(classslashclass, MAXPDSTRING, "%s/%s", objectname, objectname);
     fd = canvas_open(canvas, objectname, ".pd", dirbuf, &nameptr, MAXPDSTRING, 0);
+    if (!strcmp(objectname, "sample.cl"))
+        post("loader dbg: sample.cl try '%s.pd' fd=%d", objectname, fd);
     if (fd < 0)
         fd = canvas_open(canvas, objectname, ".pat", dirbuf, &nameptr, MAXPDSTRING, 0);
+    if (!strcmp(objectname, "sample.cl"))
+        post("loader dbg: sample.cl try '%s.pat' fd=%d", objectname, fd);
     if (fd < 0)
         fd = canvas_open(canvas, classslashclass, ".pd", dirbuf, &nameptr, MAXPDSTRING, 0);
+    if (!strcmp(objectname, "sample.cl"))
+        post("loader dbg: sample.cl try '%s.pd' fd=%d", classslashclass, fd);
     if (fd < 0)
+    {
+        if (!strcmp(objectname, "sample.cl"))
+            post("loader dbg: sample.cl unresolved (searchpath/temppath mismatch?)");
         return 0;
+    }
     close(fd);
+    if (!strcmp(objectname, "sample.cl"))
+        post("loader dbg: sample.cl resolved dir='%s' name='%s'", dirbuf, nameptr);
 
     class_set_extern_dir(gensym(dirbuf));
     c = class_new(gensym(objectname), (t_newmethod)espd_create_abstraction,
@@ -732,10 +743,18 @@ static int espd_load_abstraction_class(t_canvas *canvas, const char *objectname)
 int sys_load_lib(t_canvas *canvas, const char *classname)
 {
     if (!classname || !*classname)
+    {
+        post("loader dbg: empty classname while loading abstraction");
         return 0;
+    }
     if (zgetfn(&pd_objectmaker, gensym(classname)))
         return 1;
-    return espd_load_abstraction_class(canvas, classname);
+    {
+        int ok = espd_load_abstraction_class(canvas, classname);
+        if (!ok)
+            post("loader dbg: unresolved class '%s'", classname);
+        return ok;
+    }
 }
 
 t_rtext *glist_textedfor(t_glist *gl)

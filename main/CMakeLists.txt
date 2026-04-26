@@ -1,7 +1,7 @@
 set(MAIN_SRCS
     "espd.c"
     "pd_lseek64_compat.c"
-    "pd_file_glob_compat.c"
+    "pd_posix_file_compat.c"
     "pd_pdcontrol_compat.c"
     "espd_patch_store.c"
     "pdmain.c"
@@ -53,6 +53,7 @@ set(MAIN_SRCS
     "../pd/src/d_misc.c"
     "../pd/src/x_arithmetic.c"
     "../pd/src/x_connective.c"
+    "../pd/src/x_file.c"
     "../pd/src/x_interface.c"
     "../pd/src/x_misc.c"
     "../pd/src/x_net.c"
