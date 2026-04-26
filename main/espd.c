@@ -25,6 +25,7 @@
 
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_pthread.h"
 #include "esp_task_wdt.h"
 #include "esp_heap_caps.h"
 #ifdef ESPD_BOARD_WAVESHARE_S3
@@ -786,9 +787,10 @@ void pd_fromhost(char *data, size_t size)
 static QueueHandle_t uart_queue;
 static void console_init( void)
 {
-    const int uart_buffer_size = 256;
-    ESP_ERROR_CHECK(uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM,
-        uart_buffer_size, uart_buffer_size, 10, &uart_queue, 0));
+    (void)uart_queue;
+    /* On ESP32-S3/IDF6 this app already has active console I/O via ROM/monitor.
+     * Installing another UART driver here has caused boot-time crashes.
+     * Keep console output via printf/pdmain_print, but disable host->Pd UART input. */
 }
 #endif
 
@@ -797,26 +799,7 @@ void pd_pollhost( void)
 {
     int lastchar;
 #ifdef PD_USE_CONSOLE
-    uint8_t data[128];
-    int length = 0;
-    ESP_ERROR_CHECK(uart_get_buffered_data_len(CONFIG_ESP_CONSOLE_UART_NUM,  
-        (size_t*)&length));
-    if (length > 0)
-    {
-        int i;
-        int to_read = length;
-        if (to_read > (int)sizeof(data))
-            to_read = (int)sizeof(data);
-        /* ESP_LOGI(TAG, "serial in %d", length); */
-        length = uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM,
-            data, to_read, 0);
-        for (i = 0; i < length; i++)
-        {
-            char foo[80];
-            sprintf(foo, "key %d;", data[i] & 0xff);
-            pd_sendmsg(foo, strlen(foo));
-        }
-    }
+    /* Host->Pd UART input disabled (see console_init comment above). */
 #endif
     if (!pd_bt_mutex)
         pd_bt_mutex = xSemaphoreCreateMutex();
@@ -872,6 +855,17 @@ void app_main(void)
     espd_wifi_config_defaults();
 #endif
 
+    {
+        /* readsf~/writesf~ use pthread worker tasks. Raise defaults early
+         * so patch-driven pthread_create() gets a safer stack/core profile. */
+        esp_pthread_cfg_t pth_cfg = esp_pthread_get_default_config();
+        pth_cfg.stack_size = 8192;
+        pth_cfg.prio = 5;
+        pth_cfg.pin_to_core = 0;
+        if (esp_pthread_set_cfg(&pth_cfg) != ESP_OK)
+            ESP_LOGW(TAG, "esp_pthread_set_cfg failed; using IDF defaults");
+    }
+
 #ifdef ESPD_BOARD_WAVESHARE_S3
     /* Light the on-board WS2812 ring early so we can confirm boot visually,
      * even before WiFi/Pd come up. Failures are non-fatal. */
@@ -915,8 +909,8 @@ void app_main(void)
 #endif
 #endif
 
-    pdmain_init();
     initdacs();
+    pdmain_init();
 #ifdef PD_USE_ANALOG0
     pd_analog0_init();
 #endif
@@ -954,27 +948,6 @@ void app_main(void)
 #endif
 
     ESP_LOGI(TAG, "[ 2 ] now write some shit");
-
-    /* Pd DSP can legitimately run long bursts on CPU0.
-     * Reconfigure TWDT to monitor only IDLE1 (CPU1) to avoid false positives
-     * while preserving watchdog coverage. */
-    {
-        esp_task_wdt_config_t twdt_cfg = {
-            .timeout_ms = CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000,
-            .idle_core_mask = (1U << 1),
-#ifdef CONFIG_ESP_TASK_WDT_PANIC
-            .trigger_panic = true,
-#else
-            .trigger_panic = false,
-#endif
-        };
-        esp_err_t wdt_err = esp_task_wdt_reconfigure(&twdt_cfg);
-        if (wdt_err == ESP_OK) {
-            ESP_LOGI(TAG, "task_wdt: monitoring IDLE1 only for real-time Pd loop");
-        } else if (wdt_err != ESP_ERR_NOT_SUPPORTED) {
-            ESP_LOGW(TAG, "task_wdt: reconfigure failed (%s)", esp_err_to_name(wdt_err));
-        }
-    }
 
     while (1)
     {

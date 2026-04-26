@@ -26,6 +26,11 @@ CONFIG_ESP32S3_REV_MIN_FULL=2
 CONFIG_ESP_REV_MIN_FULL=2
 
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
+# readsf~/writesf~ use pthread worker threads; give them enough stack to avoid
+# heap/stack corruption under heavier file I/O patches.
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
+CONFIG_PTHREAD_TASK_PRIO_DEFAULT=5
+CONFIG_PTHREAD_TASK_CORE_DEFAULT=0
 
 # TinyUSB device shares the internal USB PHY with USB-Serial-JTAG; use UART for log.
 # CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG is not set
