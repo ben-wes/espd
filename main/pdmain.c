@@ -165,6 +165,12 @@ t_class *glob_pdobject;
 
 void glob_mem(void *dummy);
 void glob_cpu(void *dummy);
+static void glob_canvas_editmode(t_glist *x, t_floatarg f)
+{
+    (void)x;
+    (void)f;
+    /* Headless target: ignore GUI-only canvas edit mode updates. */
+}
 
 static void glob_beginnew(void *dummy, t_symbol *pname, t_symbol *pdir)
 {
@@ -209,6 +215,8 @@ void glob_init( void)
         A_SYMBOL, 0);
     class_addmethod(glob_pdobject, (t_method)glob_endnew, gensym("end-new"),
         0);
+    class_addmethod(canvas_class, (t_method)glob_canvas_editmode,
+        gensym("editmode"), A_FLOAT, 0);
     pd_bind(&glob_pdobject, gensym("pd"));
 }
 
