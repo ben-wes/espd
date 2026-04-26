@@ -849,6 +849,10 @@ void app_main(void)
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
+    /* Prefer external RAM for generic malloc as early as possible to reduce
+     * internal heap pressure during heavy Pd abstraction/clone creation. */
+    heap_caps_malloc_extmem_enable(0);
+
     espd_nvs_flash_init();
     espd_patch_store_init();
 #ifdef PD_USE_WIFI
@@ -862,6 +866,7 @@ void app_main(void)
         pth_cfg.stack_size = 8192;
         pth_cfg.prio = 5;
         pth_cfg.pin_to_core = 0;
+        pth_cfg.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
         if (esp_pthread_set_cfg(&pth_cfg) != ESP_OK)
             ESP_LOGW(TAG, "esp_pthread_set_cfg failed; using IDF defaults");
     }
