@@ -115,9 +115,31 @@ extern int espd_wifi_force_enable;
 #ifndef ESPD_ANALOG_DEADBAND
 #define ESPD_ANALOG_DEADBAND 32
 #endif
-/* 1 = send on every Pd block when changed; N>1 = every N blocks. */
+/* Consumer-side throttle applied when draining the ADC producer queue on the
+ * audio thread. 1 = forward every changed sample; N>1 = every N audio blocks.
+ * With the producer task doing the actual reads, this is now a secondary knob;
+ * ESPD_ANALOG_TASK_PERIOD_MS is the primary rate limiter. */
 #ifndef ESPD_ANALOG_REPORT_EVERY_N_BLOCKS
-#define ESPD_ANALOG_REPORT_EVERY_N_BLOCKS 8
+#define ESPD_ANALOG_REPORT_EVERY_N_BLOCKS 1
+#endif
+/* Dedicated ADC-sampling task: pinned to the core opposite Pd's audio loop so
+ * adc_oneshot_read() blocking time never eats the audio block budget. Period
+ * in ms sets the maximum update rate pushed into Pd (deadband filters the
+ * rest). */
+#ifndef ESPD_ANALOG_TASK_PERIOD_MS
+#define ESPD_ANALOG_TASK_PERIOD_MS 5
+#endif
+#ifndef ESPD_ANALOG_TASK_PRIO
+#define ESPD_ANALOG_TASK_PRIO 2
+#endif
+#ifndef ESPD_ANALOG_TASK_CORE
+#define ESPD_ANALOG_TASK_CORE 0
+#endif
+/* Global cap on WS2812 channel brightness (0..255). Lower values reduce peak
+ * LED current draw and the supply-rail dips that couple into the audio codec;
+ * the receiver scales incoming r/g/b by (cap/255) before writing the strip. */
+#ifndef ESPD_LED_MAX_BRIGHTNESS
+#define ESPD_LED_MAX_BRIGHTNESS 255
 #endif
 
 /* Analog outputs (PWM-backed): [s espd/aout/0]..[s espd/aout/N] expect normalized 0..1 floats. */
