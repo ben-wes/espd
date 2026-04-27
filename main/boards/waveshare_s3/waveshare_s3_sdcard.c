@@ -57,8 +57,6 @@ esp_err_t espd_waveshare_s3_sdcard_mount(void)
     };
 
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-    /* Some cards are marginal at default 20 MHz; 10 MHz is a safe bring-up. */
-    host.max_freq_khz = 10000;
 
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
     slot_config.clk = (gpio_num_t)ESPD_WAVESHARE_SD_PIN_CLK;
@@ -81,10 +79,25 @@ esp_err_t espd_waveshare_s3_sdcard_mount(void)
      * one-time fallback warning from SD_HOST during mount. Keep warnings enabled
      * globally, but silence this known benign fallback at the source tag.
      */
-    esp_log_level_set(SD_HOST_TAG, ESP_LOG_ERROR);
+    esp_err_t ret = ESP_FAIL;
     sdmmc_card_t *card = NULL;
-    esp_err_t ret = esp_vfs_fat_sdmmc_mount(ESPD_SDCARD_MOUNT, &host, &slot_config,
-                                            &mount_config, &card);
+    const int speed_candidates_khz[] = {40000, 25000, 20000, 10000};
+    size_t i;
+
+    esp_log_level_set(SD_HOST_TAG, ESP_LOG_ERROR);
+    for (i = 0; i < sizeof(speed_candidates_khz) / sizeof(speed_candidates_khz[0]); i++) {
+        host.max_freq_khz = speed_candidates_khz[i];
+        ret = esp_vfs_fat_sdmmc_mount(ESPD_SDCARD_MOUNT, &host, &slot_config,
+                                      &mount_config, &card);
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "SD card mounted at %s (%d kHz, 1-bit)", ESPD_SDCARD_MOUNT,
+                     host.max_freq_khz);
+            printf("sdcard: mounted %s @ %d kHz (1-bit)\n", ESPD_SDCARD_MOUNT,
+                   host.max_freq_khz);
+            break;
+        }
+        ESP_LOGW(TAG, "SD mount failed at %d kHz: %s", host.max_freq_khz, esp_err_to_name(ret));
+    }
     esp_log_level_set(SD_HOST_TAG, ESP_LOG_WARN);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to mount SD card at %s: %s", ESPD_SDCARD_MOUNT,
@@ -94,6 +107,5 @@ esp_err_t espd_waveshare_s3_sdcard_mount(void)
 
     (void)card;
     s_sd_mounted = true;
-    ESP_LOGI(TAG, "SD card mounted at %s", ESPD_SDCARD_MOUNT);
     return ESP_OK;
 }
