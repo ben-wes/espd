@@ -189,6 +189,11 @@ extern int espd_wifi_force_enable;
 /** If present on the mounted SD card, loaded before SPIFFS (see pdmain_init). */
 #define ESPD_SDCARD_MAIN_PD_PATH ESPD_SDCARD_MOUNT "/main.pd"
 #define ESPD_SDCARD_CONFIG_PATH ESPD_SDCARD_MOUNT "/config.txt"
+/* config.txt (SD) optional keys (same file as wifi_*; key=value, # comment):
+ *   analog_enable=0  — do not start ADC or send espd/ain messages
+ *   analog_pins=3,4,5,6,7 — GPIOs for espd/ain/0.. in order (max 8, ADC1 pins)
+ *   analog_pins=      — same as empty list: do not start analog
+ * If config.txt is missing or these keys are absent, use board profile pins. */
 #define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"
 
 #include "espd_patch_store.h"

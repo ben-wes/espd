@@ -305,17 +305,7 @@ void espd_button_state_changed(int idx, int pressed)
 #include <errno.h>
 #include <stdio.h>
 #include <sys/stat.h>
-#endif
-int espd_main_pd_loaded_from_store;
-const char *espd_main_pd_loaded_dir;
-#ifdef PD_USE_WIFI
-int espd_wifi_net_enabled = 1;
-static int espd_wifi_started;
-char espd_wifi_ssid[33];
-char espd_wifi_password[65];
-int espd_wifi_force_enable = 0;
-
-static char *espd_trim(char *s)
+static char *espd_cfg_trim(char *s)
 {
     char *e;
     while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
@@ -325,6 +315,15 @@ static char *espd_trim(char *s)
         *--e = '\0';
     return s;
 }
+#endif
+int espd_main_pd_loaded_from_store;
+const char *espd_main_pd_loaded_dir;
+#ifdef PD_USE_WIFI
+int espd_wifi_net_enabled = 1;
+static int espd_wifi_started;
+char espd_wifi_ssid[33];
+char espd_wifi_password[65];
+int espd_wifi_force_enable = 0;
 
 static void espd_wifi_config_defaults(void)
 {
@@ -349,15 +348,15 @@ static void espd_wifi_try_load_sdcard_config(void)
         char *comment = strchr(line, '#');
         if (comment)
             *comment = '\0';
-        k = espd_trim(line);
+        k = espd_cfg_trim(line);
         if (*k == '\0')
             continue;
         eq = strchr(k, '=');
         if (!eq)
             continue;
         *eq++ = '\0';
-        v = espd_trim(eq);
-        k = espd_trim(k);
+        v = espd_cfg_trim(eq);
+        k = espd_cfg_trim(k);
         if (!strcmp(k, "wifi_ssid"))
         {
             snprintf(espd_wifi_ssid, sizeof(espd_wifi_ssid), "%s", v);
@@ -379,6 +378,84 @@ static void espd_wifi_try_load_sdcard_config(void)
              ESPD_SDCARD_CONFIG_PATH, espd_wifi_ssid, espd_wifi_force_enable);
 }
 #endif
+#endif
+
+#if defined(PD_USE_SDCARD) && defined(PD_USE_ANALOG0)
+/* Parsed from /sdcard/config.txt before pd_analog0_init (see espd.h). */
+static int s_analog_cfg_disable;
+static int s_analog_cfg_have_pins;
+static int s_analog_cfg_n;
+static int s_analog_cfg_pins[8];
+
+static void espd_analog_load_sdcard_config(void)
+{
+    FILE *f;
+    char line[256];
+
+    s_analog_cfg_disable = 0;
+    s_analog_cfg_have_pins = 0;
+    s_analog_cfg_n = 0;
+    f = fopen(ESPD_SDCARD_CONFIG_PATH, "r");
+    if (!f)
+        return;
+    while (fgets(line, sizeof(line), f))
+    {
+        char *eq, *k, *v;
+        char *comment = strchr(line, '#');
+        if (comment)
+            *comment = '\0';
+        k = espd_cfg_trim(line);
+        if (*k == '\0')
+            continue;
+        eq = strchr(k, '=');
+        if (!eq)
+            continue;
+        *eq++ = '\0';
+        v = espd_cfg_trim(eq);
+        k = espd_cfg_trim(k);
+        if (!strcmp(k, "analog_enable"))
+        {
+            s_analog_cfg_disable = (atoi(v) == 0);
+        }
+        else if (!strcmp(k, "analog_pins"))
+        {
+            int n = 0;
+            s_analog_cfg_have_pins = 1;
+            if (!v || !*v)
+            {
+                s_analog_cfg_n = 0;
+            }
+            else
+            {
+                char *p = v;
+                while (*p && n < 8)
+                {
+                    char *end;
+                    long pin = strtol(p, &end, 10);
+                    if (p == end)
+                        break;
+                    s_analog_cfg_pins[n++] = (int)pin;
+                    p = end;
+                    while (*p == ',' || *p == ' ' || *p == '\t')
+                        p++;
+                }
+                s_analog_cfg_n = n;
+            }
+        }
+    }
+    fclose(f);
+    if (s_analog_cfg_disable)
+    {
+        ESP_LOGI(TAG, "analog: %s: analog_enable=0", ESPD_SDCARD_CONFIG_PATH);
+    }
+    else if (s_analog_cfg_have_pins)
+    {
+        if (s_analog_cfg_n == 0)
+            ESP_LOGI(TAG, "analog: %s: analog_pins= (off)", ESPD_SDCARD_CONFIG_PATH);
+        else
+            ESP_LOGI(TAG, "analog: %s: %d channel(s) from analog_pins", ESPD_SDCARD_CONFIG_PATH, s_analog_cfg_n);
+    }
+}
 #endif
 
 #ifdef PD_USE_ANALOG0
@@ -500,12 +577,34 @@ static void pd_analog0_init(void)
     };
     int i;
     int enabled = 0;
-    int nchan = ESPD_ANALOG_NUM_CHANNELS;
-    esp_err_t err = adc_oneshot_new_unit(&unit_cfg, &pd_adc_handle);
+    int nchan;
+#if defined(PD_USE_SDCARD) && defined(PD_USE_ANALOG0)
+    if (s_analog_cfg_disable) {
+        ESP_LOGI(TAG, "analog: not started (analog_enable=0 in config.txt)");
+        return;
+    }
+    if (s_analog_cfg_have_pins) {
+        if (s_analog_cfg_n <= 0) {
+            ESP_LOGI(TAG, "analog: not started (analog_pins= empty in config.txt)");
+            return;
+        }
+        nchan = s_analog_cfg_n;
+        if (nchan > ESPD_ANALOG_MAX_CHANNELS)
+            nchan = ESPD_ANALOG_MAX_CHANNELS;
+        for (i = 0; i < nchan; i++)
+            pd_adc_pins[i] = s_analog_cfg_pins[i];
+        for (i = nchan; i < ESPD_ANALOG_MAX_CHANNELS; i++)
+            pd_adc_pins[i] = -1;
+    } else
+#endif
+    {
+        nchan = ESPD_ANALOG_NUM_CHANNELS;
+    }
     if (nchan < 0)
         nchan = 0;
     if (nchan > ESPD_ANALOG_MAX_CHANNELS)
         nchan = ESPD_ANALOG_MAX_CHANNELS;
+    esp_err_t err = adc_oneshot_new_unit(&unit_cfg, &pd_adc_handle);
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG, "adc_oneshot_new_unit failed: %d", (int)err);
@@ -990,6 +1089,9 @@ void app_main(void)
         if (e != ESP_OK)
             ESP_LOGW(TAG, "SD card not mounted at boot: %s", esp_err_to_name(e));
     }
+#endif
+#if defined(PD_USE_SDCARD) && defined(PD_USE_ANALOG0)
+    espd_analog_load_sdcard_config();
 #endif
 #if defined(PD_USE_WIFI) && defined(PD_USE_SDCARD)
     espd_wifi_try_load_sdcard_config();
