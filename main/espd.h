@@ -194,6 +194,7 @@ extern int espd_wifi_force_enable;
  *   analog_pins=3,4,5,6,7 — GPIOs for espd/ain/0.. in order (max 8, ADC1 pins)
  *   analog_pins=      — same as empty list: do not start analog
  * If config.txt is missing or these keys are absent, use board profile pins. */
+/* [pdcontrol] message "ip" → list of four float octets 0..255 (STA; 0 0 0 0 if off / no DHCP). */
 #define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"
 
 #include "espd_patch_store.h"

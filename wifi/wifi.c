@@ -59,7 +59,8 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+        /* Do not log the address on default log level; wifi_ipaddr kept for net_hello etc. */
+        ESP_LOGI(TAG, "STA DHCP complete");
         snprintf(wifi_ipaddr, sizeof(wifi_ipaddr),
             IPSTR, IP2STR(&event->ip_info.ip));
         wifi_ipaddr[sizeof(wifi_ipaddr)-1] = 0;
@@ -128,9 +129,13 @@ void wifi_init_sta(void)
      * happened. */
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "connected to ap SSID:%s", espd_wifi_ssid);
+        /* sdkconfig can set CONFIG_LOG_DEFAULT_LEVEL_WARN; ESP_LOGI is hidden then. */
+        printf("wifi: connected (ssid %s, ip %s)\n", espd_wifi_ssid, wifi_ipaddr);
     } else if (bits & WIFI_FAIL_BIT) {
         ESP_LOGE(TAG, "Failed to connect to SSID:%s (check password, 2.4 GHz, reason in log)",
                  espd_wifi_ssid);
+        printf("wifi: connect failed (ssid %s) — see esp_wifi disconnect reasons above\n",
+               espd_wifi_ssid);
     } else {
         ESP_LOGE(TAG, "UNEXPECTED EVENT");
     }

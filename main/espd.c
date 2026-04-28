@@ -1110,6 +1110,9 @@ void app_main(void)
         if (local_main_present && ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK &&
             !espd_wifi_force_enable) {
             espd_wifi_net_enabled = 0;
+            /* CONFIG_LOG_DEFAULT_LEVEL is often WARN on waveshare_s3; printf matches sdcard. */
+            printf("wifi: skipped (main.pd on disk; set wifi_enable=1 or wifi_ssid in"
+                   " " ESPD_SDCARD_CONFIG_PATH " to force STA)\n");
             ESP_LOGI(TAG,
                      "main.pd detected on disk — skipping WiFi before Pd init");
         } else {
