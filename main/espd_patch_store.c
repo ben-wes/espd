@@ -59,3 +59,15 @@ bool espd_sdcard_main_pd_exists(void)
     return false;
 #endif
 }
+
+bool espd_storage_main_pd_exists(void)
+{
+#ifdef PD_USE_USB_MSC
+    struct stat st;
+    if (stat(ESPD_STORAGE_MAIN_PD_PATH, &st) != 0)
+        return false;
+    return S_ISREG(st.st_mode);
+#else
+    return false;
+#endif
+}

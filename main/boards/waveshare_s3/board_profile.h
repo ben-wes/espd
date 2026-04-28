@@ -7,6 +7,7 @@
 
 #pragma once
 
+//#define PD_USE_USB_MSC
 #define PD_USE_WIFI
 #define PD_USE_CONSOLE
 #define PD_USE_SDCARD
@@ -125,48 +126,3 @@
 #ifndef ESPD_WAVESHARE_PA_PORT1_ACTIVE_HIGH
 #define ESPD_WAVESHARE_PA_PORT1_ACTIVE_HIGH 1
 #endif
-
-/*
- * Boot-time “cable plugged” check: bring up TinyUSB CDC briefly and wait for host
- * enumeration (bounded). No cable / no host completes within the timeout (~500 ms).
- *
- * Default off: on ESP32-S3 the internal USB PHY is shared with USB Serial/JTAG.
- * A TinyUSB install/uninstall cycle at boot can leave macOS unable to re-enumerate
- * /dev/cu.usbmodem* until a full replug (IDFGH-15248 / IDFGH-8354). Set to 1 if you
- * need host-enumeration detection; firmware calls usb_new_phy(SERIAL_JTAG) after
- * teardown to improve handoff back to the built-in CDC.
- */
-#ifndef ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE
-#define ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE 0
-#endif
-
-#ifndef ESPD_WAVESHARE_USB_BOOT_HOST_WAIT_MS
-#define ESPD_WAVESHARE_USB_BOOT_HOST_WAIT_MS 500
-#endif
-
-/*
- * VBUS source for USB-disk vs audio (see waveshare_s3_usb_state):
- *   NONE — default. Right choice for stock board + battery only (no add-ons);
- *           no I2C device at 0x2D on this PCB, and the audio wiki does not name a
- *           VBUS GPIO — keep NONE until the schematic gives a sense pin, if any.
- *   GPIO — ESPD_WAVESHARE_USB_VBUS_GPIO >= 0, divider/comparator from Type-C VBUS.
- *   UPS_HAT_E — optional separate Waveshare UPS HAT (E) stacked on the same I2C
- *               as ES8311 (addr 0x2D); not part of the bare S3-Audio board.
- */
-#define ESPD_WAVESHARE_VBUS_BACKEND_NONE 0
-#define ESPD_WAVESHARE_VBUS_BACKEND_GPIO 1
-#define ESPD_WAVESHARE_VBUS_BACKEND_UPS_HAT_E 2
-#define ESPD_WAVESHARE_VBUS_BACKEND ESPD_WAVESHARE_VBUS_BACKEND_NONE
-
-#define ESPD_WAVESHARE_UPS_HAT_I2C_ADDR 0x2D
-#define ESPD_WAVESHARE_UPS_HAT_REG_CHARGING 0x02
-#define ESPD_WAVESHARE_UPS_HAT_VBUS_BIT 5
-
-/*
- * Used when ESPD_WAVESHARE_VBUS_BACKEND == ESPD_WAVESHARE_VBUS_BACKEND_GPIO.
- * -1 = N/A (ignored unless backend is GPIO).
- */
-#define ESPD_WAVESHARE_USB_VBUS_GPIO (-1)
-
-/* 1 = GPIO high when USB VBUS is present (common with a resistor divider). */
-#define ESPD_WAVESHARE_USB_VBUS_ACTIVE_HIGH 1
