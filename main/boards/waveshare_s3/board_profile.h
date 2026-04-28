@@ -7,6 +7,7 @@
 
 #pragma once
 
+//#define PD_USE_USB_MSC
 #define PD_USE_WIFI
 #define PD_USE_CONSOLE
 #define PD_USE_SDCARD

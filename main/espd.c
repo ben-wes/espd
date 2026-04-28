@@ -38,11 +38,23 @@
 #include "nvs_flash.h"
 #include "esp_timer.h"
 #include <stdlib.h>
+#ifdef PD_USE_USB_MSC
+#include "esp_partition.h"
+#include "esp_vfs_fat.h"
+#include "wear_levelling.h"
+#include "tinyusb.h"
+#include "tusb_msc_storage.h"
+#include "tinyusb_default_config.h"
+#endif
 #ifdef PD_USE_ANALOG0
 #include "esp_adc/adc_oneshot.h"
 #include <stdatomic.h>
 #endif
 static const char *TAG = "ESPD";
+
+#ifdef PD_USE_USB_MSC
+static wl_handle_t wl_handle = WL_INVALID_HANDLE;
+#endif
 
 #if ESPD_AOUT_NUM_CHANNELS > 0
 #include "driver/ledc.h"
@@ -721,6 +733,88 @@ static void pd_pollanalog0(void)
 }
 #endif
 
+#ifdef PD_USE_USB_MSC
+static int usb_msc_active = 0;
+
+/*static void storage_mount_changed_cb(struct tinyusb_msc_storage_s *msc, tinyusb_msc_event_t *event, void *user_data) {
+    (void)msc;
+    (void)event;
+    (void)user_data;
+    
+    ESP_LOGI(TAG, "USB MSC mount changed event, deactivating and returning to console mode");
+    
+    if (usb_msc_active) {
+
+        
+        // Uninstall TinyUSB driver to free USB PHY for console access
+        tinyusb_msc_storage_deinit(); 
+        tinyusb_driver_uninstall();
+
+        
+        usb_msc_active = 0;
+        ESP_LOGI(TAG, "USB MSC deactivated, USB PHY freed for console access");
+    }
+}*/
+
+static void usb_init(void)
+{
+    ESP_LOGI(TAG, "USB MSC init starting");
+    // 1. Find the partition named "storage" from your partitions_pd.csv
+    const esp_partition_t *data_partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "storage");
+
+    if (!data_partition) {
+        ESP_LOGE(TAG, "USB MSC: 'storage' partition not found");
+        return;
+    }
+
+    // 2. Mount wear leveling on that partition
+    ESP_ERROR_CHECK(wl_mount(data_partition, &wl_handle));
+
+    //tinyusb_msc_register_callback(TINYUSB_MSC_EVENT_MOUNT_CHANGED, storage_mount_changed_cb); 
+
+    // 3. Configure TinyUSB MSC to use this flash handle
+    const tinyusb_msc_spiflash_config_t msc_config = {
+        .wl_handle = wl_handle
+    };
+    ESP_ERROR_CHECK(tinyusb_msc_storage_init_spiflash(&msc_config));
+
+    // 4. Install TinyUSB driver with VBUS monitoring for unmount callback
+    tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
+    
+    // Enable VBUS monitoring so tud_umount_cb callback will be triggered on unplug
+    // Note: If ESPD_WAVESHARE_USB_VBUS_GPIO is configured, use it for VBUS detection
+#if defined(ESPD_WAVESHARE_VBUS_BACKEND) && defined(ESPD_WAVESHARE_USB_VBUS_GPIO)
+#if ESPD_WAVESHARE_VBUS_BACKEND == ESPD_WAVESHARE_VBUS_BACKEND_GPIO && ESPD_WAVESHARE_USB_VBUS_GPIO >= 0
+    tusb_cfg.vbus_monitor_io = ESPD_WAVESHARE_USB_VBUS_GPIO;
+    tusb_cfg.self_powered = true;  // Self-powered devices must monitor VBUS
+    ESP_LOGI(TAG, "USB MSC: VBUS monitoring enabled on GPIO%d", ESPD_WAVESHARE_USB_VBUS_GPIO);
+#endif
+#endif
+    
+    ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
+
+    const esp_vfs_fat_mount_config_t mount_config = {
+        .max_files = 64,
+        .format_if_mount_failed = true, // <--- This does the formatting
+        .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
+        .use_one_fat = false,
+    };
+
+    // This handles finding the partition, initializing wear leveling,
+    // and mounting (or formatting then mounting)
+    esp_err_t err = esp_vfs_fat_spiflash_mount_rw_wl("/storage", "storage", &mount_config, &wl_handle);
+
+    if (err == ESP_OK) {
+        FRESULT res = f_setlabel("0:ESPD");
+        ESP_LOGI(TAG, "USB MSC: partition ready at /storage");
+        usb_msc_active = 1;
+    } else {
+        ESP_LOGE(TAG, "USB MSC: failed to mount /storage: %s", esp_err_to_name(err));
+    }
+}
+#endif
+
 static void espd_nvs_flash_init(void)
 {
     esp_err_t ret = nvs_flash_init();
@@ -1082,6 +1176,11 @@ void app_main(void)
     espd_waveshare_s3_leds_init();
 #endif
 
+#ifdef PD_USE_USB_MSC
+    // Initialize USB MSC storage
+    usb_init();
+#endif
+
 #if defined(PD_USE_SDCARD) && defined(ESPD_BOARD_WAVESHARE_S3)
     /* Mount SD before Pd so main.pd can load from ESPD_SDCARD_MOUNT. */
     {
@@ -1090,6 +1189,7 @@ void app_main(void)
             ESP_LOGW(TAG, "SD card not mounted at boot: %s", esp_err_to_name(e));
     }
 #endif
+
 #if defined(PD_USE_SDCARD) && defined(PD_USE_ANALOG0)
     espd_analog_load_sdcard_config();
 #endif
@@ -1097,10 +1197,16 @@ void app_main(void)
     espd_wifi_try_load_sdcard_config();
 #endif
 
+
+
 #ifdef PD_USE_WIFI
 #if !ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     {
         int local_main_present = 0;
+#ifdef PD_USE_USB_MSC
+        if (espd_storage_main_pd_exists())
+            local_main_present = 1;
+#endif
 #ifdef PD_USE_SDCARD
         if (espd_sdcard_main_pd_exists())
             local_main_present = 1;
@@ -1180,6 +1286,7 @@ void app_main(void)
 #ifdef PD_USE_ANALOG0
         pd_pollanalog0();
 #endif
+
 #ifdef ESPD_BOARD_WAVESHARE_S3
         espd_waveshare_s3_buttons_poll();
         espd_waveshare_s3_leds_poll();

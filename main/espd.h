@@ -189,6 +189,14 @@ extern int espd_wifi_force_enable;
 /** If present on the mounted SD card, loaded before SPIFFS (see pdmain_init). */
 #define ESPD_SDCARD_MAIN_PD_PATH ESPD_SDCARD_MOUNT "/main.pd"
 #define ESPD_SDCARD_CONFIG_PATH ESPD_SDCARD_MOUNT "/config.txt"
+#ifdef PD_USE_USB_MSC
+/** VFS path where USB MSC storage is mounted. */
+#ifndef ESPD_STORAGE_MOUNT
+#define ESPD_STORAGE_MOUNT "/storage"
+#endif
+/** If present on USB MSC storage, loaded before SD card (see pdmain_init). */
+#define ESPD_STORAGE_MAIN_PD_PATH ESPD_STORAGE_MOUNT "/main.pd"
+#endif
 /* config.txt (SD) optional keys (same file as wifi_*; key=value, # comment):
  *   analog_enable=0  — do not start ADC or send espd/ain messages
  *   analog_pins=3,4,5,6,7 — GPIOs for espd/ain/0.. in order (max 8, ADC1 pins)

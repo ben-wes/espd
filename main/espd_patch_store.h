@@ -12,3 +12,6 @@ bool espd_patch_store_main_pd_exists(void);
 
 /** True if ESPD_SDCARD_MAIN_PD_PATH exists (SD must be mounted first). */
 bool espd_sdcard_main_pd_exists(void);
+
+/** True if ESPD_STORAGE_MAIN_PD_PATH exists (USB MSC must be mounted first). */
+bool espd_storage_main_pd_exists(void);
