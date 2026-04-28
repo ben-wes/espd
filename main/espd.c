@@ -759,19 +759,8 @@ static void usb_init(void)
     };
     ESP_ERROR_CHECK(tinyusb_msc_storage_init_spiflash(&msc_config));
 
-    // 4. Install TinyUSB driver with VBUS monitoring for unmount callback
+    // 4. Install TinyUSB driver
     tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
-    
-    // Enable VBUS monitoring so tud_umount_cb callback will be triggered on unplug
-    // Note: If ESPD_WAVESHARE_USB_VBUS_GPIO is configured, use it for VBUS detection
-#if defined(ESPD_WAVESHARE_VBUS_BACKEND) && defined(ESPD_WAVESHARE_USB_VBUS_GPIO)
-#if ESPD_WAVESHARE_VBUS_BACKEND == ESPD_WAVESHARE_VBUS_BACKEND_GPIO && ESPD_WAVESHARE_USB_VBUS_GPIO >= 0
-    tusb_cfg.vbus_monitor_io = ESPD_WAVESHARE_USB_VBUS_GPIO;
-    tusb_cfg.self_powered = true;  // Self-powered devices must monitor VBUS
-    ESP_LOGI(TAG, "USB MSC: VBUS monitoring enabled on GPIO%d", ESPD_WAVESHARE_USB_VBUS_GPIO);
-#endif
-#endif
-    
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
 
     const esp_vfs_fat_mount_config_t mount_config = {
