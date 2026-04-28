@@ -736,26 +736,6 @@ static void pd_pollanalog0(void)
 #ifdef PD_USE_USB_MSC
 static int usb_msc_active = 0;
 
-/*static void storage_mount_changed_cb(struct tinyusb_msc_storage_s *msc, tinyusb_msc_event_t *event, void *user_data) {
-    (void)msc;
-    (void)event;
-    (void)user_data;
-    
-    ESP_LOGI(TAG, "USB MSC mount changed event, deactivating and returning to console mode");
-    
-    if (usb_msc_active) {
-
-        
-        // Uninstall TinyUSB driver to free USB PHY for console access
-        tinyusb_msc_storage_deinit(); 
-        tinyusb_driver_uninstall();
-
-        
-        usb_msc_active = 0;
-        ESP_LOGI(TAG, "USB MSC deactivated, USB PHY freed for console access");
-    }
-}*/
-
 static void usb_init(void)
 {
     ESP_LOGI(TAG, "USB MSC init starting");
@@ -1179,6 +1159,15 @@ void app_main(void)
 #ifdef PD_USE_USB_MSC
     // Initialize USB MSC storage
     usb_init();
+
+    // should wait until USB drive is unmounted, but doesn't
+    if (tud_connected()) {
+        vTaskDelay(pdMS_TO_TICKS(500));
+        while (tud_mounted()) {
+            vTaskDelay(pdMS_TO_TICKS(10));  // Check every 10ms
+            tud_task();
+        }
+    }
 #endif
 
 #if defined(PD_USE_SDCARD) && defined(ESPD_BOARD_WAVESHARE_S3)
