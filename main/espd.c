@@ -1210,6 +1210,14 @@ void app_main(void)
 #endif
 
     initdacs();
+#ifdef PD_USE_WIFI
+    /* Bring up lwIP + default event loop unconditionally before Pd loads the
+     * patch. If the patch contains [netreceive]/[netsend] but Wi-Fi has been
+     * skipped (e.g. wifi_enable=0 or no AP), socket() would otherwise call
+     * into the tcpip thread before it exists and abort() inside lwIP. This is
+     * idempotent and a no-op if wifi_init() already ran above. */
+    espd_netif_ensure_init();
+#endif
     pdmain_init();
 #ifdef PD_USE_ANALOG0
     pd_analog0_init();

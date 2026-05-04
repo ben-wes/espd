@@ -66,6 +66,7 @@ void pd_bt_writeback(unsigned char *s, int length);
 #endif
 
 #ifdef PD_USE_WIFI
+void espd_netif_ensure_init(void); /* wifi.c - idempotent lwIP/event-loop init */
 void wifi_init(void);   /* wifi.c - manage 802.11 connection */
 void net_init( void);   /* init */
 void net_hello( void);  /* send initial TCP packet when connected */
