@@ -392,6 +392,13 @@ static void espd_wifi_try_load_sdcard_config(void)
 #endif
 #endif
 
+#ifdef PD_USE_ANALOG0
+/* Run-time tuning (defaults from espd.h; config.txt may override with SD build). */
+static int pd_analog_task_period_ms = ESPD_ANALOG_TASK_PERIOD_MS;
+static int pd_analog_deadband = ESPD_ANALOG_DEADBAND;
+static int pd_analog_report_every_n_blocks = ESPD_ANALOG_REPORT_EVERY_N_BLOCKS;
+#endif
+
 #if defined(PD_USE_SDCARD) && defined(PD_USE_ANALOG0)
 /* Parsed from /sdcard/config.txt before pd_analog0_init (see espd.h). */
 static int s_analog_cfg_disable;
@@ -454,6 +461,24 @@ static void espd_analog_load_sdcard_config(void)
                 s_analog_cfg_n = n;
             }
         }
+        else if (!strcmp(k, "analog_task_period_ms"))
+        {
+            int t = atoi(v);
+            if (t >= 1 && t <= 500)
+                pd_analog_task_period_ms = t;
+        }
+        else if (!strcmp(k, "analog_deadband"))
+        {
+            int d = atoi(v);
+            if (d >= 1 && d <= 2047)
+                pd_analog_deadband = d;
+        }
+        else if (!strcmp(k, "analog_report_every_n_blocks"))
+        {
+            int r = atoi(v);
+            if (r >= 1 && r <= 64)
+                pd_analog_report_every_n_blocks = r;
+        }
     }
     fclose(f);
     if (s_analog_cfg_disable)
@@ -481,15 +506,11 @@ static adc_channel_t pd_adc_channels[ESPD_ANALOG_MAX_CHANNELS];
 static int pd_adc_active[ESPD_ANALOG_MAX_CHANNELS];
 /* Producer-side deadband reference (written only by the ADC task). */
 static int pd_adc_last[ESPD_ANALOG_MAX_CHANNELS];
-/* Producer -> consumer handoff. The ADC task writes `pd_adc_latest` then bumps
- * `pd_adc_seq` with release ordering; the audio-thread consumer reads seq with
- * acquire ordering, then latest, guaranteeing it never sees a torn value.
- * Atomics are used because producer (core 0) and consumer (core 1) live on
- * different cores. */
+/* Producer -> consumer: task writes `pd_adc_latest[i]` then ORs bit i in
+ * `pd_adc_dirty` (release). Audio thread exchanges dirty (acquire), forwards
+ * only set channels — one atomic when idle vs eight per-channel seq checks. */
 static _Atomic int pd_adc_latest[ESPD_ANALOG_MAX_CHANNELS];
-static _Atomic uint32_t pd_adc_seq[ESPD_ANALOG_MAX_CHANNELS];
-/* Consumer-side last-seen sequence number (audio thread only). */
-static uint32_t pd_adc_last_sent_seq[ESPD_ANALOG_MAX_CHANNELS];
+static _Atomic uint32_t pd_adc_dirty;
 static TaskHandle_t pd_adc_task;
 static unsigned pd_analog_block_counter;
 
@@ -539,41 +560,42 @@ static int pd_pin_to_adc1_channel(int pin, adc_channel_t *channel)
     }
 }
 
-/* Producer: runs on a dedicated task (core 0). Reads every active channel at
- * a fixed cadence, applies the deadband, and — on each change — publishes the
- * new raw value + bumps the per-channel sequence number. Never calls into Pd. */
+/* Producer: dedicated task. Reads channels each wake, deadband filter, ORs
+ * dirty bits for changed channels. Never calls into Pd. */
 static void pd_adc_task_fn(void *arg)
 {
     (void)arg;
-    const TickType_t period = pdMS_TO_TICKS(ESPD_ANALOG_TASK_PERIOD_MS);
     TickType_t next = xTaskGetTickCount();
     for (;;)
     {
         int i;
-        vTaskDelayUntil(&next, period > 0 ? period : 1);
+        TickType_t period = pdMS_TO_TICKS(pd_analog_task_period_ms);
+        if (period < 1)
+            period = 1;
+        vTaskDelayUntil(&next, period);
         if (!pd_adc_handle)
             continue;
+        uint32_t dirty_mask = 0;
         for (i = 0; i < ESPD_ANALOG_MAX_CHANNELS; i++)
         {
             int raw;
+            int db = pd_analog_deadband;
             if (!pd_adc_active[i])
                 continue;
             if (adc_oneshot_read(pd_adc_handle, pd_adc_channels[i], &raw)
                     != ESP_OK)
                 continue;
-            if (raw < pd_adc_last[i] - ESPD_ANALOG_DEADBAND ||
-                raw > pd_adc_last[i] + ESPD_ANALOG_DEADBAND)
+            if (raw < pd_adc_last[i] - db || raw > pd_adc_last[i] + db)
             {
                 pd_adc_last[i] = raw;
-                /* Publish new raw value first (relaxed — consumer will pair
-                 * it with the acquire-load of seq below), then release the
-                 * sequence bump so the consumer sees a consistent snapshot. */
                 atomic_store_explicit(&pd_adc_latest[i], raw,
                     memory_order_relaxed);
-                atomic_fetch_add_explicit(&pd_adc_seq[i], 1u,
-                    memory_order_release);
+                dirty_mask |= (1u << (unsigned)i);
             }
         }
+        if (dirty_mask)
+            atomic_fetch_or_explicit(&pd_adc_dirty, dirty_mask,
+                memory_order_release);
     }
 }
 
@@ -628,8 +650,6 @@ static void pd_analog0_init(void)
         pd_adc_active[i] = 0;
         pd_adc_last[i] = -100000;
         atomic_store_explicit(&pd_adc_latest[i], 0, memory_order_relaxed);
-        atomic_store_explicit(&pd_adc_seq[i], 0u, memory_order_relaxed);
-        pd_adc_last_sent_seq[i] = 0u;
     }
 
     for (i = 0; i < nchan; i++)
@@ -654,10 +674,13 @@ static void pd_analog0_init(void)
         enabled++;
         ESP_LOGI(TAG, "analog ain%d enabled on GPIO%d", i, pin);
     }
-    if (!enabled) {
+    if (!enabled)
+    {
         ESP_LOGW(TAG, "analog enabled but no valid channels configured");
         return;
     }
+
+    atomic_store_explicit(&pd_adc_dirty, 0u, memory_order_relaxed);
 
     /* Spawn the producer task on the opposite core from Pd audio (core 1), so
      * adc_oneshot_read() blocking never steals time from senddacs(). */
@@ -669,22 +692,20 @@ static void pd_analog0_init(void)
             ESP_LOGW(TAG, "failed to create pd_adc task; falling back to audio-thread polling");
             pd_adc_task = NULL;
         } else {
-            ESP_LOGI(TAG, "pd_adc task: core=%d prio=%d period=%d ms, %d channel(s)",
+            ESP_LOGI(TAG, "pd_adc task: core=%d prio=%d period=%d ms deadband=%d report_every=%d %d ch",
                 (int)ESPD_ANALOG_TASK_CORE, (int)ESPD_ANALOG_TASK_PRIO,
-                (int)ESPD_ANALOG_TASK_PERIOD_MS, enabled);
+                pd_analog_task_period_ms, pd_analog_deadband,
+                pd_analog_report_every_n_blocks, enabled);
         }
     }
 }
 
-/* Consumer: runs on the audio thread each loop iteration. Cheap per-channel
- * seq compare; only touches Pd when the producer has published a new value.
- * ADC reads themselves happen on pd_adc_task, so no blocking hits the block
- * budget. ESPD_ANALOG_REPORT_EVERY_N_BLOCKS remains as a belt-and-braces
- * rate limiter in case the producer period is ever set very low. */
+/* Consumer: audio thread. One atomic exchange on the dirty mask; forwards
+ * only channels that changed. ADC reads run on pd_adc_task. */
 static void pd_pollanalog0(void)
 {
     int i;
-    int report_every = ESPD_ANALOG_REPORT_EVERY_N_BLOCKS;
+    int report_every = pd_analog_report_every_n_blocks;
     if (!pd_adc_handle)
         return;
     if (report_every < 1)
@@ -697,6 +718,7 @@ static void pd_pollanalog0(void)
      * channels still work (same behavior as before). */
     if (!pd_adc_task)
     {
+        int db = pd_analog_deadband;
         for (i = 0; i < ESPD_ANALOG_MAX_CHANNELS; i++)
         {
             int raw;
@@ -705,8 +727,7 @@ static void pd_pollanalog0(void)
             if (adc_oneshot_read(pd_adc_handle, pd_adc_channels[i], &raw)
                     != ESP_OK)
                 continue;
-            if (raw < pd_adc_last[i] - ESPD_ANALOG_DEADBAND ||
-                raw > pd_adc_last[i] + ESPD_ANALOG_DEADBAND)
+            if (raw < pd_adc_last[i] - db || raw > pd_adc_last[i] + db)
             {
                 pd_adc_last[i] = raw;
                 pd_send_ain_value(i, raw);
@@ -715,20 +736,19 @@ static void pd_pollanalog0(void)
         return;
     }
 
-    for (i = 0; i < ESPD_ANALOG_MAX_CHANNELS; i++)
     {
-        uint32_t s;
-        int raw;
-        if (!pd_adc_active[i])
-            continue;
-        /* Acquire-load pairs with the producer's release bump so the raw read
-         * below cannot be reordered before the seq observation. */
-        s = atomic_load_explicit(&pd_adc_seq[i], memory_order_acquire);
-        if (s == pd_adc_last_sent_seq[i])
-            continue;
-        raw = atomic_load_explicit(&pd_adc_latest[i], memory_order_relaxed);
-        pd_adc_last_sent_seq[i] = s;
-        pd_send_ain_value(i, raw);
+        uint32_t dirty = atomic_exchange_explicit(&pd_adc_dirty, 0,
+            memory_order_acquire);
+        if (!dirty)
+            return;
+        for (i = 0; i < ESPD_ANALOG_MAX_CHANNELS; i++)
+        {
+            int raw;
+            if (!(dirty & (1u << (unsigned)i)))
+                continue;
+            raw = atomic_load_explicit(&pd_adc_latest[i], memory_order_relaxed);
+            pd_send_ain_value(i, raw);
+        }
     }
 }
 #endif

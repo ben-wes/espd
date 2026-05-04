@@ -124,9 +124,10 @@ extern int espd_wifi_force_enable;
 #define ESPD_ANALOG_REPORT_EVERY_N_BLOCKS 1
 #endif
 /* Dedicated ADC-sampling task: pinned to the core opposite Pd's audio loop so
- * adc_oneshot_read() blocking time never eats the audio block budget. Period
- * in ms sets the maximum update rate pushed into Pd (deadband filters the
- * rest). */
+ * adc_oneshot_read() blocking time never eats the audio block budget.
+ * Shorter period = more conversion attempts per second (more temporal data);
+ * which raw changes become Pd messages is still governed by ESPD_ANALOG_DEADBAND
+ * (noise gate), not by the period. */
 #ifndef ESPD_ANALOG_TASK_PERIOD_MS
 #define ESPD_ANALOG_TASK_PERIOD_MS 5
 #endif
@@ -202,6 +203,12 @@ extern int espd_wifi_force_enable;
  *   analog_enable=0  — do not start ADC or send espd/ain messages
  *   analog_pins=3,4,5,6,7 — GPIOs for espd/ain/0.. in order (max 8, ADC1 pins)
  *   analog_pins=      — same as empty list: do not start analog
+ *   analog_task_period_ms=1 — producer wake interval in ms (1..500); lower =
+ *       more samples in time (more ADC-task CPU). Does not loosen filtering.
+ *   analog_deadband=N — raw delta to treat as a new value (1..2047); noise gate
+ *       only — smaller = more sensitive / more messages when the input moves.
+ *   analog_report_every_n_blocks=1 — audio thread forwards at most every N
+ *       blocks; keep 1 for lowest latency to Pd when the producer has updates.
  * If config.txt is missing or these keys are absent, use board profile pins. */
 /* [pdcontrol] message "ip" → list of four float octets 0..255 (STA; 0 0 0 0 if off / no DHCP). */
 #define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"

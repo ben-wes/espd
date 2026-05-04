@@ -60,6 +60,11 @@
 #define ESPD_ANALOG_PIN_3 6
 #define ESPD_ANALOG_PIN_4 7
 
+/* High-rate ain: wake the ADC producer every 1 ms (override in config.txt if needed). */
+#ifndef ESPD_ANALOG_TASK_PERIOD_MS
+#define ESPD_ANALOG_TASK_PERIOD_MS 1
+#endif
+
 /*
  * PWM-backed analog-style outputs via [s espd/aout/0], [s espd/aout/1], ... in Pd.
  * Default mapping uses header-accessible GPIO8 and GPIO9.
