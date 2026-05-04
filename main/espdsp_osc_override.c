@@ -9,8 +9,9 @@
  * d_osc.c / d_osc.h use double + UNITBIT32 in hot loops; tabread4~ used
  * double for index sum. Xtensa has no hardware double.
  *
- * Convention (small delta vs desktop Pd): cos~ treats input as phase in cycles
- * (0..1 = one cycle). Chains that relied on the exact Hölderich bit layout may
+ * Convention (small delta vs desktop Pd): cos~ / osc~ use a polynomial cos
+ * (phase in cycles 0..1). Tab-based cosine remains for vcf~ / tabosc4~ only.
+ * Phasor / osc phase chains that relied on the exact Hölderich bit layout may
  * differ; use *~_aliased.
  *
  * tabread4~ uses duplicated d_array.c arrayvec helpers (they are static there);
@@ -204,52 +205,53 @@ static void *espdsp_tabread4_new(t_symbol *s, int argc, t_atom *argv)
 
 static t_int *espdsp_tabread4_perform(t_int *w)
 {
-    t_espdsp_dsparray *d = (t_espdsp_dsparray *)(w[1]);
-    t_sample *in = (t_sample *)(w[2]);
-    t_sample *onset = (t_sample *)(w[3]);
-    t_sample *out = (t_sample *)(w[4]);
-    int n = (int)(w[5]);
-    int maxindex, i;
-    t_word *buf, *wp;
-    const t_sample one_over_six = 1.f / 6.f;
+     t_espdsp_dsparray *d = (t_espdsp_dsparray *)(w[1]);
+     t_sample *in = (t_sample *)(w[2]);
+     t_sample *onset = (t_sample *)(w[3]);
+     t_sample *out = (t_sample *)(w[4]);
+     int n = (int)(w[5]);
+     int maxindex, i;
+     t_word *buf, *wp;
+     const t_sample one_over_six = 1./6.;
 
-    if (!espdsp_dsparray_get_array(d, &maxindex, &buf, 0))
-        goto zero;
+     if (!espdsp_dsparray_get_array(d, &maxindex, &buf, 0))
+         goto zero;
 
-    maxindex -= 3;
-    if (maxindex < 1)
-        goto zero;
+     maxindex -= 3;
+     if (maxindex < 1)
+         goto zero;
 
-    for (i = 0; i < n; i++)
-    {
-        t_float findex = *in++ + *onset++;
-        int index = (int)findex;
-        t_sample frac, a, b, c, d, cminusb;
-        if (index < 1)
-            index = 1, frac = 0;
-        else if (index > maxindex)
-            index = maxindex, frac = 1;
-        else
-            frac = findex - (t_float)index;
-        wp = buf + index;
-        a = wp[-1].w_float;
-        b = wp[0].w_float;
-        c = wp[1].w_float;
-        d = wp[2].w_float;
-        cminusb = c - b;
-        *out++ = b + frac * (
-            cminusb - one_over_six * ((t_sample)1.f - frac) * (
-                (d - a - (t_sample)3.0f * cminusb) * frac +
-                (d + a * (t_sample)2.0f - b * (t_sample)3.0f)
-            )
-        );
-    }
-    return (w + 6);
- zero:
-    while (n--)
-        *out++ = 0;
+     for (i = 0; i < n; i++)
+     {
+         float findex = *in++;
+         int ionset = *onset++;
+         int index = (findex >= 0 ? findex : (int)findex - 1);
+         int realindex = index + ionset;
+         t_sample frac,  a,  b,  c,  d, cminusb;
+         if (realindex < 1)
+             realindex = 1, frac = 0;
+         else if (realindex > maxindex)
+             realindex = maxindex, frac = 1;
+         else frac = findex - index;
+         wp = buf + realindex;
+         a = wp[-1].w_float;
+         b = wp[0].w_float;
+         c = wp[1].w_float;
+         d = wp[2].w_float;
+         cminusb = c-b;
+         *out++ = b + frac * (
+             cminusb - one_over_six * ((t_sample)1.-frac) * (
+                 (d - a - (t_sample)3.0 * cminusb) * frac +
+                 (d + a*(t_sample)2.0 - b*(t_sample)3.0)
+             )
+         );
+     }
+     return (w+6);
+  zero:
+     while (n--)
+         *out++ = 0;
 
-    return (w + 6);
+     return (w+6);
 }
 
 static void espdsp_tabread4_set(t_espdsp_tabread4 *x, t_symbol *s,
@@ -322,15 +324,81 @@ static t_float espdsp_cos_lookup(float *tab, t_float p)
     return f1 + frac * (f2 - f1);
 }
 
-/* -------------------------- osc~ ---------------------------------- */
+/* Polynomial cos (phase in cycles 0..1); same kernel as cos~ / osc~ output. */
+#define ESPDSP_COS_POLY_A1 (4.f * (3.14159265f / 2.f))
+#define ESPDSP_COS_POLY_A3 (64.f * (2.5f - 3.14159265f))
+#define ESPDSP_COS_POLY_A5 (1024.f * ((3.14159265f / 2.f) - 1.5f))
 
-typedef struct _espdsp_osc
+/* -------------------------- phasor~ -------------------------------- */
+/* 28-bit phase ring (cf. int phasor variants): conv = RANGE/sr, wrap with MASK.
+ * Keeps float work small vs 2^32 scale; uint32 add + MASK handles ±freq (signed
+ * int &= MASK does not). Stock Pd extras: right inlet phase (ft1), float freq. */
+
+#define ESPDSP_PHASOR_RANGE 0x10000000
+#define ESPDSP_PHASOR_MASK (ESPDSP_PHASOR_RANGE - 1)
+
+typedef struct _espdsp_phasor
 {
     t_object x_obj;
-    t_float x_phase; /* 0 .. ESPDSP_OSC_TABSIZE */
+    uint32_t x_phase;
     t_float x_conv;
     t_float x_f;
-} t_espdsp_osc;
+} t_espdsp_phasor;
+
+typedef t_espdsp_phasor t_espdsp_osc;
+
+static void *espdsp_phasor_new(t_floatarg f)
+{
+    t_espdsp_phasor *x = (t_espdsp_phasor *)pd_new(espdsp_phasor_class);
+    x->x_f = f;
+    x->x_phase = 0;
+    x->x_conv = 0;
+    inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("ft1"));
+    outlet_new(&x->x_obj, gensym("signal"));
+    return (x);
+}
+
+static void espdsp_phasor_ft1(t_espdsp_phasor *x, t_float f)
+{
+    /* Accept arbitrary phase; wrap to [0,1). */
+    t_float a = f - floorf(f);
+    if (a < 0.f)
+        a += 1.f;
+    x->x_phase = ((uint32_t)(a * (t_float)ESPDSP_PHASOR_RANGE)) & ESPDSP_PHASOR_MASK;
+}
+
+static t_int *espdsp_phasor_perform(t_int *w)
+{
+    t_espdsp_phasor *x = (t_espdsp_phasor *)(w[1]);
+    t_sample *restrict in = (t_sample *)(w[2]);
+    t_sample *restrict out = (t_sample *)(w[3]);
+    int n = (int)(w[4]);
+    uint32_t phase = x->x_phase;
+    float conv = (float)x->x_conv;
+    const float reconv = 1.f / (float)ESPDSP_PHASOR_RANGE;
+
+    while (n--)
+    {
+        float step = conv * *in++;
+        uint32_t inc = (step >= 0.f) ? (uint32_t)step : (0U - (uint32_t)(-step));
+        *out++ = (t_float)((float)(phase & ESPDSP_PHASOR_MASK) * reconv);
+        phase = (phase + inc) & ESPDSP_PHASOR_MASK;
+    }
+    x->x_phase = phase;
+    return (w + 5);
+}
+
+static void espdsp_phasor_dsp(t_espdsp_phasor *x, t_signal **sp)
+{
+    x->x_conv = (sp[0]->s_sr > 0)
+        ? ((t_float)ESPDSP_PHASOR_RANGE / (t_float)sp[0]->s_sr)
+        : 0.f;
+    dsp_add(espdsp_phasor_perform, 4, x, sp[0]->s_vec, sp[1]->s_vec, (t_int)sp[0]->s_n);
+}
+
+static t_int *espdsp_cos_perform(t_int *w);
+
+/* -------------------------- osc~ ---------------------------------- */
 
 static void *espdsp_osc_new(t_floatarg f)
 {
@@ -343,117 +411,21 @@ static void *espdsp_osc_new(t_floatarg f)
     return (x);
 }
 
-static t_int *espdsp_osc_perform(t_int *w)
+static void espdsp_osc_ft1(t_espdsp_osc *x, t_float f)
 {
-    t_espdsp_osc *x = (t_espdsp_osc *)(w[1]);
-    t_sample *restrict in = (t_sample *)(w[2]);
-    t_sample *restrict out = (t_sample *)(w[3]);
-    int n = (int)(w[4]);
-    float *tab = espdsp_costab;
-    t_float ph = x->x_phase;
-    t_float conv = x->x_conv;
-    const t_float tabsize = (t_float)ESPDSP_OSC_TABSIZE;
-
-    if (!tab)
-    {
-        while (n--)
-            *out++ = 0;
-        return (w + 5);
-    }
-
-    while (n--)
-    {
-        ph += *in++ * conv;
-        if (ph >= tabsize)
-        {
-            ph -= tabsize;
-            if (ph >= tabsize)
-                while (ph >= tabsize)
-                    ph -= tabsize;
-        }
-        else if (ph < 0)
-        {
-            ph += tabsize;
-            if (ph < 0)
-                while (ph < 0)
-                    ph += tabsize;
-        }
-        *out++ = espdsp_cos_lookup(tab, ph);
-    }
-    x->x_phase = ph;
-    return (w + 5);
+    t_float a = f - floorf(f);
+    if (a < 0.f)
+        a += 1.f;
+    x->x_phase = ((uint32_t)(a * (t_float)ESPDSP_PHASOR_RANGE)) & ESPDSP_PHASOR_MASK;
 }
 
 static void espdsp_osc_dsp(t_espdsp_osc *x, t_signal **sp)
 {
-    x->x_conv = (t_float)ESPDSP_OSC_TABSIZE / (t_float)sp[0]->s_sr;
-    dsp_add(espdsp_osc_perform, 4, x, sp[0]->s_vec, sp[1]->s_vec, (t_int)sp[0]->s_n);
-}
-
-static void espdsp_osc_ft1(t_espdsp_osc *x, t_float f)
-{
-    x->x_phase = (t_float)ESPDSP_OSC_TABSIZE * f;
-}
-
-/* -------------------------- phasor~ -------------------------------- */
-
-typedef struct _espdsp_phasor
-{
-    t_object x_obj;
-    uint32_t x_phase_u32;
-    t_float x_sr_inv;
-    t_float x_f;
-} t_espdsp_phasor;
-
-static void *espdsp_phasor_new(t_floatarg f)
-{
-    t_espdsp_phasor *x = (t_espdsp_phasor *)pd_new(espdsp_phasor_class);
-    x->x_f = f;
-    x->x_phase_u32 = 0;
-    x->x_sr_inv = 0;
-    inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("ft1"));
-    outlet_new(&x->x_obj, gensym("signal"));
-    return (x);
-}
-
-static void espdsp_phasor_ft1(t_espdsp_phasor *x, t_float f)
-{
-    /* Accept arbitrary phase; wrap to [0,1). */
-    t_float a = f - floorf(f);
-    if (a < 0.f)
-        a += 1.f;
-    x->x_phase_u32 = (uint32_t)(a * 4294967296.0f);
-}
-
-static t_int *espdsp_phasor_perform(t_int *w)
-{
-    t_espdsp_phasor *x = (t_espdsp_phasor *)(w[1]);
-    t_sample *restrict in = (t_sample *)(w[2]);
-    t_sample *restrict out = (t_sample *)(w[3]);
-    int n = (int)(w[4]);
-    uint32_t phase = x->x_phase_u32;
-    t_float sr_inv = x->x_sr_inv;
-    const t_float phase_scale = 1.0f / 4294967296.0f;
-
-    while (n--)
-    {
-        float freq = *in++;
-        /* (freq/sr)*2^32 as uint32_t phase step. int32_t trunc was UB for |freq|>sr/2.
-         * Avoid int64_t on Xtensa: float→uint32 is only defined for non-negative;
-         * negative step uses 0U - (uint32_t)(-incf) ≡ same mod 2^32 as int64 cast. */
-        float incf = freq * sr_inv * 4294967296.0f;
-        uint32_t inc = (incf >= 0.f) ? (uint32_t)incf : (0U - (uint32_t)(-incf));
-        *out++ = (t_float)((float)phase * phase_scale);
-        phase += inc;
-    }
-    x->x_phase_u32 = phase;
-    return (w + 5);
-}
-
-static void espdsp_phasor_dsp(t_espdsp_phasor *x, t_signal **sp)
-{
-    x->x_sr_inv = (sp[0]->s_sr > 0) ? (1.f / (t_float)sp[0]->s_sr) : 0.f;
+    x->x_conv = (sp[0]->s_sr > 0)
+        ? ((t_float)ESPDSP_PHASOR_RANGE / (t_float)sp[0]->s_sr)
+        : 0.f;
     dsp_add(espdsp_phasor_perform, 4, x, sp[0]->s_vec, sp[1]->s_vec, (t_int)sp[0]->s_n);
+    dsp_add(espdsp_cos_perform, 3, sp[1]->s_vec, sp[1]->s_vec, (t_int)sp[0]->s_n);
 }
 
 /* -------------------------- cos~ ----------------------------------- */
@@ -477,19 +449,23 @@ static t_int *espdsp_cos_perform(t_int *w)
     t_sample *restrict in = (t_sample *)(w[1]);
     t_sample *restrict out = (t_sample *)(w[2]);
     int n = (int)(w[3]);
-    float *tab = espdsp_costab;
-
-    if (!tab)
-    {
-        while (n--)
-            *out++ = 0;
-        return (w + 4);
-    }
 
     while (n--)
     {
-        t_float p = *in++ * (t_float)ESPDSP_OSC_TABSIZE;
-        *out++ = espdsp_cos_lookup(tab, p);
+        float f = (float)*in++;
+        float g, g2, g3;
+        if (f < 0.f)
+            f -= (int)(f - 1.f);
+        else
+            f -= (int)f;
+        if (f > 0.5f)
+            g = f - 0.75f;
+        else
+            g = 0.25f - f;
+        g2 = g * g;
+        g3 = g * g2;
+        *out++ = (t_sample)(g * ESPDSP_COS_POLY_A1 + g3 * ESPDSP_COS_POLY_A3
+            + g2 * g3 * ESPDSP_COS_POLY_A5);
     }
     return (w + 4);
 }
