@@ -1,0 +1,13 @@
+--- a/src/d_fft_fftsg.c
++++ b/src/d_fft_fftsg.c
+@@ -24,7 +24,9 @@
+ 
+ #include "m_private_utils.h"
+ 
+-#define FFTFLT double
++#ifndef FFTFLT
++#define FFTFLT float
++#endif
+ static void cdft(int, int, FFTFLT *, int *, FFTFLT *);
+ static void rdft(int, int, FFTFLT *, int *, FFTFLT *);
+ 

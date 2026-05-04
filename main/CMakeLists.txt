@@ -51,6 +51,8 @@ set(MAIN_SRCS
     "../pd/src/d_delay.c"
     "../pd/src/d_filter.c"
     "../pd/src/d_math.c"
+    "../pd/src/d_fft.c"
+    "../pd/src/d_fft_fftsg.c"
     "../pd/src/d_misc.c"
     "../pd/src/x_arithmetic.c"
     "../pd/src/x_connective.c"
@@ -113,9 +115,11 @@ idf_component_register(
     REQUIRES ${MAIN_REQUIRES}
 )
 
+idf_component_get_property(_espd_main_lib ${COMPONENT_NAME} COMPONENT_LIB)
+# Ooura FFT in pd/src/d_fft_fftsg.c: default FFTFLT is double; use float IRAM.
+target_compile_definitions(${_espd_main_lib} PRIVATE "FFTFLT=float")
 if(MAIN_BOARD_DEFS)
-    idf_component_get_property(main_lib ${COMPONENT_NAME} COMPONENT_LIB)
-    target_compile_definitions(${main_lib} PRIVATE ${MAIN_BOARD_DEFS})
+    target_compile_definitions(${_espd_main_lib} PRIVATE ${MAIN_BOARD_DEFS})
 endif()
 
 # Keep aggressive math optimization scoped to DSP override kernels only.

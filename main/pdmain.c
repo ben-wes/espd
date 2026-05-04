@@ -325,6 +325,7 @@ void conf_init(void)
     d_delay_setup();
     d_filter_setup();
     d_math_setup();
+    d_fft_setup();
     d_misc_setup();
     expr_setup();
     x_file_setup();
