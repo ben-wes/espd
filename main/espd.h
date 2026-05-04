@@ -179,10 +179,6 @@ extern char espd_wifi_password[65];
 #ifndef ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
 #define ESPD_ENABLE_LEGACY_WIFI_TRANSPORT 1
 #endif
-/* 1 = enable espd/check/cpu runtime task stats (adds profiling overhead). */
-#ifndef ESPD_ENABLE_CPU_STATS
-#define ESPD_ENABLE_CPU_STATS 1
-#endif
 /** VFS path where the SD card is mounted (ESP-ADF LyraT default: /sdcard). */
 #ifndef ESPD_SDCARD_MOUNT
 #define ESPD_SDCARD_MOUNT "/sdcard"

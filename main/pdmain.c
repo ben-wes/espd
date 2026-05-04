@@ -174,7 +174,6 @@ void pdmain_tick( void)
 t_class *glob_pdobject;
 
 void glob_mem(void *dummy);
-void glob_cpu(void *dummy);
 static void glob_canvas_editmode(t_glist *x, t_floatarg f)
 {
     (void)x;
@@ -218,7 +217,6 @@ void glob_init( void)
     class_addmethod(glob_pdobject, (t_method)glob_dsp, gensym("dsp"),
         A_GIMME, 0);
     class_addmethod(glob_pdobject, (t_method)glob_mem, gensym("espd/check/mem"), 0);
-    class_addmethod(glob_pdobject, (t_method)glob_cpu, gensym("espd/check/cpu"), 0);
     class_addmethod(glob_pdobject, (t_method)glob_beginnew, gensym("begin-new"),
         A_SYMBOL, A_SYMBOL, 0);
     class_addmethod(glob_pdobject, (t_method)glob_close, gensym("close"),
