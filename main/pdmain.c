@@ -279,6 +279,7 @@ void d_ugen_setup(void);
 void espdsp_osc_override_setup(void);
 void espd_pdcontrol_setup(void);
 void x_file_setup(void);
+void espd_cputime_setup(void);
 
 void conf_init(void)
 {
@@ -330,6 +331,7 @@ void conf_init(void)
     expr_setup();
     x_file_setup();
     espd_pdcontrol_setup();
+    espd_cputime_setup();
     trymem(11);
 }
 

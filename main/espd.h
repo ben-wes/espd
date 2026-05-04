@@ -217,4 +217,7 @@ extern int espd_wifi_net_enabled;
 int espd_net_send_ready(void);
 #endif
 
+void espd_cputime_reset( void);
+unsigned int espd_cputime_get( void);
+
 #endif /* ESPD_H */

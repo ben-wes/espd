@@ -1112,6 +1112,17 @@ void pdmain_print( const char *s)
 
 void trymem(int foo);
 
+static unsigned int cputime;
+void espd_cputime_reset( void)
+{
+    cputime = 0;
+}
+
+unsigned int espd_cputime_get( void)
+{
+    return (cputime);
+}
+
 void app_main(void)
 {
     esp_log_level_set("*", ESP_LOG_WARN);
@@ -1174,8 +1185,6 @@ void app_main(void)
 #if defined(PD_USE_WIFI) && defined(PD_USE_SDCARD)
     espd_wifi_try_load_sdcard_config();
 #endif
-
-
 
 #ifdef PD_USE_WIFI
 #if !ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
@@ -1284,6 +1293,7 @@ void app_main(void)
             uint64_t dt;
 
             pdmain_tick();
+            cputime += ((uint64_t)esp_timer_get_time() - t0);
             senddacs();
 
             dt = (uint64_t)esp_timer_get_time() - t0;
@@ -1462,5 +1472,6 @@ void glob_cpu(void *dummy)
     (void)dummy;
     espd_print_cpudiag();
 }
+
 
 

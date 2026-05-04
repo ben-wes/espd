@@ -6,6 +6,7 @@ set(MAIN_SRCS
     "espd_patch_store.c"
     "pdmain.c"
     "espdsp_osc_override.c"
+    "pd_cputime_compat.c"
     "../pd/src/g_canvas.c"
     "../pd/src/g_graph.c"
     "../pd/src/g_text.c"
