@@ -9,8 +9,9 @@
  * d_osc.c / d_osc.h use double + UNITBIT32 in hot loops; tabread4~ used
  * double for index sum. Xtensa has no hardware double.
  *
- * Convention (small delta vs desktop Pd): cos~ / osc~ use a polynomial cos
- * (phase in cycles 0..1). Tab-based cosine remains for vcf~ / tabosc4~ only.
+ * Convention (small delta vs desktop Pd): cos~ / osc~ / vcf~ use the same
+ * polynomial cos (phase in cycles 0..1); vcf~ applies it to radians/sample.
+ * tabosc4~ / tabread4~ still read user arrays (not replaced here).
  * Phasor / osc phase chains that relied on the exact Hölderich bit layout may
  * differ; use *~_aliased.
  *
@@ -32,9 +33,6 @@
 #define ESPDSP_BIGFLOAT 1.0e+19f
 #endif
 
-#define ESPDSP_OSC_TABSIZE 2048
-
-static float *espdsp_costab;
 static t_class *espdsp_osc_class;
 static t_class *espdsp_phasor_class;
 static t_class *espdsp_cos_class;
@@ -286,48 +284,44 @@ static void espdsp_tabread4_free(t_espdsp_tabread4 *x)
     espdsp_arrayvec_free(&x->x_v);
 }
 
-/* ----- shared cosine table (linear interp; tab[i+1] valid for i < TABSIZE) */
-
-static void espdsp_ensure_table(void)
-{
-    int i;
-    if (espdsp_costab)
-        return;
-    espdsp_costab = (float *)getbytes(sizeof(float) * (ESPDSP_OSC_TABSIZE + 1));
-    if (!espdsp_costab)
-        return;
-    for (i = 0; i <= ESPDSP_OSC_TABSIZE; i++)
-        espdsp_costab[i] = cosf((t_float)(2. * M_PI * i / (double)ESPDSP_OSC_TABSIZE));
-    /* match vanilla cardinal points */
-    espdsp_costab[0] = espdsp_costab[ESPDSP_OSC_TABSIZE] = 1.f;
-    espdsp_costab[ESPDSP_OSC_TABSIZE / 4] =
-        espdsp_costab[3 * ESPDSP_OSC_TABSIZE / 4] = 0.f;
-    espdsp_costab[ESPDSP_OSC_TABSIZE / 2] = -1.f;
-}
-
-static t_float espdsp_cos_lookup(float *tab, t_float p)
-{
-    int i;
-    t_float frac, f1, f2;
-    while (p >= (t_float)ESPDSP_OSC_TABSIZE)
-        p -= (t_float)ESPDSP_OSC_TABSIZE;
-    while (p < 0)
-        p += (t_float)ESPDSP_OSC_TABSIZE;
-    i = (int)p;
-    if (i >= ESPDSP_OSC_TABSIZE)
-        i %= ESPDSP_OSC_TABSIZE;
-    if (i < 0)
-        i = 0;
-    frac = p - (t_float)i;
-    f1 = tab[i];
-    f2 = tab[i + 1];
-    return f1 + frac * (f2 - f1);
-}
-
-/* Polynomial cos (phase in cycles 0..1); same kernel as cos~ / osc~ output. */
+/* Polynomial cos (phase in cycles 0..1); shared by cos~, osc~, vcf~. */
 #define ESPDSP_COS_POLY_A1 (4.f * (3.14159265f / 2.f))
 #define ESPDSP_COS_POLY_A3 (64.f * (2.5f - 3.14159265f))
 #define ESPDSP_COS_POLY_A5 (1024.f * ((3.14159265f / 2.f) - 1.5f))
+
+static float espdsp_poly_wrap_cycles(float f)
+{
+    if (f < 0.f)
+        f -= (int)(f - 1.f);
+    else
+        f -= (int)f;
+    return f;
+}
+
+static float espdsp_cos_poly_eval_wrapped(float f)
+{
+    float g, g2, g3;
+    if (f > 0.5f)
+        g = f - 0.75f;
+    else
+        g = 0.25f - f;
+    g2 = g * g;
+    g3 = g * g2;
+    return g * ESPDSP_COS_POLY_A1 + g3 * ESPDSP_COS_POLY_A3
+        + g2 * g3 * ESPDSP_COS_POLY_A5;
+}
+
+static float espdsp_cos_poly_radians(float theta)
+{
+    float cyc = theta * (float)(1.0 / (2.0 * M_PI));
+    return espdsp_cos_poly_eval_wrapped(espdsp_poly_wrap_cycles(cyc));
+}
+
+static float espdsp_sin_poly_radians(float theta)
+{
+    float cyc = theta * (float)(1.0 / (2.0 * M_PI)) - 0.25f;
+    return espdsp_cos_poly_eval_wrapped(espdsp_poly_wrap_cycles(cyc));
+}
 
 /* -------------------------- phasor~ -------------------------------- */
 /* 28-bit phase ring (cf. int phasor variants): conv = RANGE/sr, wrap with MASK.
@@ -452,20 +446,8 @@ static t_int *espdsp_cos_perform(t_int *w)
 
     while (n--)
     {
-        float f = (float)*in++;
-        float g, g2, g3;
-        if (f < 0.f)
-            f -= (int)(f - 1.f);
-        else
-            f -= (int)f;
-        if (f > 0.5f)
-            g = f - 0.75f;
-        else
-            g = 0.25f - f;
-        g2 = g * g;
-        g3 = g * g2;
-        *out++ = (t_sample)(g * ESPDSP_COS_POLY_A1 + g3 * ESPDSP_COS_POLY_A3
-            + g2 * g3 * ESPDSP_COS_POLY_A5);
+        float f = espdsp_poly_wrap_cycles((float)*in++);
+        *out++ = (t_sample)espdsp_cos_poly_eval_wrapped(f);
     }
     return (w + 4);
 }
@@ -540,56 +522,25 @@ static t_int *espdsp_sigvcf_perform(t_int *w)
     t_float isr = c->c_isr;
     t_float qinv = (q > 0 ? 1.0f / q : 0.f);
     t_float ampcorrect = 2.f - 2.f / (q + 2.f);
-    float *tab = espdsp_costab;
     t_float coefr, coefi;
-    int ti, ti2;
-    t_float p, frac, f1, f2;
-
-    if (!tab)
-    {
-        for (i = 0; i < n; i++)
-        {
-            *out1++ = 0;
-            *out2++ = 0;
-        }
-        return (w + 7);
-    }
 
     for (i = 0; i < n; i++)
     {
-        t_float cf, cfindx, r, oneminusr;
+        t_float cf, r, oneminusr, ins;
         cf = *in2++ * isr;
         if (cf < 0)
             cf = 0;
-        cfindx = cf * (t_float)(ESPDSP_OSC_TABSIZE / 6.28318f);
         r = (qinv > 0 ? 1.f - cf * qinv : 0.f);
         if (r < 0)
             r = 0;
         oneminusr = 1.0f - r;
 
-        p = cfindx;
-        while (p >= (t_float)ESPDSP_OSC_TABSIZE)
-            p -= (t_float)ESPDSP_OSC_TABSIZE;
-        while (p < 0)
-            p += (t_float)ESPDSP_OSC_TABSIZE;
-        ti = (int)p;
-        if (ti >= ESPDSP_OSC_TABSIZE)
-            ti %= ESPDSP_OSC_TABSIZE;
-        if (ti < 0)
-            ti = 0;
-        frac = p - (t_float)ti;
-        f1 = tab[ti];
-        f2 = tab[ti + 1];
-        coefr = r * (f1 + frac * (f2 - f1));
+        coefr = r * (t_float)espdsp_cos_poly_radians(cf);
+        coefi = r * (t_float)espdsp_sin_poly_radians(cf);
 
-        ti2 = (ti - (ESPDSP_OSC_TABSIZE / 4)) & (ESPDSP_OSC_TABSIZE - 1);
-        f1 = tab[ti2];
-        f2 = tab[ti2 + 1];
-        coefi = r * (f1 + frac * (f2 - f1));
-
-        f1 = *in1++;
+        ins = *in1++;
         re2 = re;
-        *out1++ = re = ampcorrect * oneminusr * f1 + coefr * re2 - coefi * im;
+        *out1++ = re = ampcorrect * oneminusr * ins + coefr * re2 - coefi * im;
         *out2++ = im = coefi * re2 + coefr * im;
     }
     if (PD_BIGORSMALL(re))
@@ -736,8 +687,6 @@ static void espdsp_tabosc4_dsp(t_espdsp_tabosc4 *x, t_signal **sp)
 
 void espdsp_osc_override_setup(void)
 {
-    espdsp_ensure_table();
-
     espdsp_osc_class = class_new(gensym("osc~"), (t_newmethod)espdsp_osc_new, 0,
         sizeof(t_espdsp_osc), 0, A_DEFFLOAT, 0);
     CLASS_MAINSIGNALIN(espdsp_osc_class, t_espdsp_osc, x_f);
