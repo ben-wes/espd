@@ -40,25 +40,11 @@
 #define ESPD_WAVESHARE_I2C_SDA_GPIO 11
 
 /*
- * Analog inputs sent as espd/ain/0..espd/ain/N (ADC1 only). Keep to
- * header-accessible pins.
- * We avoid GPIO10/11 here because they are already used as the shared I2C bus.
- * Default mapping:
- *   espd/ain/0 GPIO3  (ADC1_CH2; strapping pin — do not drive low at reset)
- *   espd/ain/1 GPIO4
- *   espd/ain/2 GPIO5
- *   espd/ain/3 GPIO6
- *   espd/ain/4 GPIO7
- *
- * BAT_ADC on some board revisions is wired to GPIO1 via a solder option; if
- * you want battery sensing instead, set ESPD_ANALOG_PIN_0 to 1 and adjust count.
+ * Analog inputs (espd/ain/0..): on SD builds, set analog_pins= in /sdcard/config.txt
+ * (ADC1 only). Example matching this board’s header GPIOs (avoid 10/11 = I2C):
+ *   analog_pins=3,4,5,6,7
+ * GPIO3 is strapping — do not drive low at reset. BAT_ADC on some revisions is GPIO1.
  */
-#define ESPD_ANALOG_NUM_CHANNELS 5
-#define ESPD_ANALOG_PIN_0 3
-#define ESPD_ANALOG_PIN_1 4
-#define ESPD_ANALOG_PIN_2 5
-#define ESPD_ANALOG_PIN_3 6
-#define ESPD_ANALOG_PIN_4 7
 
 /* High-rate ain: wake the ADC producer every 1 ms (override in config.txt if needed). */
 #ifndef ESPD_ANALOG_TASK_PERIOD_MS

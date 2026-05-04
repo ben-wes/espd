@@ -76,7 +76,6 @@ void net_sendtcp(void *msg, int len);
 extern char wifi_ipaddr[];
 extern char espd_wifi_ssid[33];
 extern char espd_wifi_password[65];
-extern int espd_wifi_force_enable;
 #endif
 
 #ifndef PIN_BIT_CLOCK       /* fallback pin locations for I2S audio I/O */
@@ -201,18 +200,17 @@ extern int espd_wifi_force_enable;
 #endif
 /* config.txt (SD) optional keys (key=value, # comment):
  * WiFi (when PD_USE_SDCARD): STA starts only if this file exists on the mounted
- *   SD card and either wifi_ssid= has a non-empty value or wifi_enable=1 appears.
- *   Missing file, or file with no matching wifi_* lines → WiFi stays off (Kconfig
+ *   SD card and wifi_ssid= has a non-empty value (wifi_password optional).
+ *   Missing file, empty ssid, or no wifi_ssid line → WiFi stays off (Kconfig
  *   SSID/password are not used as a fallback).
  *   wifi_ssid=myap
  *   wifi_password=secret
- *   wifi_enable=1
- *   wifi_enable=0   — explicit off (overrides non-empty wifi_ssid if both appear)
- * Analog (when PD_USE_ANALOG0): if config.txt is missing or analog keys absent,
- *   board profile defaults apply.
- *   analog_enable=0  — do not start ADC or send espd/ain messages
+ * Analog (when PD_USE_SDCARD && PD_USE_ANALOG0): ADC / espd/ain starts only if
+ *   analog_pins= lists at least one GPIO (ADC1-capable). Missing file, no
+ *   analog_pins key, or analog_pins= with an empty list → analog stays off.
+ *   Board headers do not imply runtime pins on SD; use config.txt.
  *   analog_pins=3,4,5,6,7 — GPIOs for espd/ain/0.. in order (max 8, ADC1 pins)
- *   analog_pins=      — same as empty list: do not start analog
+ *   analog_pins=      — empty list: do not start analog
  *   analog_task_period_ms=1 — producer wake interval in ms (1..500); lower =
  *       more samples in time (more ADC-task CPU). Does not loosen filtering.
  *   analog_deadband=N — raw delta to treat as a new value (1..2047); noise gate
