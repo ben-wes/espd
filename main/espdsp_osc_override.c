@@ -438,9 +438,13 @@ static t_int *espdsp_phasor_perform(t_int *w)
     while (n--)
     {
         float freq = *in++;
-        int32_t inc = (int32_t)(freq * sr_inv * 4294967296.0f);
+        /* (freq/sr)*2^32 as uint32_t phase step. int32_t trunc was UB for |freq|>sr/2.
+         * Avoid int64_t on Xtensa: float→uint32 is only defined for non-negative;
+         * negative step uses 0U - (uint32_t)(-incf) ≡ same mod 2^32 as int64 cast. */
+        float incf = freq * sr_inv * 4294967296.0f;
+        uint32_t inc = (incf >= 0.f) ? (uint32_t)incf : (0U - (uint32_t)(-incf));
         *out++ = (t_float)((float)phase * phase_scale);
-        phase += (uint32_t)inc;
+        phase += inc;
     }
     x->x_phase_u32 = phase;
     return (w + 5);
