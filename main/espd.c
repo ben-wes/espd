@@ -344,14 +344,31 @@ static void espd_wifi_config_defaults(void)
     espd_wifi_force_enable = 0;
 }
 
-#ifdef PD_USE_SDCARD
+#if defined(PD_USE_SDCARD)
+static int s_wifi_credentials_in_config_txt;
+static int espd_wifi_config_txt_allows_sta(void)
+{
+    return s_wifi_credentials_in_config_txt;
+}
+
 static void espd_wifi_try_load_sdcard_config(void)
 {
     FILE *f = fopen(ESPD_SDCARD_CONFIG_PATH, "r");
     char line[256];
-    int ssid_from_file = 0;
+    int ssid_nonempty = 0;
+    int saw_wifi_enable_key = 0;
+    int wifi_enable_value = 0;
+
     if (!f)
+    {
+        s_wifi_credentials_in_config_txt = 0;
+        espd_wifi_ssid[0] = '\0';
+        espd_wifi_password[0] = '\0';
+        espd_wifi_force_enable = 0;
+        ESP_LOGI(TAG, "wifi: no %s — STA disabled (use wifi_ssid= / wifi_enable=1 to connect)",
+                 ESPD_SDCARD_CONFIG_PATH);
         return;
+    }
     while (fgets(line, sizeof(line), f))
     {
         char *eq;
@@ -372,7 +389,7 @@ static void espd_wifi_try_load_sdcard_config(void)
         if (!strcmp(k, "wifi_ssid"))
         {
             snprintf(espd_wifi_ssid, sizeof(espd_wifi_ssid), "%s", v);
-            ssid_from_file = (espd_wifi_ssid[0] != '\0');
+            ssid_nonempty = (espd_wifi_ssid[0] != '\0');
         }
         else if (!strcmp(k, "wifi_password"))
         {
@@ -380,17 +397,38 @@ static void espd_wifi_try_load_sdcard_config(void)
         }
         else if (!strcmp(k, "wifi_enable"))
         {
-            espd_wifi_force_enable = (atoi(v) != 0);
+            saw_wifi_enable_key = 1;
+            wifi_enable_value = (atoi(v) != 0);
+            espd_wifi_force_enable = wifi_enable_value;
         }
     }
     fclose(f);
-    if (ssid_from_file && !espd_wifi_force_enable)
+    if (saw_wifi_enable_key)
+        s_wifi_credentials_in_config_txt = wifi_enable_value;
+    else
+        s_wifi_credentials_in_config_txt = ssid_nonempty;
+    if (!s_wifi_credentials_in_config_txt)
+    {
+        espd_wifi_ssid[0] = '\0';
+        espd_wifi_password[0] = '\0';
+        espd_wifi_force_enable = 0;
+        ESP_LOGI(TAG, "wifi: no STA keys in %s — not using Kconfig SSID",
+                 ESPD_SDCARD_CONFIG_PATH);
+    }
+    else if (ssid_nonempty && !saw_wifi_enable_key)
         espd_wifi_force_enable = 1;
-    ESP_LOGI(TAG, "loaded WiFi config from %s (ssid=%s, force=%d)",
-             ESPD_SDCARD_CONFIG_PATH, espd_wifi_ssid, espd_wifi_force_enable);
+    ESP_LOGI(TAG, "loaded WiFi config from %s (ssid=%s, force=%d, sta_ok=%d)",
+             ESPD_SDCARD_CONFIG_PATH, espd_wifi_ssid, espd_wifi_force_enable,
+             s_wifi_credentials_in_config_txt);
+}
+#else /* !PD_USE_SDCARD */
+static int espd_wifi_config_txt_allows_sta(void)
+{
+    return 1;
 }
 #endif
-#endif
+
+#endif /* PD_USE_WIFI */
 
 #ifdef PD_USE_ANALOG0
 /* Run-time tuning (defaults from espd.h; config.txt may override with SD build). */
@@ -1205,9 +1243,17 @@ void app_main(void)
 #if defined(PD_USE_WIFI) && defined(PD_USE_SDCARD)
     espd_wifi_try_load_sdcard_config();
 #endif
+#ifdef PD_USE_WIFI
+    if (!espd_wifi_config_txt_allows_sta())
+    {
+        espd_wifi_net_enabled = 0;
+        ESP_LOGI(TAG, "wifi: STA disabled (no wifi_ssid / wifi_enable=1 in " ESPD_SDCARD_CONFIG_PATH ")");
+    }
+#endif
 
 #ifdef PD_USE_WIFI
 #if !ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
+    if (espd_wifi_net_enabled)
     {
         int local_main_present = 0;
 #ifdef PD_USE_USB_MSC
@@ -1259,7 +1305,11 @@ void app_main(void)
     sd_init();
 #endif
 #ifdef PD_USE_WIFI
-    if (espd_main_pd_loaded_from_store && ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK &&
+    if (!espd_wifi_net_enabled)
+    {
+        ESP_LOGI(TAG, "wifi: STA off — not starting network or legacy patch transport");
+    }
+    else if (espd_main_pd_loaded_from_store && ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK &&
         !espd_wifi_force_enable) {
         espd_wifi_net_enabled = 0;
         ESP_LOGI(TAG,

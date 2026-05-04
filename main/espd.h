@@ -199,7 +199,17 @@ extern int espd_wifi_force_enable;
 /** If present on USB MSC storage, loaded before SD card (see pdmain_init). */
 #define ESPD_STORAGE_MAIN_PD_PATH ESPD_STORAGE_MOUNT "/main.pd"
 #endif
-/* config.txt (SD) optional keys (same file as wifi_*; key=value, # comment):
+/* config.txt (SD) optional keys (key=value, # comment):
+ * WiFi (when PD_USE_SDCARD): STA starts only if this file exists on the mounted
+ *   SD card and either wifi_ssid= has a non-empty value or wifi_enable=1 appears.
+ *   Missing file, or file with no matching wifi_* lines → WiFi stays off (Kconfig
+ *   SSID/password are not used as a fallback).
+ *   wifi_ssid=myap
+ *   wifi_password=secret
+ *   wifi_enable=1
+ *   wifi_enable=0   — explicit off (overrides non-empty wifi_ssid if both appear)
+ * Analog (when PD_USE_ANALOG0): if config.txt is missing or analog keys absent,
+ *   board profile defaults apply.
  *   analog_enable=0  — do not start ADC or send espd/ain messages
  *   analog_pins=3,4,5,6,7 — GPIOs for espd/ain/0.. in order (max 8, ADC1 pins)
  *   analog_pins=      — same as empty list: do not start analog
@@ -209,7 +219,7 @@ extern int espd_wifi_force_enable;
  *       only — smaller = more sensitive / more messages when the input moves.
  *   analog_report_every_n_blocks=1 — audio thread forwards at most every N
  *       blocks; keep 1 for lowest latency to Pd when the producer has updates.
- * If config.txt is missing or these keys are absent, use board profile pins. */
+ */
 /* [pdcontrol] message "ip" → list of four float octets 0..255 (STA; 0 0 0 0 if off / no DHCP). */
 #define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"
 
