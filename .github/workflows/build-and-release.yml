@@ -30,6 +30,16 @@ jobs:
             idf.py set-target esp32s3 &&
             idf.py fullclean build
 
+      - name: Upload firmware as action artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: espd-waveshare-${{ github.sha }}
+          path: |
+            build/espd.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/flash_args
+
       - name: Upload firmware to release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
