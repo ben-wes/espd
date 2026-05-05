@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - waveshare
+      - feature/ci
 
 jobs:
   build:
