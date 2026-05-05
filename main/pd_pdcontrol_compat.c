@@ -78,14 +78,14 @@ static void espd_pdcontrol_ip(t_espd_pdcontrol *x)
     int a, b, c, d, n;
     t_atom ap[4];
 
-    (void)x;
     a = b = c = d = 0;
     n = 0;
     if (wifi_ipaddr[0])
         n = sscanf(wifi_ipaddr, "%d.%d.%d.%d", &a, &b, &c, &d);
     if (n != 4 || a < 0 || a > 255 || b < 0 || b > 255 || c < 0 || c > 255 ||
         d < 0 || d > 255) {
-        a = b = c = d = 0;
+        outlet_symbol(x->x_out, gensym("noip"));
+        return;
     }
     SETFLOAT(&ap[0], (t_float)a);
     SETFLOAT(&ap[1], (t_float)b);
@@ -96,13 +96,7 @@ static void espd_pdcontrol_ip(t_espd_pdcontrol *x)
 #else
 static void espd_pdcontrol_ip(t_espd_pdcontrol *x)
 {
-    t_atom ap[4];
-    (void)x;
-    SETFLOAT(&ap[0], 0);
-    SETFLOAT(&ap[1], 0);
-    SETFLOAT(&ap[2], 0);
-    SETFLOAT(&ap[3], 0);
-    outlet_list(x->x_out, 0, 4, ap);
+    outlet_symbol(x->x_out, gensym("noip"));
 }
 #endif
 
