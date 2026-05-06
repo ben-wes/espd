@@ -20,6 +20,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Apply required Pd patches
+        run: ./scripts/apply-pd-patches.sh
+
       - name: Build firmware
         uses: espressif/esp-idf-ci-action@v1
         with:
