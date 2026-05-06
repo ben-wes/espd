@@ -41,10 +41,9 @@
 #include <stdint.h>
 #ifdef PD_USE_USB_MSC
 #include "esp_partition.h"
-#include "esp_vfs_fat.h"
 #include "wear_levelling.h"
 #include "tinyusb.h"
-#include "tusb_msc_storage.h"
+#include "tinyusb_msc.h"
 #include "tinyusb_default_config.h"
 #endif
 #if defined(PD_USE_ANALOG0) || defined(PD_USE_TOUCH0)
@@ -60,6 +59,7 @@ static const char *TAG = "ESPD";
 
 #ifdef PD_USE_USB_MSC
 static wl_handle_t wl_handle = WL_INVALID_HANDLE;
+static tinyusb_msc_storage_handle_t msc_handle = NULL;
 #endif
 
 #if ESPD_AOUT_NUM_CHANNELS > 0
@@ -1128,9 +1128,25 @@ static void pd_polltouch0(void)
 #ifdef PD_USE_USB_MSC
 static int usb_msc_active = 0;
 
+static void msc_event_callback(tinyusb_msc_storage_handle_t handle, tinyusb_msc_event_t *event, void *arg)
+{
+    (void)arg;
+    
+    if (event->id == TINYUSB_MSC_EVENT_MOUNT_COMPLETE) {
+        ESP_LOGI(TAG, "MSC mount complete");
+        usb_msc_active = 1;
+    } else if (event->id == TINYUSB_MSC_EVENT_MOUNT_FAILED) {
+        ESP_LOGI(TAG, "MSC mount failed/unmounted, switching to local mount");
+        usb_msc_active = 0;
+        // Switch back to local mount so app can access /storage
+        tinyusb_msc_set_storage_mount_point(handle, TINYUSB_MSC_STORAGE_MOUNT_APP);
+    }
+}
+
 static void usb_init(void)
 {
-    ESP_LOGI(TAG, "USB MSC init starting");
+    ESP_LOGW(TAG, "USB MSC init starting");
+    
     // 1. Find the partition named "storage" from your partitions_pd.csv
     const esp_partition_t *data_partition = esp_partition_find_first(
         ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "storage");
@@ -1141,40 +1157,54 @@ static void usb_init(void)
     }
 
     // 2. Mount wear leveling on that partition
-    ESP_ERROR_CHECK(wl_mount(data_partition, &wl_handle));
+    esp_err_t err = wl_mount(data_partition, &wl_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "USB MSC: failed to mount wear leveling: %s", esp_err_to_name(err));
+        return;
+    }
 
-    //tinyusb_msc_register_callback(TINYUSB_MSC_EVENT_MOUNT_CHANGED, storage_mount_changed_cb); 
-
-    // 3. Configure TinyUSB MSC to use this flash handle
-    const tinyusb_msc_spiflash_config_t msc_config = {
-        .wl_handle = wl_handle
-    };
-    ESP_ERROR_CHECK(tinyusb_msc_storage_init_spiflash(&msc_config));
-
-    // 4. Install TinyUSB driver
+    // 3. Install TinyUSB driver
     tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
 
-    const esp_vfs_fat_mount_config_t mount_config = {
-        .max_files = 64,
-        .format_if_mount_failed = true, // <--- This does the formatting
-        .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
-        .use_one_fat = false,
+    // 4. Install MSC driver with callback
+    tinyusb_msc_driver_config_t msc_driver_cfg = {
+        .callback = msc_event_callback,
+        .callback_arg = NULL,
     };
+    ESP_ERROR_CHECK(tinyusb_msc_install_driver(&msc_driver_cfg));
 
-    // This handles finding the partition, initializing wear leveling,
-    // and mounting (or formatting then mounting)
-    esp_err_t err = esp_vfs_fat_spiflash_mount_rw_wl("/storage", "storage", &mount_config, &wl_handle);
-
+    // 5. Configure MSC storage with SPI flash
+    tinyusb_msc_storage_config_t msc_storage_cfg = {
+        .medium.wl_handle = wl_handle,  // Use the mounted wear leveling handle
+        .fat_fs = {
+            .base_path = "/storage",
+            .config = {
+                .max_files = 64,
+                .format_if_mount_failed = true,
+                .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
+            },
+            .do_not_format = false,
+            .format_flags = FM_FAT,  // Auto-select format based on partition size
+        },
+        .mount_point = TINYUSB_MSC_STORAGE_MOUNT_APP,  // App owns initially for internal mount
+    };
+    
+    // 6. Create MSC storage
+    err = tinyusb_msc_new_storage_spiflash(&msc_storage_cfg, &msc_handle);
     if (err == ESP_OK) {
+        ESP_LOGI(TAG, "USB MSC: storage initialized at /storage");
+        // Set the partition label to ESPD
         FRESULT res = f_setlabel("0:ESPD");
-        ESP_LOGI(TAG, "USB MSC: partition ready at /storage");
-        usb_msc_active = 1;
+        if (res != FR_OK) {
+            ESP_LOGW(TAG, "Failed to set partition label: %d", res);
+        }
     } else {
-        ESP_LOGE(TAG, "USB MSC: failed to mount /storage: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "USB MSC: failed to initialize storage: %s", esp_err_to_name(err));
     }
 }
 #endif
+
 
 static void espd_nvs_flash_init(void)
 {
@@ -1550,13 +1580,13 @@ void app_main(void)
     usb_init();
 
     // should wait until USB drive is unmounted, but doesn't
-    if (tud_connected()) {
+    /*if (tud_connected()) {
         vTaskDelay(pdMS_TO_TICKS(500));
         while (tud_mounted()) {
             vTaskDelay(pdMS_TO_TICKS(10));  // Check every 10ms
             tud_task();
         }
-    }
+    }*/
 #endif
 
 #if defined(PD_USE_SDCARD) && defined(ESPD_BOARD_WAVESHARE_S3)
