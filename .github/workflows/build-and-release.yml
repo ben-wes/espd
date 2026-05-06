@@ -1,0 +1,51 @@
+name: Build Waveshare firmware
+
+on:
+  push:
+    branches:
+      - waveshare
+      - feature/ci
+    tags:
+      - '**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build firmware
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v6.0.1
+          target: esp32s3
+          command: >-
+            export ESPD_BOARD=waveshare_s3 &&
+            idf.py set-target esp32s3 &&
+            idf.py fullclean build
+
+      - name: Upload firmware as action artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: espd-waveshare-${{ github.sha }}
+          path: |
+            build/espd.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/flash_args
+
+      - name: Upload firmware to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/espd.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/flash_args
