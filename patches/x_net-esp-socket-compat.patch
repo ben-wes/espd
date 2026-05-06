@@ -1,7 +1,24 @@
 diff --git a/src/x_net.c b/src/x_net.c
-index 27fdc25b..e4cc7d7f 100644
+index 27fdc25b..62f2c288 100644
 --- a/src/x_net.c
 +++ b/src/x_net.c
+@@ -69,6 +69,16 @@ typedef struct _netreceive
+ static void netsend_disconnect(t_netsend *x);
+ static void netreceive_notify(t_netreceive *x, int fd);
+ 
++static int socket_errno_udp_send_ok(void)
++{
++    int err = socket_errno();
++#ifdef _WIN32
++    return (err == WSAEWOULDBLOCK || err == WSAENOBUFS);
++#else
++    return (err == EAGAIN || err == EWOULDBLOCK || err == ENOBUFS || err == ENOMEM);
++#endif
++}
++
+ /* ----------------------------- netsend ------------------------- */
+ 
+ static void *netsend_new(t_symbol *s, int argc, t_atom *argv)
 @@ -289,7 +289,13 @@ static void netsend_connect(t_netsend *x, t_symbol *s, int argc, t_atom *argv)
  
  #ifndef _WIN32
@@ -17,7 +34,26 @@ index 27fdc25b..e4cc7d7f 100644
  #endif
  
  #if 0
-@@ -681,8 +687,14 @@ static void netreceive_listen(t_netreceive *x, t_symbol *s, int argc, t_atom *ar
+@@ -483,6 +499,18 @@ static int netsend_dosend(t_netsend *x, int sockfd, int argc, t_atom *argv)
+         }
+         if (res <= 0)
+         {
++            if (x->x_protocol == SOCK_DGRAM && socket_errno_udp_send_ok())
++            {
++                static double lastdropwarntime;
++                double now = sys_getrealtime();
++                if (now > lastdropwarntime + 2)
++                {
++                    logpost(NULL, PD_DEBUG,
++                        "netsend/netreceive: UDP send queue full, dropping packet");
++                    lastdropwarntime = now;
++                }
++                break;
++            }
+             sys_sockerror("send");
+             fail = 1;
+             break;
+@@ -681,8 +709,14 @@ static void netreceive_listen(t_netreceive *x, t_symbol *s, int argc, t_atom *ar
      }
      else
      {
