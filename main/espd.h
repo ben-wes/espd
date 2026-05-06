@@ -11,6 +11,7 @@
 /* #define PD_LYRAT */          /* using LyraT or LyraT mini board */
 #define USEADC                  /* enable audio input (output always enabled) */
 /* #define PD_USE_ANALOG0 */    /* send analog pin as "espd/ain/0 <raw>" */
+/* #define PD_USE_TOUCH0 */     /* send touch pin as "espd/touch/0 <raw>" */
 /* #define PD_USE_GYRO */       /* complex Arts board with BNO085 gyro */
 #define IOCHANS 2
 /* Keep legacy I2S API opt-in; ESP-IDF 6 defaults to the new channel API. */
@@ -136,6 +137,46 @@ extern char espd_wifi_password[65];
 #ifndef ESPD_ANALOG_TASK_CORE
 #define ESPD_ANALOG_TASK_CORE 0
 #endif
+#ifndef ESPD_TOUCH_NUM_CHANNELS
+#define ESPD_TOUCH_NUM_CHANNELS 1
+#endif
+#ifndef ESPD_TOUCH_PIN_0
+#define ESPD_TOUCH_PIN_0 (-1)
+#endif
+#ifndef ESPD_TOUCH_PIN_1
+#define ESPD_TOUCH_PIN_1 (-1)
+#endif
+#ifndef ESPD_TOUCH_PIN_2
+#define ESPD_TOUCH_PIN_2 (-1)
+#endif
+#ifndef ESPD_TOUCH_PIN_3
+#define ESPD_TOUCH_PIN_3 (-1)
+#endif
+#ifndef ESPD_TOUCH_PIN_4
+#define ESPD_TOUCH_PIN_4 (-1)
+#endif
+#ifndef ESPD_TOUCH_PIN_5
+#define ESPD_TOUCH_PIN_5 (-1)
+#endif
+#ifndef ESPD_TOUCH_PIN_6
+#define ESPD_TOUCH_PIN_6 (-1)
+#endif
+#ifndef ESPD_TOUCH_PIN_7
+#define ESPD_TOUCH_PIN_7 (-1)
+#endif
+/* Dedicated touch-sampling task cadence. */
+#ifndef ESPD_TOUCH_TASK_PERIOD_MS
+#define ESPD_TOUCH_TASK_PERIOD_MS 5
+#endif
+#ifndef ESPD_TOUCH_TASK_PRIO
+#define ESPD_TOUCH_TASK_PRIO 2
+#endif
+#ifndef ESPD_TOUCH_TASK_CORE
+#define ESPD_TOUCH_TASK_CORE 0
+#endif
+#ifndef ESPD_TOUCH_REPORT_EVERY_N_BLOCKS
+#define ESPD_TOUCH_REPORT_EVERY_N_BLOCKS 1
+#endif
 /* Global cap on WS2812 channel brightness (0..255). Lower values reduce peak
  * LED current draw and the supply-rail dips that couple into the audio codec;
  * the receiver scales incoming r/g/b by (cap/255) before writing the strip. */
@@ -213,8 +254,15 @@ extern char espd_wifi_password[65];
  *       only — smaller = more sensitive / more messages when the input moves.
  *   analog_report_every_n_blocks=1 — audio thread forwards at most every N
  *       blocks; keep 1 for lowest latency to Pd when the producer has updates.
+ * Touch (when PD_USE_SDCARD && PD_USE_TOUCH0): touch / espd/touch starts only if
+ *   touch_pins= lists at least one touch-capable GPIO. Missing file, no
+ *   touch_pins key, or touch_pins= with an empty list → touch stays off.
+ *   touch_pins=4,5,6      — GPIOs for espd/touch/0.. in order (max 8)
+ *   touch_pins=           — empty list: do not start touch
+ *   touch_task_period_ms=5 — producer wake interval in ms (1..500)
+ *   touch_report_every_n_blocks=1 — audio thread forwards at most every N blocks
  */
-/* [pdcontrol] message "ip" → list of four float octets 0..255 (STA; 0 0 0 0 if off / no DHCP). */
+/* [pdcontrol] message "ip" → list of four float octets 0..255, or symbol "noip" when unavailable. */
 #define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"
 
 #include "espd_patch_store.h"

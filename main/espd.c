@@ -38,6 +38,7 @@
 #include "nvs_flash.h"
 #include "esp_timer.h"
 #include <stdlib.h>
+#include <stdint.h>
 #ifdef PD_USE_USB_MSC
 #include "esp_partition.h"
 #include "esp_vfs_fat.h"
@@ -46,9 +47,14 @@
 #include "tusb_msc_storage.h"
 #include "tinyusb_default_config.h"
 #endif
+#if defined(PD_USE_ANALOG0) || defined(PD_USE_TOUCH0)
+#include <stdatomic.h>
+#endif
 #ifdef PD_USE_ANALOG0
 #include "esp_adc/adc_oneshot.h"
-#include <stdatomic.h>
+#endif
+#ifdef PD_USE_TOUCH0
+#include "driver/touch_sensor.h"
 #endif
 static const char *TAG = "ESPD";
 
@@ -436,6 +442,11 @@ static int pd_analog_task_period_ms = ESPD_ANALOG_TASK_PERIOD_MS;
 static int pd_analog_deadband = ESPD_ANALOG_DEADBAND;
 static int pd_analog_report_every_n_blocks = ESPD_ANALOG_REPORT_EVERY_N_BLOCKS;
 #endif
+#ifdef PD_USE_TOUCH0
+/* Run-time tuning (defaults from espd.h; config.txt may override with SD build). */
+static int pd_touch_task_period_ms = ESPD_TOUCH_TASK_PERIOD_MS;
+static int pd_touch_report_every_n_blocks = ESPD_TOUCH_REPORT_EVERY_N_BLOCKS;
+#endif
 
 #if defined(PD_USE_SDCARD) && defined(PD_USE_ANALOG0)
 /* Parsed from /sdcard/config.txt before pd_analog0_init (see espd.h). */
@@ -529,6 +540,86 @@ static void espd_analog_load_sdcard_config(void)
             ESP_LOGI(TAG, "analog: %s: analog_pins= (off)", ESPD_SDCARD_CONFIG_PATH);
         else
             ESP_LOGI(TAG, "analog: %s: %d channel(s) from analog_pins", ESPD_SDCARD_CONFIG_PATH, s_analog_cfg_n);
+    }
+}
+#endif
+
+#if defined(PD_USE_SDCARD) && defined(PD_USE_TOUCH0)
+/* Parsed from /sdcard/config.txt before pd_touch0_init (see espd.h). */
+static int s_touch_cfg_have_pins;
+static int s_touch_cfg_n;
+static int s_touch_cfg_pins[8];
+
+static void espd_touch_load_sdcard_config(void)
+{
+    FILE *f;
+    char line[256];
+
+    s_touch_cfg_have_pins = 0;
+    s_touch_cfg_n = 0;
+    f = fopen(ESPD_SDCARD_CONFIG_PATH, "r");
+    if (!f)
+        return;
+    while (fgets(line, sizeof(line), f))
+    {
+        char *eq, *k, *v;
+        char *comment = strchr(line, '#');
+        if (comment)
+            *comment = '\0';
+        k = espd_cfg_trim(line);
+        if (*k == '\0')
+            continue;
+        eq = strchr(k, '=');
+        if (!eq)
+            continue;
+        *eq++ = '\0';
+        v = espd_cfg_trim(eq);
+        k = espd_cfg_trim(k);
+        if (!strcmp(k, "touch_pins"))
+        {
+            int n = 0;
+            s_touch_cfg_have_pins = 1;
+            if (!v || !*v)
+            {
+                s_touch_cfg_n = 0;
+            }
+            else
+            {
+                char *p = v;
+                while (*p && n < 8)
+                {
+                    char *end;
+                    long pin = strtol(p, &end, 10);
+                    if (p == end)
+                        break;
+                    s_touch_cfg_pins[n++] = (int)pin;
+                    p = end;
+                    while (*p == ',' || *p == ' ' || *p == '\t')
+                        p++;
+                }
+                s_touch_cfg_n = n;
+            }
+        }
+        else if (!strcmp(k, "touch_task_period_ms"))
+        {
+            int t = atoi(v);
+            if (t >= 1 && t <= 500)
+                pd_touch_task_period_ms = t;
+        }
+        else if (!strcmp(k, "touch_report_every_n_blocks"))
+        {
+            int r = atoi(v);
+            if (r >= 1 && r <= 64)
+                pd_touch_report_every_n_blocks = r;
+        }
+    }
+    fclose(f);
+    if (s_touch_cfg_have_pins)
+    {
+        if (s_touch_cfg_n == 0)
+            ESP_LOGI(TAG, "touch: %s: touch_pins= (off)", ESPD_SDCARD_CONFIG_PATH);
+        else
+            ESP_LOGI(TAG, "touch: %s: %d channel(s) from touch_pins", ESPD_SDCARD_CONFIG_PATH, s_touch_cfg_n);
     }
 }
 #endif
@@ -786,6 +877,249 @@ static void pd_pollanalog0(void)
                 continue;
             raw = atomic_load_explicit(&pd_adc_latest[i], memory_order_relaxed);
             pd_send_ain_value(i, raw);
+        }
+    }
+}
+#endif
+
+#ifdef PD_USE_TOUCH0
+#define ESPD_TOUCH_MAX_CHANNELS 8
+static touch_pad_t pd_touch_channels[ESPD_TOUCH_MAX_CHANNELS];
+static int pd_touch_pins[ESPD_TOUCH_MAX_CHANNELS] = {
+    ESPD_TOUCH_PIN_0, ESPD_TOUCH_PIN_1, ESPD_TOUCH_PIN_2, ESPD_TOUCH_PIN_3,
+    ESPD_TOUCH_PIN_4, ESPD_TOUCH_PIN_5, ESPD_TOUCH_PIN_6, ESPD_TOUCH_PIN_7
+};
+static int pd_touch_active[ESPD_TOUCH_MAX_CHANNELS];
+static uint32_t pd_touch_last[ESPD_TOUCH_MAX_CHANNELS];
+static _Atomic uint32_t pd_touch_latest[ESPD_TOUCH_MAX_CHANNELS];
+static _Atomic uint32_t pd_touch_dirty;
+static TaskHandle_t pd_touch_task;
+static unsigned pd_touch_block_counter;
+static int pd_touch_inited;
+
+static void pd_send_touch_value(int idx, uint32_t raw)
+{
+    char name[20];
+    t_symbol *sym;
+    t_pd *dest;
+    snprintf(name, sizeof(name), "espd/touch/%d", idx);
+    sym = gensym(name);
+    dest = sym ? sym->s_thing : NULL;
+    if (dest)
+        pd_float(dest, (t_float)raw);
+}
+
+static int pd_pin_to_touch_channel(int pin, touch_pad_t *channel)
+{
+#if CONFIG_IDF_TARGET_ESP32S3
+    switch (pin)
+    {
+    case 1:  *channel = TOUCH_PAD_NUM1; return 1;
+    case 2:  *channel = TOUCH_PAD_NUM2; return 1;
+    case 3:  *channel = TOUCH_PAD_NUM3; return 1;
+    case 4:  *channel = TOUCH_PAD_NUM4; return 1;
+    case 5:  *channel = TOUCH_PAD_NUM5; return 1;
+    case 6:  *channel = TOUCH_PAD_NUM6; return 1;
+    case 7:  *channel = TOUCH_PAD_NUM7; return 1;
+    case 8:  *channel = TOUCH_PAD_NUM8; return 1;
+    case 9:  *channel = TOUCH_PAD_NUM9; return 1;
+    case 10: *channel = TOUCH_PAD_NUM10; return 1;
+    case 11: *channel = TOUCH_PAD_NUM11; return 1;
+    case 12: *channel = TOUCH_PAD_NUM12; return 1;
+    case 13: *channel = TOUCH_PAD_NUM13; return 1;
+    case 14: *channel = TOUCH_PAD_NUM14; return 1;
+    default: return 0;
+    }
+#elif CONFIG_IDF_TARGET_ESP32
+    switch (pin)
+    {
+    case 4:  *channel = TOUCH_PAD_NUM0; return 1;
+    case 0:  *channel = TOUCH_PAD_NUM1; return 1;
+    case 2:  *channel = TOUCH_PAD_NUM2; return 1;
+    case 15: *channel = TOUCH_PAD_NUM3; return 1;
+    case 13: *channel = TOUCH_PAD_NUM4; return 1;
+    case 12: *channel = TOUCH_PAD_NUM5; return 1;
+    case 14: *channel = TOUCH_PAD_NUM6; return 1;
+    case 27: *channel = TOUCH_PAD_NUM7; return 1;
+    case 33: *channel = TOUCH_PAD_NUM8; return 1;
+    case 32: *channel = TOUCH_PAD_NUM9; return 1;
+    default: return 0;
+    }
+#else
+    (void)pin;
+    (void)channel;
+    return 0;
+#endif
+}
+
+/* Producer: dedicated task. Reads channels each wake and marks changed values. */
+static void pd_touch_task_fn(void *arg)
+{
+    (void)arg;
+    TickType_t next = xTaskGetTickCount();
+    for (;;)
+    {
+        int i;
+        TickType_t period = pdMS_TO_TICKS(pd_touch_task_period_ms);
+        if (period < 1)
+            period = 1;
+        vTaskDelayUntil(&next, period);
+        if (!pd_touch_inited)
+            continue;
+        {
+            uint32_t dirty_mask = 0;
+            for (i = 0; i < ESPD_TOUCH_MAX_CHANNELS; i++)
+            {
+                uint32_t raw = 0;
+                if (!pd_touch_active[i])
+                    continue;
+                if (touch_pad_read_raw_data(pd_touch_channels[i], &raw) != ESP_OK)
+                    continue;
+                if (raw != pd_touch_last[i])
+                {
+                    pd_touch_last[i] = raw;
+                    atomic_store_explicit(&pd_touch_latest[i], raw, memory_order_relaxed);
+                    dirty_mask |= (1u << (unsigned)i);
+                }
+            }
+            if (dirty_mask)
+                atomic_fetch_or_explicit(&pd_touch_dirty, dirty_mask, memory_order_release);
+        }
+    }
+}
+
+static void pd_touch0_init(void)
+{
+    int i;
+    int nchan = ESPD_TOUCH_NUM_CHANNELS;
+    int enabled = 0;
+#if defined(PD_USE_SDCARD) && defined(PD_USE_TOUCH0)
+    if (s_touch_cfg_have_pins) {
+        if (s_touch_cfg_n <= 0) {
+            ESP_LOGI(TAG, "touch: not started (touch_pins= empty in config.txt)");
+            return;
+        }
+        nchan = s_touch_cfg_n;
+        if (nchan > ESPD_TOUCH_MAX_CHANNELS)
+            nchan = ESPD_TOUCH_MAX_CHANNELS;
+        for (i = 0; i < nchan; i++)
+            pd_touch_pins[i] = s_touch_cfg_pins[i];
+        for (i = nchan; i < ESPD_TOUCH_MAX_CHANNELS; i++)
+            pd_touch_pins[i] = -1;
+    }
+#endif
+    if (nchan < 0)
+        nchan = 0;
+    if (nchan > ESPD_TOUCH_MAX_CHANNELS)
+        nchan = ESPD_TOUCH_MAX_CHANNELS;
+    if (nchan == 0)
+        return;
+
+    if (touch_pad_init() != ESP_OK)
+    {
+        ESP_LOGW(TAG, "touch_pad_init failed");
+        return;
+    }
+    if (touch_pad_set_fsm_mode(TOUCH_FSM_MODE_TIMER) != ESP_OK)
+        ESP_LOGW(TAG, "touch: set fsm mode failed");
+
+    for (i = 0; i < ESPD_TOUCH_MAX_CHANNELS; i++)
+    {
+        pd_touch_active[i] = 0;
+        pd_touch_last[i] = UINT32_MAX;
+        atomic_store_explicit(&pd_touch_latest[i], 0, memory_order_relaxed);
+    }
+
+    for (i = 0; i < nchan; i++)
+    {
+        int pin = pd_touch_pins[i];
+        touch_pad_t ch;
+        if (pin < 0)
+            continue;
+        if (!pd_pin_to_touch_channel(pin, &ch))
+        {
+            ESP_LOGW(TAG, "touch in%d ignored: GPIO%d is not touch-capable", i, pin);
+            continue;
+        }
+        if (touch_pad_config(ch) != ESP_OK)
+        {
+            ESP_LOGW(TAG, "touch in%d setup failed on GPIO%d", i, pin);
+            continue;
+        }
+        pd_touch_channels[i] = ch;
+        pd_touch_active[i] = 1;
+        enabled++;
+        ESP_LOGI(TAG, "touch in%d enabled on GPIO%d", i, pin);
+    }
+    if (!enabled)
+    {
+        ESP_LOGW(TAG, "touch enabled but no valid channels configured");
+        return;
+    }
+
+    if (touch_pad_fsm_start() != ESP_OK)
+        ESP_LOGW(TAG, "touch: fsm start failed");
+
+    pd_touch_inited = 1;
+    atomic_store_explicit(&pd_touch_dirty, 0u, memory_order_relaxed);
+    if (!pd_touch_task) {
+        BaseType_t ok = xTaskCreatePinnedToCore(pd_touch_task_fn,
+            "pd_touch", 3072, NULL, ESPD_TOUCH_TASK_PRIO,
+            &pd_touch_task, ESPD_TOUCH_TASK_CORE);
+        if (ok != pdPASS) {
+            ESP_LOGW(TAG, "failed to create pd_touch task; falling back to audio-thread polling");
+            pd_touch_task = NULL;
+        } else {
+            ESP_LOGI(TAG, "pd_touch task: core=%d prio=%d period=%d ms report_every=%d %d ch",
+                (int)ESPD_TOUCH_TASK_CORE, (int)ESPD_TOUCH_TASK_PRIO,
+                pd_touch_task_period_ms, pd_touch_report_every_n_blocks, enabled);
+        }
+    }
+}
+
+/* Consumer: audio thread. One atomic exchange on the dirty mask. */
+static void pd_polltouch0(void)
+{
+    int i;
+    int report_every = pd_touch_report_every_n_blocks;
+    if (!pd_touch_inited)
+        return;
+    if (report_every < 1)
+        report_every = 1;
+    if (++pd_touch_block_counter < (unsigned)report_every)
+        return;
+    pd_touch_block_counter = 0;
+
+    if (!pd_touch_task)
+    {
+        for (i = 0; i < ESPD_TOUCH_MAX_CHANNELS; i++)
+        {
+            uint32_t raw = 0;
+            if (!pd_touch_active[i])
+                continue;
+            if (touch_pad_read_raw_data(pd_touch_channels[i], &raw) != ESP_OK)
+                continue;
+            if (raw != pd_touch_last[i])
+            {
+                pd_touch_last[i] = raw;
+                pd_send_touch_value(i, raw);
+            }
+        }
+        return;
+    }
+
+    {
+        uint32_t dirty = atomic_exchange_explicit(&pd_touch_dirty, 0,
+            memory_order_acquire);
+        if (!dirty)
+            return;
+        for (i = 0; i < ESPD_TOUCH_MAX_CHANNELS; i++)
+        {
+            uint32_t raw;
+            if (!(dirty & (1u << (unsigned)i)))
+                continue;
+            raw = atomic_load_explicit(&pd_touch_latest[i], memory_order_relaxed);
+            pd_send_touch_value(i, raw);
         }
     }
 }
@@ -1237,6 +1571,9 @@ void app_main(void)
 #if defined(PD_USE_SDCARD) && defined(PD_USE_ANALOG0)
     espd_analog_load_sdcard_config();
 #endif
+#if defined(PD_USE_SDCARD) && defined(PD_USE_TOUCH0)
+    espd_touch_load_sdcard_config();
+#endif
 #if defined(PD_USE_WIFI) && defined(PD_USE_SDCARD)
     espd_wifi_try_load_sdcard_config();
 #endif
@@ -1294,6 +1631,9 @@ void app_main(void)
 #ifdef PD_USE_ANALOG0
     pd_analog0_init();
 #endif
+#ifdef PD_USE_TOUCH0
+    pd_touch0_init();
+#endif
 
 #ifdef PD_USE_BLUETOOTH
     bt_init();
@@ -1347,6 +1687,9 @@ void app_main(void)
         pd_pollhost();
 #ifdef PD_USE_ANALOG0
         pd_pollanalog0();
+#endif
+#ifdef PD_USE_TOUCH0
+        pd_polltouch0();
 #endif
 
 #ifdef ESPD_BOARD_WAVESHARE_S3
