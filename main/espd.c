@@ -1126,53 +1126,84 @@ static void pd_polltouch0(void)
 #endif
 
 #ifdef PD_USE_USB_MSC
-static int usb_msc_active = 0;
+static int usb_active = 0;
+static int usb_mounted = 0;
+static int msc_mounted = 0;
 
 static void msc_event_callback(tinyusb_msc_storage_handle_t handle, tinyusb_msc_event_t *event, void *arg)
 {
-    (void)arg;
-    
     if (event->id == TINYUSB_MSC_EVENT_MOUNT_COMPLETE) {
-        ESP_LOGI(TAG, "MSC mount complete");
-        usb_msc_active = 1;
+        if (msc_mounted) {
+            if (usb_mounted) {
+                ESP_LOGI(TAG, "USB unmount complete");
+                usb_mounted = 0;
+            } else {
+                ESP_LOGI(TAG, "USB mount complete");
+                usb_mounted = 1;
+            }
+        } else { 
+            ESP_LOGI(TAG, "MSC mount complete");
+            msc_mounted = 1;
+        }
     } else if (event->id == TINYUSB_MSC_EVENT_MOUNT_FAILED) {
-        ESP_LOGI(TAG, "MSC mount failed/unmounted, switching to local mount");
-        usb_msc_active = 0;
-        // Switch back to local mount so app can access /storage
-        tinyusb_msc_set_storage_mount_point(handle, TINYUSB_MSC_STORAGE_MOUNT_APP);
+        ESP_LOGI(TAG, "MSC mount failed");
+        usb_mounted = 0;
+        msc_mounted = 0;
+    }
+}
+
+static void usb_event_callback(tinyusb_event_t *event, void *arg)
+{
+    if (event->id == TINYUSB_EVENT_ATTACHED) {
+        ESP_LOGI(TAG, "USB connected");
+        usb_active = 1;
+    } else if (event->id == TINYUSB_EVENT_DETACHED) {
+        ESP_LOGI(TAG, "USB disconnected");
+        usb_active = 0;
     }
 }
 
 static void usb_init(void)
 {
-    ESP_LOGW(TAG, "USB MSC init starting");
+    ESP_LOGW(TAG, "MSC: init starting");
     
-    // 1. Find the partition named "storage" from your partitions_pd.csv
-    const esp_partition_t *data_partition = esp_partition_find_first(
-        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "storage");
-
-    if (!data_partition) {
-        ESP_LOGE(TAG, "USB MSC: 'storage' partition not found");
-        return;
-    }
-
-    // 2. Mount wear leveling on that partition
-    esp_err_t err = wl_mount(data_partition, &wl_handle);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "USB MSC: failed to mount wear leveling: %s", esp_err_to_name(err));
-        return;
-    }
-
     // 3. Install TinyUSB driver
     tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
-    ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
+    tusb_cfg.event_cb = usb_event_callback;
+    esp_err_t err = tinyusb_driver_install(&tusb_cfg);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "USB: driver installed");
+    }
 
     // 4. Install MSC driver with callback
     tinyusb_msc_driver_config_t msc_driver_cfg = {
         .callback = msc_event_callback,
         .callback_arg = NULL,
     };
-    ESP_ERROR_CHECK(tinyusb_msc_install_driver(&msc_driver_cfg));
+    err = tinyusb_msc_install_driver(&msc_driver_cfg);
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "MSC: driver installed");
+    }
+
+    // 1. Find the partition named "storage" from your partitions_pd.csv
+    const esp_partition_t *data_partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "storage");
+
+    if (!data_partition) {
+        ESP_LOGE(TAG, "MSC: 'storage' partition not found");
+        return;
+    }
+
+    // 2. Mount wear leveling on that partition
+   err = wl_mount(data_partition, &wl_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "MSC: failed to mount wear leveling: %s", esp_err_to_name(err));
+        return;
+    }
+
+
 
     // 5. Configure MSC storage with SPI flash
     tinyusb_msc_storage_config_t msc_storage_cfg = {
@@ -1193,14 +1224,14 @@ static void usb_init(void)
     // 6. Create MSC storage
     err = tinyusb_msc_new_storage_spiflash(&msc_storage_cfg, &msc_handle);
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "USB MSC: storage initialized at /storage");
+        ESP_LOGI(TAG, "MSC: storage initialized at /storage");
         // Set the partition label to ESPD
         FRESULT res = f_setlabel("0:ESPD");
         if (res != FR_OK) {
             ESP_LOGW(TAG, "Failed to set partition label: %d", res);
         }
     } else {
-        ESP_LOGE(TAG, "USB MSC: failed to initialize storage: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "MSC: failed to initialize storage: %s", esp_err_to_name(err));
     }
 }
 #endif
@@ -1569,24 +1600,25 @@ void app_main(void)
             ESP_LOGW(TAG, "esp_pthread_set_cfg failed; using IDF defaults");
     }
 
+#ifdef PD_USE_USB_MSC
+    // Initialize USB MSC storage
+    usb_init();
+    if (tud_inited()) {
+        ESP_LOGI(TAG, "WAITING FOR MOUNT");
+        vTaskDelay(pdMS_TO_TICKS(250)); // no way to do better here for now
+    }
+    if (tud_connected()) {
+        ESP_LOGI(TAG, "WAITING FOR UNMOUNT");
+        while (usb_mounted)
+          vTaskDelay(pdMS_TO_TICKS(10));
+    }
+   
+#endif
+
 #ifdef ESPD_BOARD_WAVESHARE_S3
     /* Light the on-board WS2812 ring early so we can confirm boot visually,
      * even before WiFi/Pd come up. Failures are non-fatal. */
     espd_waveshare_s3_leds_init();
-#endif
-
-#ifdef PD_USE_USB_MSC
-    // Initialize USB MSC storage
-    usb_init();
-
-    // should wait until USB drive is unmounted, but doesn't
-    /*if (tud_connected()) {
-        vTaskDelay(pdMS_TO_TICKS(500));
-        while (tud_mounted()) {
-            vTaskDelay(pdMS_TO_TICKS(10));  // Check every 10ms
-            tud_task();
-        }
-    }*/
 #endif
 
 #if defined(PD_USE_SDCARD) && defined(ESPD_BOARD_WAVESHARE_S3)
