@@ -224,7 +224,7 @@ extern char espd_wifi_password[65];
 #ifndef ESPD_SDCARD_MOUNT
 #define ESPD_SDCARD_MOUNT "/sdcard"
 #endif
-/** If present on the mounted SD card, loaded before SPIFFS (see pdmain_init). */
+/** If present on the mounted SD card, loaded before USB MSC/SPIFFS (see pdmain_init). */
 #define ESPD_SDCARD_MAIN_PD_PATH ESPD_SDCARD_MOUNT "/main.pd"
 #define ESPD_SDCARD_CONFIG_PATH ESPD_SDCARD_MOUNT "/config.txt"
 #ifdef PD_USE_USB_MSC
@@ -232,8 +232,9 @@ extern char espd_wifi_password[65];
 #ifndef ESPD_STORAGE_MOUNT
 #define ESPD_STORAGE_MOUNT "/storage"
 #endif
-/** If present on USB MSC storage, loaded before SD card (see pdmain_init). */
+/** If present on USB MSC storage, loaded after SD and before SPIFFS (see pdmain_init). */
 #define ESPD_STORAGE_MAIN_PD_PATH ESPD_STORAGE_MOUNT "/main.pd"
+#define ESPD_STORAGE_CONFIG_PATH ESPD_STORAGE_MOUNT "/config.txt"
 #endif
 /* config.txt (SD) optional keys (key=value, # comment):
  * WiFi (when PD_USE_SDCARD): STA starts only if this file exists on the mounted

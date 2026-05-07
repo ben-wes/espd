@@ -318,7 +318,7 @@ void espd_button_state_changed(int idx, int pressed)
 }
 #endif /* ESPD_BOARD_WAVESHARE_S3 */
 
-#ifdef PD_USE_SDCARD
+#if defined(PD_USE_SDCARD) || defined(PD_USE_USB_MSC)
 #include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
@@ -352,6 +352,19 @@ static void espd_wifi_config_defaults(void)
 
 #if defined(PD_USE_SDCARD)
 static int s_wifi_credentials_in_config_txt;
+static const char *espd_preferred_config_path(void)
+{
+    struct stat st;
+#ifdef PD_USE_SDCARD
+    if (stat(ESPD_SDCARD_CONFIG_PATH, &st) == 0 && S_ISREG(st.st_mode))
+        return ESPD_SDCARD_CONFIG_PATH;
+#endif
+#ifdef PD_USE_USB_MSC
+    if (stat(ESPD_STORAGE_CONFIG_PATH, &st) == 0 && S_ISREG(st.st_mode))
+        return ESPD_STORAGE_CONFIG_PATH;
+#endif
+    return ESPD_SDCARD_CONFIG_PATH;
+}
 static int espd_wifi_config_txt_allows_sta(void)
 {
     return s_wifi_credentials_in_config_txt;
@@ -359,7 +372,8 @@ static int espd_wifi_config_txt_allows_sta(void)
 
 static void espd_wifi_try_load_sdcard_config(void)
 {
-    FILE *f = fopen(ESPD_SDCARD_CONFIG_PATH, "r");
+    const char *config_path = espd_preferred_config_path();
+    FILE *f = fopen(config_path, "r");
     char line[256];
     int ssid_nonempty = 0;
     int saw_wifi_enable_key = 0;
@@ -372,7 +386,7 @@ static void espd_wifi_try_load_sdcard_config(void)
         espd_wifi_password[0] = '\0';
         espd_wifi_force_enable = 0;
         ESP_LOGI(TAG, "wifi: no %s — STA disabled (use wifi_ssid= / wifi_enable=1 to connect)",
-                 ESPD_SDCARD_CONFIG_PATH);
+                 config_path);
         return;
     }
     while (fgets(line, sizeof(line), f))
@@ -419,12 +433,12 @@ static void espd_wifi_try_load_sdcard_config(void)
         espd_wifi_password[0] = '\0';
         espd_wifi_force_enable = 0;
         ESP_LOGI(TAG, "wifi: no STA keys in %s — not using Kconfig SSID",
-                 ESPD_SDCARD_CONFIG_PATH);
+                 config_path);
     }
     else if (ssid_nonempty && !saw_wifi_enable_key)
         espd_wifi_force_enable = 1;
     ESP_LOGI(TAG, "loaded WiFi config from %s (ssid=%s, force=%d, sta_ok=%d)",
-             ESPD_SDCARD_CONFIG_PATH, espd_wifi_ssid, espd_wifi_force_enable,
+             config_path, espd_wifi_ssid, espd_wifi_force_enable,
              s_wifi_credentials_in_config_txt);
 }
 #else /* !PD_USE_SDCARD */
@@ -459,11 +473,12 @@ static void espd_analog_load_sdcard_config(void)
 {
     FILE *f;
     char line[256];
+    const char *config_path = espd_preferred_config_path();
 
     s_analog_cfg_disable = 0;
     s_analog_cfg_have_pins = 0;
     s_analog_cfg_n = 0;
-    f = fopen(ESPD_SDCARD_CONFIG_PATH, "r");
+    f = fopen(config_path, "r");
     if (!f)
         return;
     while (fgets(line, sizeof(line), f))
@@ -532,14 +547,14 @@ static void espd_analog_load_sdcard_config(void)
     fclose(f);
     if (s_analog_cfg_disable)
     {
-        ESP_LOGI(TAG, "analog: %s: analog_enable=0", ESPD_SDCARD_CONFIG_PATH);
+        ESP_LOGI(TAG, "analog: %s: analog_enable=0", config_path);
     }
     else if (s_analog_cfg_have_pins)
     {
         if (s_analog_cfg_n == 0)
-            ESP_LOGI(TAG, "analog: %s: analog_pins= (off)", ESPD_SDCARD_CONFIG_PATH);
+            ESP_LOGI(TAG, "analog: %s: analog_pins= (off)", config_path);
         else
-            ESP_LOGI(TAG, "analog: %s: %d channel(s) from analog_pins", ESPD_SDCARD_CONFIG_PATH, s_analog_cfg_n);
+            ESP_LOGI(TAG, "analog: %s: %d channel(s) from analog_pins", config_path, s_analog_cfg_n);
     }
 }
 #endif
@@ -554,10 +569,11 @@ static void espd_touch_load_sdcard_config(void)
 {
     FILE *f;
     char line[256];
+    const char *config_path = espd_preferred_config_path();
 
     s_touch_cfg_have_pins = 0;
     s_touch_cfg_n = 0;
-    f = fopen(ESPD_SDCARD_CONFIG_PATH, "r");
+    f = fopen(config_path, "r");
     if (!f)
         return;
     while (fgets(line, sizeof(line), f))
@@ -617,9 +633,9 @@ static void espd_touch_load_sdcard_config(void)
     if (s_touch_cfg_have_pins)
     {
         if (s_touch_cfg_n == 0)
-            ESP_LOGI(TAG, "touch: %s: touch_pins= (off)", ESPD_SDCARD_CONFIG_PATH);
+            ESP_LOGI(TAG, "touch: %s: touch_pins= (off)", config_path);
         else
-            ESP_LOGI(TAG, "touch: %s: %d channel(s) from touch_pins", ESPD_SDCARD_CONFIG_PATH, s_touch_cfg_n);
+            ESP_LOGI(TAG, "touch: %s: %d channel(s) from touch_pins", config_path, s_touch_cfg_n);
     }
 }
 #endif
