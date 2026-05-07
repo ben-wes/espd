@@ -5,6 +5,7 @@
 #include "esp_timer.h"
 #include "sdkconfig.h"
 #include "esp_mac.h"
+#include "esp_netif.h"
 
 /* lwip (lightweight IP") for sockets: */
 #include "lwip/err.h"
@@ -124,21 +125,61 @@ void udpreceivertask(void *z)
     }
 }
 
-static int udp_out_sock;
+static int udp_out_sock = -1;
 static struct sockaddr_in udp_out_addr;
+static int udp_out_addr_ready;
+static int espd_set_udp_broadcast_addr_from_sta_ip(void)
+{
+    esp_netif_t *sta = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    esp_netif_ip_info_t ip_info;
+    uint32_t ip;
+    uint32_t mask;
+    uint32_t bcast;
+
+    if (!sta)
+        return 0;
+    if (esp_netif_get_ip_info(sta, &ip_info) != ESP_OK)
+        return 0;
+
+    ip = ip_info.ip.addr;
+    mask = ip_info.netmask.addr;
+    bcast = (ip & mask) | ~mask;
+    udp_out_addr.sin_addr.s_addr = bcast;
+    ESP_LOGI(TAG, "UDP broadcast addr set from STA ip/netmask");
+    return 1;
+}
+
+static int espd_ensure_udp_out_socket(void)
+{
+    int one = 1;
+    if (udp_out_sock >= 0)
+        return 1;
+    udp_out_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    if (udp_out_sock < 0) {
+        ESP_LOGE(TAG, "udp out socket create failed: errno %d", errno);
+        return 0;
+    }
+    if (setsockopt(udp_out_sock, SOL_SOCKET, SO_BROADCAST, &one, sizeof(one)) < 0)
+        ESP_LOGW(TAG, "udp out socket SO_BROADCAST failed: errno %d", errno);
+    return 1;
+}
+
+static void espd_configure_udp_out_addr(void)
+{
+    if (!espd_set_udp_broadcast_addr_from_sta_ip())
+        udp_out_addr.sin_addr.s_addr = inet_addr(CONFIG_ESP_WIFI_SENDADDR);
+    udp_out_addr.sin_family = AF_INET;
+    udp_out_addr.sin_port = htons(CONFIG_ESP_WIFI_SENDPORT);
+    udp_out_addr_ready = 1;
+}
 
 void net_init( void)
 {
     s_net_send_ready = 0;
     esp_log_level_set(TAG, ESP_LOG_INFO);
     ESP_LOGI(TAG, "net_init...");
-        /* socket for sending UDP messages */
-    udp_out_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
-    
-    udp_out_addr.sin_addr.s_addr = inet_addr(CONFIG_ESP_WIFI_SENDADDR);
-    udp_out_addr.sin_family = AF_INET;
-        /* this will get overridden later: */
-    udp_out_addr.sin_port = htons(CONFIG_ESP_WIFI_SENDPORT);
+    if (espd_ensure_udp_out_socket())
+        espd_configure_udp_out_addr();
 
     /*
      * Stack size is in bytes (ESP-IDF). tcprcv holds rx_buffer[4000] plus
@@ -159,8 +200,10 @@ static int64_t whensent;
 void net_sendudp(void *msg, int len, int port)
 {
     int err;
-    if (!s_net_send_ready || udp_out_sock < 0)
+    if (!espd_ensure_udp_out_socket())
         return;
+    if (!udp_out_addr_ready)
+        espd_configure_udp_out_addr();
     udp_out_addr.sin_port = htons(port);
     err = sendto(udp_out_sock, msg, len, 0,
         (struct sockaddr *)&udp_out_addr, sizeof(udp_out_addr));

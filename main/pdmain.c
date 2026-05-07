@@ -109,7 +109,7 @@ extern float soundin[], soundout[];
 void  canvas_start_dsp( void);
 void pdmain_init( void)
 {
-    /* sys_printhook = pdmain_print; */
+    sys_printhook = pdmain_print;
     pd_init();
     espd_control_io_init();
     STUFF->st_dacsr = sys_getsr();
