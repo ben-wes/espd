@@ -289,7 +289,7 @@ static void espdsp_tabread4_free(t_espdsp_tabread4 *x)
 #define ESPDSP_COS_POLY_A3 (64.f * (2.5f - 3.14159265f))
 #define ESPDSP_COS_POLY_A5 (1024.f * ((3.14159265f / 2.f) - 1.5f))
 
-static float espdsp_poly_wrap_cycles(float f)
+static inline float espdsp_poly_wrap_cycles(float f)
 {
     if (f < 0.f)
         f -= (int)(f - 1.f);
@@ -298,7 +298,7 @@ static float espdsp_poly_wrap_cycles(float f)
     return f;
 }
 
-static float espdsp_cos_poly_eval_wrapped(float f)
+static inline float espdsp_cos_poly_eval_wrapped(float f)
 {
     float g, g2, g3;
     if (f > 0.5f)
@@ -311,13 +311,13 @@ static float espdsp_cos_poly_eval_wrapped(float f)
         + g2 * g3 * ESPDSP_COS_POLY_A5;
 }
 
-static float espdsp_cos_poly_radians(float theta)
+static inline float espdsp_cos_poly_radians(float theta)
 {
     float cyc = theta * (float)(1.0 / (2.0 * M_PI));
     return espdsp_cos_poly_eval_wrapped(espdsp_poly_wrap_cycles(cyc));
 }
 
-static float espdsp_sin_poly_radians(float theta)
+static inline float espdsp_sin_poly_radians(float theta)
 {
     float cyc = theta * (float)(1.0 / (2.0 * M_PI)) - 0.25f;
     return espdsp_cos_poly_eval_wrapped(espdsp_poly_wrap_cycles(cyc));
