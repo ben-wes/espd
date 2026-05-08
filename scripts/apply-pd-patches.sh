@@ -12,7 +12,6 @@ if [[ ! -e "${PD_DIR}/.git" ]]; then
 fi
 
 patches=(
-  "pd-d_fft_fftsg-FFTFLT-ifndef.patch"
   "x_net-esp-socket-compat.patch"
   "pd-dac-fft-use-perf8-helpers.patch"
 )
