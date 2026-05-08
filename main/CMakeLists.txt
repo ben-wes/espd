@@ -122,8 +122,25 @@ if(MAIN_BOARD_DEFS)
     target_compile_definitions(${_espd_main_lib} PRIVATE ${MAIN_BOARD_DEFS})
 endif()
 
-# Keep aggressive math optimization scoped to DSP override kernels only.
+# Aggressive math optimization for DSP hot paths. -ffast-math allows the
+# compiler to reassociate, fold reciprocals, drop spurious double promotions
+# (e.g. `1. - frac` in cubic interpolators), and assume no NaN/Inf. Safe here:
+#   - PD_BIGORSMALL() is a bit-pattern union check, not a FP compare
+#   - none of these files rely on errno or isnan/isinf/fpclassify
+# Scope is just the per-sample DSP files; non-audio-rate code keeps strict math.
 set_source_files_properties(
     "espdsp_osc_override.c"
+    "../pd/src/d_arithmetic.c"
+    "../pd/src/d_array.c"
+    "../pd/src/d_ctl.c"
+    "../pd/src/d_delay.c"
+    "../pd/src/d_fft.c"
+    "../pd/src/d_fft_fftsg.c"
+    "../pd/src/d_filter.c"
+    "../pd/src/d_global.c"
+    "../pd/src/d_math.c"
+    "../pd/src/d_misc.c"
+    "../pd/src/d_osc.c"
+    "../pd/src/d_resample.c"
     PROPERTIES COMPILE_OPTIONS "-ffast-math;-fno-math-errno"
 )
