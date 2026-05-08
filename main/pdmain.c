@@ -5,6 +5,7 @@
 #include "../pd/src/g_canvas.h"
 #include "../pd/src/g_undo.h"
 #include "espd.h"
+#include "esp_attr.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -162,7 +163,11 @@ void pdmain_init( void)
 }
 
 
-void pdmain_tick( void)
+/* IRAM_ATTR: per-block scheduler entry; pin so we can't be evicted between
+ * blocks by unrelated flash activity (USB MSC, file I/O, etc.). memset is
+ * already in IRAM by IDF default; sched_tick is also IRAM_ATTR below;
+ * sys_pollgui stays in flash but is cheap (returns fast when no FDs). */
+IRAM_ATTR void pdmain_tick( void)
 {
     memset(soundout, 0, (size_t)sys_get_outchannels() * DEFDACBLKSIZE * sizeof(t_sample));
     sched_tick();
@@ -935,7 +940,10 @@ void clock_free(t_clock *x)
     freebytes(x, sizeof *x);
 }
     /* take the scheduler forward one DSP tick, also handling clock timeouts */
-void sched_tick(void)
+    /* IRAM_ATTR: called every block; the callees (dsp_tick, sys_pollgui)
+     * remain in flash, but pinning sched_tick itself keeps the block-rate
+     * scheduler shell out of cache contention. */
+IRAM_ATTR void sched_tick(void)
 {
     /* st_schedblocksize and st_dacsr are constants for the lifetime of an
      * audio session; cache the per-block systime increment so the per-block

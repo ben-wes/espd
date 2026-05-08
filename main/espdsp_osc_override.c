@@ -22,6 +22,7 @@
 #include "../pd/src/m_pd.h"
 #include "../pd/src/m_imp.h"
 #include "../pd/src/g_canvas.h"
+#include "esp_attr.h"
 #include <stdint.h>
 #include <math.h>
 
@@ -361,7 +362,9 @@ static void espdsp_phasor_ft1(t_espdsp_phasor *x, t_float f)
     x->x_phase = ((uint32_t)(a * (t_float)ESPDSP_PHASOR_RANGE)) & ESPDSP_PHASOR_MASK;
 }
 
-static t_int *espdsp_phasor_perform(t_int *w)
+/* IRAM_ATTR: hot per-sample loop, pin in internal RAM so unrelated flash
+ * activity (USB, network, file I/O) can't evict us from cache mid-block. */
+static IRAM_ATTR t_int *espdsp_phasor_perform(t_int *w)
 {
     t_espdsp_phasor *x = (t_espdsp_phasor *)(w[1]);
     t_sample *restrict in = (t_sample *)(w[2]);
@@ -414,8 +417,9 @@ static void espdsp_osc_ft1(t_espdsp_osc *x, t_float f)
 /* Combined phasor + polynomial cos in one pass: avoids the chain hop and the
  * extra read+write over the block buffer that the prior 2-stage dsp_add chain
  * caused. The phase generated here is always in [0, 1), so we skip the wrap
- * step the standalone cos~ kernel needs. */
-static t_int *espdsp_osc_perform(t_int *w)
+ * step the standalone cos~ kernel needs.
+ * IRAM_ATTR: hottest perform routine in synthesis patches; jitter-critical. */
+static IRAM_ATTR t_int *espdsp_osc_perform(t_int *w)
 {
     t_espdsp_osc *x = (t_espdsp_osc *)(w[1]);
     t_sample *restrict in = (t_sample *)(w[2]);
@@ -467,7 +471,9 @@ static void *espdsp_cos_new(t_floatarg f)
     return (x);
 }
 
-static t_int *espdsp_cos_perform(t_int *w)
+/* IRAM_ATTR: pure inline math, no external calls (helpers are static inline
+ * and get folded into IRAM with us). */
+static IRAM_ATTR t_int *espdsp_cos_perform(t_int *w)
 {
     t_sample *restrict in = (t_sample *)(w[1]);
     t_sample *restrict out = (t_sample *)(w[2]);
@@ -536,7 +542,9 @@ static void espdsp_sigvcf_ft1(t_espdsp_sigvcf *x, t_float f)
     x->x_cspace.c_q = f;
 }
 
-static t_int *espdsp_sigvcf_perform(t_int *w)
+/* IRAM_ATTR: per-sample biquad-style loop with two cos/sin polynomial calls
+ * (both static inline → folded into IRAM). PD_BIGORSMALL is a macro; safe. */
+static IRAM_ATTR t_int *espdsp_sigvcf_perform(t_int *w)
 {
     t_sample *in1 = (t_sample *)(w[1]);
     t_sample *in2 = (t_sample *)(w[2]);
