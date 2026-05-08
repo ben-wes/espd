@@ -789,7 +789,6 @@ void x_midi_newpdinstance( void) {}
 #define TIMEUNITPERMSEC (32. * 441.)
 #define TIMEUNITPERSECOND (TIMEUNITPERMSEC * 1000.)
 void dsp_tick(void);
-static int sched_diddsp;
 int sys_quit = 0;
 void sched_init(void) {}
 
@@ -938,8 +937,24 @@ void clock_free(t_clock *x)
     /* take the scheduler forward one DSP tick, also handling clock timeouts */
 void sched_tick(void)
 {
-    double next_sys_time = pd_this->pd_systime +
-        (STUFF->st_schedblocksize/STUFF->st_dacsr) * TIMEUNITPERSECOND;
+    /* st_schedblocksize and st_dacsr are constants for the lifetime of an
+     * audio session; cache the per-block systime increment so the per-block
+     * float→double conversion + double mul + double add (all emulated on
+     * Xtensa LX7, no hardware double FPU) only run when SR or block size
+     * actually change. */
+    static double cached_increment;
+    static t_float cached_dacsr;
+    static t_float cached_block;
+    t_float dacsr = STUFF->st_dacsr;
+    t_float block = STUFF->st_schedblocksize;
+    if (dacsr != cached_dacsr || block != cached_block)
+    {
+        cached_dacsr = dacsr;
+        cached_block = block;
+        cached_increment =
+            (double)block / (double)dacsr * (double)TIMEUNITPERSECOND;
+    }
+    double next_sys_time = pd_this->pd_systime + cached_increment;
     int countdown = 5000;
     while (pd_this->pd_clock_setlist &&
         pd_this->pd_clock_setlist->c_settime < next_sys_time)
@@ -959,7 +974,6 @@ void sched_tick(void)
     }
     pd_this->pd_systime = next_sys_time;
     dsp_tick();
-    sched_diddsp++;
 }
 
 /* ------------------------ g_editor.c ---------------------- */
