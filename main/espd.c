@@ -1770,6 +1770,22 @@ void app_main(void)
 
     ESP_LOGI(TAG, "[ 2 ] now write some shit");
 
+    /* Audio loop priority: bump well above any non-critical CPU1 task.
+     * IDF defaults: pthread workers / TinyUSB MSC ≈ 5, esp_timer 22 (CPU0),
+     * WiFi 23 (CPU0), IPC 24. Picking 19 keeps us strictly above every
+     * userland/system task that might land on CPU1, while staying below
+     * esp_timer/IPC. Defensive clamp in case configMAX_PRIORITIES has been
+     * trimmed down on a board build. */
+    {
+        UBaseType_t was = uxTaskPriorityGet(NULL);
+        UBaseType_t want = 19;
+        if (want > (UBaseType_t)(configMAX_PRIORITIES - 2))
+            want = (UBaseType_t)(configMAX_PRIORITIES - 2);
+        vTaskPrioritySet(NULL, want);
+        ESP_LOGI(TAG, "audio loop priority set to %u (was %u)",
+            (unsigned)want, (unsigned)was);
+    }
+
     while (1)
     {
         static unsigned loop_count = 0;

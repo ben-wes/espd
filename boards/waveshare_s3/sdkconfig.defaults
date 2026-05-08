@@ -41,7 +41,7 @@ CONFIG_ESP_CONSOLE_UART_NUM=0
 # Performance profile:
 # - prioritize DSP/runtime throughput
 # - keep checks/asserts quiet
-# - keep WIP-friendly warning visibility
+# - allow INFO logs for boot/init diagnostics (audio hot path uses no INFO)
 # CONFIG_COMPILER_OPTIMIZATION_SIZE is not set
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
@@ -50,9 +50,17 @@ CONFIG_COMPILER_OPTIMIZATION_ASSERTION_LEVEL=1
 # use [cputime] in patches for Pd-side block time. Re-enable here if you use SystemView etc.
 # CONFIG_FREERTOS_USE_TRACE_FACILITY is not set
 # CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS is not set
+# Compile INFO calls in (~few KB flash) but keep the runtime default at WARN so
+# IDF system tags (wifi/lwip/i2s/etc.) stay quiet during boot. app_main does an
+# `esp_log_level_set(TAG, ESP_LOG_INFO)` so our own ESP_LOGIs are visible.
+# DEBUG/VERBOSE remain stripped. Audio loop uses no INFO, so no hot-path cost.
+# CONFIG_LOG_MAXIMUM_EQUALS_DEFAULT must be off, otherwise MAXIMUM gets pinned
+# back to DEFAULT (=WARN) regardless of what we set MAXIMUM_LEVEL to.
 CONFIG_LOG_DEFAULT_LEVEL_WARN=y
 CONFIG_LOG_DEFAULT_LEVEL=2
-CONFIG_LOG_MAXIMUM_LEVEL=2
+# CONFIG_LOG_MAXIMUM_EQUALS_DEFAULT is not set
+CONFIG_LOG_MAXIMUM_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL=3
 # CONFIG_ESP_GDBSTUB_ENABLED is not set
 # CONFIG_ESP_DEBUG_OCDAWARE is not set
 
