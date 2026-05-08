@@ -300,15 +300,15 @@ static inline float espdsp_poly_wrap_cycles(float f)
 
 static inline float espdsp_cos_poly_eval_wrapped(float f)
 {
-    float g, g2, g3;
-    if (f > 0.5f)
-        g = f - 0.75f;
-    else
-        g = 0.25f - f;
-    g2 = g * g;
-    g3 = g * g2;
-    return g * ESPDSP_COS_POLY_A1 + g3 * ESPDSP_COS_POLY_A3
-        + g2 * g3 * ESPDSP_COS_POLY_A5;
+    /* Branchless fold: g = fabsf(f - 0.5f) - 0.25f is bit-identical to the
+     * piecewise (f > 0.5 ? f - 0.75 : 0.25 - f) for all f in [0, 1). */
+    float g = fabsf(f - 0.5f) - 0.25f;
+    float g2 = g * g;
+    /* Horner form: g * (A1 + g²·(A3 + g²·A5)) — 2 mul + 2 FMA total,
+     * down from 6 mul + 2 add in the expanded form. */
+    float t = ESPDSP_COS_POLY_A3 + g2 * ESPDSP_COS_POLY_A5;
+    t = ESPDSP_COS_POLY_A1 + g2 * t;
+    return g * t;
 }
 
 static inline float espdsp_cos_poly_radians(float theta)
@@ -390,8 +390,6 @@ static void espdsp_phasor_dsp(t_espdsp_phasor *x, t_signal **sp)
     dsp_add(espdsp_phasor_perform, 4, x, sp[0]->s_vec, sp[1]->s_vec, (t_int)sp[0]->s_n);
 }
 
-static t_int *espdsp_cos_perform(t_int *w);
-
 /* -------------------------- osc~ ---------------------------------- */
 
 static void *espdsp_osc_new(t_floatarg f)
@@ -413,13 +411,44 @@ static void espdsp_osc_ft1(t_espdsp_osc *x, t_float f)
     x->x_phase = ((uint32_t)(a * (t_float)ESPDSP_PHASOR_RANGE)) & ESPDSP_PHASOR_MASK;
 }
 
+/* Combined phasor + polynomial cos in one pass: avoids the chain hop and the
+ * extra read+write over the block buffer that the prior 2-stage dsp_add chain
+ * caused. The phase generated here is always in [0, 1), so we skip the wrap
+ * step the standalone cos~ kernel needs. */
+static t_int *espdsp_osc_perform(t_int *w)
+{
+    t_espdsp_osc *x = (t_espdsp_osc *)(w[1]);
+    t_sample *restrict in = (t_sample *)(w[2]);
+    t_sample *restrict out = (t_sample *)(w[3]);
+    int n = (int)(w[4]);
+    uint32_t phase = x->x_phase;
+    float conv = (float)x->x_conv;
+    const float reconv = 1.f / (float)ESPDSP_PHASOR_RANGE;
+
+    while (n--)
+    {
+        float step = conv * *in++;
+        uint32_t inc = (step >= 0.f) ? (uint32_t)step : (0U - (uint32_t)(-step));
+        float f = (float)(phase & ESPDSP_PHASOR_MASK) * reconv;
+        phase = (phase + inc) & ESPDSP_PHASOR_MASK;
+        /* Same polynomial as espdsp_cos_poly_eval_wrapped; inlined here
+         * so the compiler can keep g/g2/t in FP regs across iterations. */
+        float g = fabsf(f - 0.5f) - 0.25f;
+        float g2 = g * g;
+        float t = ESPDSP_COS_POLY_A3 + g2 * ESPDSP_COS_POLY_A5;
+        t = ESPDSP_COS_POLY_A1 + g2 * t;
+        *out++ = g * t;
+    }
+    x->x_phase = phase;
+    return (w + 5);
+}
+
 static void espdsp_osc_dsp(t_espdsp_osc *x, t_signal **sp)
 {
     x->x_conv = (sp[0]->s_sr > 0)
         ? ((t_float)ESPDSP_PHASOR_RANGE / (t_float)sp[0]->s_sr)
         : 0.f;
-    dsp_add(espdsp_phasor_perform, 4, x, sp[0]->s_vec, sp[1]->s_vec, (t_int)sp[0]->s_n);
-    dsp_add(espdsp_cos_perform, 3, sp[1]->s_vec, sp[1]->s_vec, (t_int)sp[0]->s_n);
+    dsp_add(espdsp_osc_perform, 4, x, sp[0]->s_vec, sp[1]->s_vec, (t_int)sp[0]->s_n);
 }
 
 /* -------------------------- cos~ ----------------------------------- */
