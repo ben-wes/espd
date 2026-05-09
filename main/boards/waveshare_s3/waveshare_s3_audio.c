@@ -169,6 +169,9 @@ esp_err_t espd_waveshare_s3_audio_init(i2s_chan_handle_t *tx, i2s_chan_handle_t 
 {
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     chan_cfg.auto_clear = true;
+    /* 3 × 64 = ~4 ms output latency (2 blocks of jitter headroom). */
+    chan_cfg.dma_desc_num = 3;
+    chan_cfg.dma_frame_num = 64;
 
     ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, tx, rx), TAG, "i2s_new_channel");
 
