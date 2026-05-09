@@ -110,6 +110,11 @@ CONFIG_ESP_TIMER_TASK_AFFINITY_CPU0=y
 # - trim baseline WiFi/LWIP buffer pressure
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0
+# Reserve 64 KB of internal SRAM for DMA / ISR / cap-restricted callers.
+# Pairs with the 4 KB internal-first heap routing in app_main: small Pd
+# allocations now consume more internal heap, so bump the reserve up
+# from the IDF default (32 KB) to keep DMA buffers from getting starved.
+CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=65536
 CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=8
 CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=16
 CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16
