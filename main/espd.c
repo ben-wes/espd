@@ -1612,9 +1612,13 @@ void app_main(void)
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
-    /* Prefer external RAM for generic malloc as early as possible to reduce
-     * internal heap pressure during heavy Pd abstraction/clone creation. */
-    heap_caps_malloc_extmem_enable(0);
+    /* Allocation routing for generic malloc/calloc (incl. Pd's getbytes):
+     *   < 4 KB → prefer internal SRAM (object state, signal vectors,
+     *            dsp_add argument arrays — per-block hot path)
+     *   >= 4 KB → prefer external PSRAM (user arrays, abstraction trees,
+     *            delay-line buffers — touched but not at sample rate)
+     * Falls back to PSRAM if internal heap is exhausted. */
+    heap_caps_malloc_extmem_enable(4096);
 
     espd_nvs_flash_init();
     espd_patch_store_init();
