@@ -1789,16 +1789,7 @@ void app_main(void)
 
     while (1)
     {
-        static unsigned loop_count = 0;
         uint64_t t0 = (uint64_t)esp_timer_get_time();
-        /*
-            int zz = 0;
-            if (!((zz++)%1000))
-            {
-                trymem(5);
-                ESP_LOGI(TAG, "tick");
-            }
-        */
         pd_pollhost();
 #ifdef PD_USE_ANALOG0
         pd_pollanalog0();
@@ -1815,15 +1806,7 @@ void app_main(void)
             net_alive();
 #endif
 #endif
-        t0 = (uint64_t)esp_timer_get_time();
         senddacs();
-            /* did we wait > 50 usec? */
-        if (((uint64_t)esp_timer_get_time() - t0) > 50)
-            loop_count = 0;
-         /* Avoid starving IDLE0 under heavy message/network traffic.
-         * Keep this sparse to minimize audio scheduling jitter. */
-        if ((++loop_count & 0x1FF) == 0)
-            vTaskDelay(1);
     }
 }
 
