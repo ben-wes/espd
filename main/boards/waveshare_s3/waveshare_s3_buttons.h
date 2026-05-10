@@ -22,6 +22,3 @@
  *  Safe to call when no expander is present (logs a warning, becomes a no-op). */
 esp_err_t espd_waveshare_s3_buttons_init(void);
 
-/** Read the expander and emit espd/din/<i> floats for any changed button.
- *  Cheap enough to call once per audio block; applies a small debounce filter. */
-void espd_waveshare_s3_buttons_poll(void);

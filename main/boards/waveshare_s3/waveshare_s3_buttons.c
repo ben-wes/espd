@@ -12,9 +12,14 @@ static const char *TAG = "waveshare_buttons";
 
 #define I2C_TIMEOUT_MS 200
 
-/* Fallback if espd.h hasn't been updated to define this; mirrors analog default. */
-#ifndef ESPD_DIN_REPORT_EVERY_N_BLOCKS
-#define ESPD_DIN_REPORT_EVERY_N_BLOCKS 8
+#ifndef ESPD_BUTTON_POLL_TASK_PRIO
+#define ESPD_BUTTON_POLL_TASK_PRIO 2  /* well below audio task */
+#endif
+#ifndef ESPD_BUTTON_POLL_TASK_CORE
+#define ESPD_BUTTON_POLL_TASK_CORE 0  /* opposite core from Pd audio (core 1) */
+#endif
+#ifndef ESPD_BUTTON_POLL_PERIOD_MS
+#define ESPD_BUTTON_POLL_PERIOD_MS 5  /* poll every 5ms = 200 Hz */
 #endif
 
 /* TCA9555 register map (port1 holds EXIO8..15, so EXIO9/10/11 = bits 1/2/3). */
@@ -31,6 +36,16 @@ static const char *TAG = "waveshare_buttons";
 #define ESPD_WAVESHARE_BUTTON2_PORT1_BIT 3  /* EXIO11 / P13 */
 #endif
 
+    static const int bits[3] = {
+        ESPD_WAVESHARE_BUTTON0_PORT1_BIT,
+        ESPD_WAVESHARE_BUTTON1_PORT1_BIT,
+        ESPD_WAVESHARE_BUTTON2_PORT1_BIT,
+    };
+    /* Debounce: only accept a new state after two consecutive matching polls. */
+    static int last_stable[3] = {0, 0, 0};
+    static int last_raw[3] = {0, 0, 0};
+    static int initialized;
+
 /*
  * Implementation note (IDF v6 i2c_master quirk observed on this board):
  * Repeated add_device + transmit_receive + rm_device cycles on the shared bus
@@ -40,7 +55,9 @@ static const char *TAG = "waveshare_buttons";
  * device once at init and KEEP the handle for all subsequent reads.
  */
 static i2c_master_dev_handle_t s_dev;
-static int s_ready;
+static TaskHandle_t s_poll_task;
+
+static void espd_buttons_poll_task(void *arg);
 
 esp_err_t espd_waveshare_s3_buttons_init(void)
 {
@@ -72,7 +89,7 @@ esp_err_t espd_waveshare_s3_buttons_init(void)
         s_dev = NULL;
         return err;
     }
-    s_ready = 1;
+
     ESP_LOGI(TAG, "TCA9555 @0x%02X ready: INPUT0=0x%02x; buttons on port1 bits "
         "%d/%d/%d (EXIO%d/%d/%d)",
         (unsigned)ESPD_WAVESHARE_TCA9555_I2C_ADDR, in0,
@@ -82,6 +99,22 @@ esp_err_t espd_waveshare_s3_buttons_init(void)
         8 + ESPD_WAVESHARE_BUTTON0_PORT1_BIT,
         8 + ESPD_WAVESHARE_BUTTON1_PORT1_BIT,
         8 + ESPD_WAVESHARE_BUTTON2_PORT1_BIT);
+
+    /* Spawn the dedicated poll task so I2C reads never run on the audio
+     * thread. Pinned to the opposite core to avoid sharing CPU with senddacs(). */
+    if (!s_poll_task) {
+        BaseType_t ok = xTaskCreatePinnedToCore(espd_buttons_poll_task,
+            "button_poll", 2048, NULL, ESPD_BUTTON_POLL_TASK_PRIO,
+            &s_poll_task, ESPD_BUTTON_POLL_TASK_CORE);
+        if (ok != pdPASS) {
+            ESP_LOGW(TAG, "failed to create button_poll task; falling back to audio-thread polling");
+            s_poll_task = NULL;
+        } else {
+            ESP_LOGI(TAG, "button_poll task: core=%d prio=%d period=%d ms",
+                (int)ESPD_BUTTON_POLL_TASK_CORE, (int)ESPD_BUTTON_POLL_TASK_PRIO,
+                ESPD_BUTTON_POLL_PERIOD_MS);
+        }
+    }
     return ESP_OK;
 }
 
@@ -92,51 +125,31 @@ __attribute__((weak)) void espd_button_state_changed(int idx, int pressed)
     (void)pressed;
 }
 
-void espd_waveshare_s3_buttons_poll(void)
+static void espd_buttons_poll_task(void *arg)
 {
-    static const int bits[3] = {
-        ESPD_WAVESHARE_BUTTON0_PORT1_BIT,
-        ESPD_WAVESHARE_BUTTON1_PORT1_BIT,
-        ESPD_WAVESHARE_BUTTON2_PORT1_BIT,
-    };
-    /* Debounce: only accept a new state after two consecutive matching polls. */
-    static int last_stable[3] = {0, 0, 0};
-    static int last_raw[3] = {0, 0, 0};
-    static int initialized;
-    static unsigned block_count;
+    TickType_t next = xTaskGetTickCount();
     uint8_t reg = TCA9555_REG_INPUT1, in1 = 0;
-    int period = ESPD_DIN_REPORT_EVERY_N_BLOCKS;
     int i;
 
-    if (!s_ready)
-        return;
-    if (period < 1)
-        period = 1;
-    /* Only actually hit the I2C bus once per N audio blocks; every other call
-     * is a cheap early-return so we do not stall senddacs(). */
-    if (++block_count < (unsigned)period)
-        return;
-    block_count = 0;
-    if (i2c_master_transmit_receive(s_dev, &reg, 1, &in1, 1,
-            pdMS_TO_TICKS(I2C_TIMEOUT_MS)) != ESP_OK)
-        return;
+    for (;;) {
+        TickType_t period = pdMS_TO_TICKS(ESPD_BUTTON_POLL_PERIOD_MS);
+        if (period < 1)
+            period = 1;
+        vTaskDelayUntil(&next, period);
 
-    for (i = 0; i < 3; i++) {
-        /* Buttons pull to GND when pressed; invert so "pressed" == 1. */
-        int raw = ((in1 >> bits[i]) & 1) ? 0 : 1;
-        if (!initialized) {
-            last_stable[i] = raw;
+        if (i2c_master_transmit_receive(s_dev, &reg, 1, &in1, 1,
+                pdMS_TO_TICKS(I2C_TIMEOUT_MS)) != ESP_OK)
+            continue;
+
+        for (i = 0; i < 3; i++) {
+            /* Buttons pull to GND when pressed; invert so "pressed" == 1. */
+            int raw = ((in1 >> bits[i]) & 1) ? 0 : 1;
+            if (raw == last_raw[i] && raw != last_stable[i]) {
+                //ESP_LOGW(TAG, "Button %d changed: %d", i, raw);
+                espd_button_state_changed(i, raw);
+                last_stable[i] = raw;
+            }
             last_raw[i] = raw;
-        } else if (raw == last_raw[i] && raw != last_stable[i]) {
-            last_stable[i] = raw;
-            espd_button_state_changed(i, raw);
         }
-        last_raw[i] = raw;
-    }
-    if (!initialized) {
-        initialized = 1;
-        /* Emit initial state once so Pd sees starting values. */
-        for (i = 0; i < 3; i++)
-            espd_button_state_changed(i, last_stable[i]);
     }
 }
