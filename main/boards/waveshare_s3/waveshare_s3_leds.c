@@ -146,8 +146,3 @@ void espd_waveshare_s3_leds_mark_dirty(void)
     if (s_refresh_task)
         xTaskNotifyGive(s_refresh_task);
 }
-
-void espd_waveshare_s3_leds_poll(void)
-{
-    /* No-op: refresh now happens on a dedicated task. Kept for ABI stability. */
-}

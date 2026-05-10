@@ -1276,7 +1276,6 @@ static void espd_nvs_flash_init(void)
 extern void pdmain_tick( void);
 void pdmain_init( void);
 
-
 void sd_init( void);
 void espd_control_io_init(void);
 
@@ -1654,6 +1653,7 @@ void app_main(void)
     /* Light the on-board WS2812 ring early so we can confirm boot visually,
      * even before WiFi/Pd come up. Failures are non-fatal. */
     espd_waveshare_s3_leds_init();
+    espd_waveshare_s3_buttons_init();
 #endif
 
 #if defined(PD_USE_SDCARD) && defined(ESPD_BOARD_WAVESHARE_S3)
@@ -1725,6 +1725,7 @@ void app_main(void)
     espd_netif_ensure_init();
 #endif
     pdmain_init();
+
 #ifdef PD_USE_ANALOG0
     pd_analog0_init();
 #endif
@@ -1804,11 +1805,6 @@ void app_main(void)
 #endif
 #ifdef PD_USE_TOUCH0
         pd_polltouch0();
-#endif
-
-#ifdef ESPD_BOARD_WAVESHARE_S3
-        espd_waveshare_s3_buttons_poll();
-        espd_waveshare_s3_leds_poll();
 #endif
 
         pdmain_tick();

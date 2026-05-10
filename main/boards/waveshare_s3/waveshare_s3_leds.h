@@ -30,6 +30,3 @@ esp_err_t espd_waveshare_s3_leds_clear(void);
 
 /** Mark the strip as needing a refresh; safe to call from the audio thread. */
 void espd_waveshare_s3_leds_mark_dirty(void);
-
-/** Refresh the strip if dirty; call from main loop, throttled. */
-void espd_waveshare_s3_leds_poll(void);
