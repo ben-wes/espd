@@ -15,7 +15,8 @@ patches=(
   "x_net-esp-socket-compat.patch"
   "pd-dac-fft-use-perf8-helpers.patch"
   "pd-global-perf8-and-dsp-tick-iram.patch"
-  "pd-g_io-iram-d_fft-channel-loops.patch"
+  "pd-d_fft-dsp_add_copy.patch"
+  "pd-filter-performs-iram.patch"
 )
 
 for p in "${patches[@]}"; do
