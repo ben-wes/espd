@@ -14,6 +14,7 @@ fi
 patches=(
   "x_net-esp-socket-compat.patch"
   "pd-dac-fft-use-perf8-helpers.patch"
+  "pd-global-perf8-and-dsp-tick-iram.patch"
 )
 
 for p in "${patches[@]}"; do

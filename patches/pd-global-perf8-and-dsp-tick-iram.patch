@@ -1,0 +1,238 @@
+diff --git a/src/d_global.c b/src/d_global.c
+index 46638aaf..b1cd7de1 100644
+--- a/src/d_global.c
++++ b/src/d_global.c
+@@ -52,6 +52,27 @@ static t_int *sigsend_perform(t_int *w)
+     return (w+4);
+ }
+ 
++static t_int *sigsend_perf8(t_int *w)
++{
++    t_sample *in = (t_sample *)(w[1]);
++    t_sample *out = (t_sample *)(w[2]);
++    int n = (int)(w[3]);
++    for (; n; n -= 8, in += 8, out += 8)
++    {
++        t_sample f0 = in[0], f1 = in[1], f2 = in[2], f3 = in[3];
++        t_sample f4 = in[4], f5 = in[5], f6 = in[6], f7 = in[7];
++        out[0] = (PD_BIGORSMALL(f0) ? 0 : f0);
++        out[1] = (PD_BIGORSMALL(f1) ? 0 : f1);
++        out[2] = (PD_BIGORSMALL(f2) ? 0 : f2);
++        out[3] = (PD_BIGORSMALL(f3) ? 0 : f3);
++        out[4] = (PD_BIGORSMALL(f4) ? 0 : f4);
++        out[5] = (PD_BIGORSMALL(f5) ? 0 : f5);
++        out[6] = (PD_BIGORSMALL(f6) ? 0 : f6);
++        out[7] = (PD_BIGORSMALL(f7) ? 0 : f7);
++    }
++    return (w+4);
++}
++
+ static void sigsend_channels(t_sigsend *x, t_float fnchans)
+ {
+     x->x_nchans = fnchans >= 1 ? fnchans : 1;
+@@ -75,9 +96,11 @@ static void sigsend_dsp(t_sigsend *x, t_signal **sp)
+ {
+     int usenchans = (x->x_nchans < sp[0]->s_nchans ?
+         x->x_nchans : sp[0]->s_nchans);
++    int nsamps;
+     sigsend_fixbuf(x, sp[0]->s_length);
+-    dsp_add(sigsend_perform, 3, sp[0]->s_vec, x->x_vec,
+-        x->x_length * usenchans);
++    nsamps = x->x_length * usenchans;
++    dsp_add(((nsamps & 7) ? sigsend_perform : sigsend_perf8), 3,
++        sp[0]->s_vec, x->x_vec, nsamps);
+     if (x->x_nchans > usenchans)
+         memset(x->x_vec + usenchans * x->x_length, 0,
+             (x->x_nchans - usenchans) * x->x_length * sizeof(t_sample));
+@@ -295,12 +318,37 @@ static t_int *sigcatch_perform(t_int *w)
+     return (w+4);
+ }
+ 
++static t_int *sigcatch_perf8(t_int *w)
++{
++    t_sample *in = (t_sample *)(w[1]);
++    t_sample *out = (t_sample *)(w[2]);
++    int n = (int)(w[3]);
++    for (; n; n -= 8, in += 8, out += 8)
++    {
++        t_sample f0 = in[0], f1 = in[1], f2 = in[2], f3 = in[3];
++        t_sample f4 = in[4], f5 = in[5], f6 = in[6], f7 = in[7];
++        in[0] = 0; in[1] = 0; in[2] = 0; in[3] = 0;
++        in[4] = 0; in[5] = 0; in[6] = 0; in[7] = 0;
++        out[0] = (PD_BIGORSMALL(f0) ? 0 : f0);
++        out[1] = (PD_BIGORSMALL(f1) ? 0 : f1);
++        out[2] = (PD_BIGORSMALL(f2) ? 0 : f2);
++        out[3] = (PD_BIGORSMALL(f3) ? 0 : f3);
++        out[4] = (PD_BIGORSMALL(f4) ? 0 : f4);
++        out[5] = (PD_BIGORSMALL(f5) ? 0 : f5);
++        out[6] = (PD_BIGORSMALL(f6) ? 0 : f6);
++        out[7] = (PD_BIGORSMALL(f7) ? 0 : f7);
++    }
++    return (w+4);
++}
++
+ static void sigcatch_dsp(t_sigcatch *x, t_signal **sp)
+ {
++    int nsamps;
+     sigcatch_fixbuf(x, sp[0]->s_length);
+     signal_setmultiout(&sp[0], x->x_nchans);
+-    dsp_add(sigcatch_perform, 3, x->x_vec, sp[0]->s_vec,
+-        x->x_length * x->x_nchans);
++    nsamps = x->x_length * x->x_nchans;
++    dsp_add(((nsamps & 7) ? sigcatch_perform : sigcatch_perf8), 3,
++        x->x_vec, sp[0]->s_vec, nsamps);
+ }
+ 
+ static void sigcatch_free(t_sigcatch *x)
+@@ -360,6 +408,29 @@ static t_int *sigthrow_perform(t_int *w)
+     return (w+4);
+ }
+ 
++static t_int *sigthrow_perf8(t_int *w)
++{
++    t_sigthrow *x = (t_sigthrow *)(w[1]);
++    t_sample *in = (t_sample *)(w[2]);
++    int n = (int)(w[3]);
++    t_sample *out = x->x_whereto;
++    if (out)
++    {
++        n = (n <= x->x_nsamps ? n : x->x_nsamps);
++        while (n >= 8)
++        {
++            out[0] += in[0]; out[1] += in[1]; out[2] += in[2]; out[3] += in[3];
++            out[4] += in[4]; out[5] += in[5]; out[6] += in[6]; out[7] += in[7];
++            out += 8;
++            in += 8;
++            n -= 8;
++        }
++        while (n--)
++            *out++ += *in++;
++    }
++    return (w+4);
++}
++
+ static void sigthrow_set(t_sigthrow *x, t_symbol *s)
+ {
+     t_sigcatch *catcher = (t_sigcatch *)pd_findbyclass((x->x_sym = s),
+@@ -385,10 +456,12 @@ static void sigthrow_set(t_sigthrow *x, t_symbol *s)
+ 
+ static void sigthrow_dsp(t_sigthrow *x, t_signal **sp)
+ {
++    int nsamps;
+     x->x_length = sp[0]->s_n;
+     sigthrow_set(x, x->x_sym);
+-    dsp_add(sigthrow_perform, 3,
+-        x, sp[0]->s_vec, (t_int)(sp[0]->s_length * sp[0]->s_nchans));
++    nsamps = (sp[0]->s_length * sp[0]->s_nchans);
++    dsp_add(((nsamps & 7) ? sigthrow_perform : sigthrow_perf8), 3,
++        x, sp[0]->s_vec, (t_int)nsamps);
+ }
+ 
+ static void sigthrow_setup(void)
+diff --git a/src/d_ugen.c b/src/d_ugen.c
+index 99f8b0bb..c983cdad 100644
+--- a/src/d_ugen.c
++++ b/src/d_ugen.c
+@@ -15,6 +15,12 @@
+ #include "m_imp.h"
+ #include "g_canvas.h"
+ #include <stdarg.h>
++#ifdef ESP_PLATFORM
++#include "esp_attr.h"
++#endif
++#ifndef IRAM_ATTR
++#define IRAM_ATTR
++#endif
+ #define DEFDACBLKSIZE 64    /* from s_stuff.h - LATER make this dynamic */
+ 
+ extern t_class *vinlet_class, *voutlet_class, *canvas_class, *text_class;
+@@ -62,7 +68,7 @@ void d_ugen_freepdinstance(void)
+     freebytes(THIS, sizeof(*THIS));
+ }
+ 
+-t_int *zero_perform(t_int *w)   /* zero out a vector */
++IRAM_ATTR t_int *zero_perform(t_int *w)   /* zero out a vector */
+ {
+     t_sample *out = (t_sample *)(w[1]);
+     int n = (int)(w[2]);
+@@ -70,7 +76,7 @@ t_int *zero_perform(t_int *w)   /* zero out a vector */
+     return (w+3);
+ }
+ 
+-t_int *zero_perf8(t_int *w)
++IRAM_ATTR t_int *zero_perf8(t_int *w)
+ {
+     t_sample *out = (t_sample *)(w[1]);
+     int n = (int)(w[2]);
+@@ -357,7 +363,7 @@ void block_tilde_setup(void)
+ 
+ /* ------------------ DSP call list ----------------------- */
+ 
+-static t_int dsp_done(t_int *w)
++static IRAM_ATTR t_int dsp_done(t_int *w)
+ {
+     return (0);
+ }
+@@ -400,7 +406,7 @@ void dsp_addv(t_perfroutine f, int n, t_int *vec)
+     THIS->u_dspchainsize = newsize;
+ }
+ 
+-void dsp_tick(void)
++IRAM_ATTR void dsp_tick(void)
+ {
+     if (THIS->u_dspchain)
+     {
+@@ -1405,7 +1411,7 @@ static t_signal *ugen_getiosig(int index, int inout)
+ 
+ /* -------------- DSP basics, copying and adding signals --------------- */
+ 
+-t_int *plus_perform(t_int *w)
++IRAM_ATTR t_int *plus_perform(t_int *w)
+ {
+     t_sample *in1 = (t_sample *)(w[1]);
+     t_sample *in2 = (t_sample *)(w[2]);
+@@ -1415,7 +1421,7 @@ t_int *plus_perform(t_int *w)
+     return (w+5);
+ }
+ 
+-t_int *plus_perf8(t_int *w)
++IRAM_ATTR t_int *plus_perf8(t_int *w)
+ {
+     t_sample *in1 = (t_sample *)(w[1]);
+     t_sample *in2 = (t_sample *)(w[2]);
+@@ -1443,7 +1449,7 @@ void dsp_add_plus(t_sample *in1, t_sample *in2, t_sample *out, int n)
+         dsp_add(plus_perf8, 4, in1, in2, out, (t_int)n);
+ }
+ 
+-t_int *copy_perform(t_int *w)
++IRAM_ATTR t_int *copy_perform(t_int *w)
+ {
+     t_sample *in1 = (t_sample *)(w[1]);
+     t_sample *out = (t_sample *)(w[2]);
+@@ -1452,7 +1458,7 @@ t_int *copy_perform(t_int *w)
+     return (w+4);
+ }
+ 
+-t_int *copy_perf8(t_int *w)
++IRAM_ATTR t_int *copy_perf8(t_int *w)
+ {
+     t_sample *in1 = (t_sample *)(w[1]);
+     t_sample *out = (t_sample *)(w[2]);
+@@ -1489,7 +1495,7 @@ void dsp_add_copy(t_sample *in, t_sample *out, int n)
+         dsp_add(copy_perf8, 3, in, out, (t_int)n);
+ }
+ 
+-t_int *scalarcopy_perform(t_int *w)
++IRAM_ATTR t_int *scalarcopy_perform(t_int *w)
+ {
+     t_float f = *(t_float *)(w[1]);
+     t_sample *out = (t_sample *)(w[2]);
+@@ -1499,7 +1505,7 @@ t_int *scalarcopy_perform(t_int *w)
+     return (w+4);
+ }
+ 
+-t_int *scalarcopy_perf8(t_int *w)
++IRAM_ATTR t_int *scalarcopy_perf8(t_int *w)
+ {
+     t_float f = *(t_float *)(w[1]);
+     t_sample *out = (t_sample *)(w[2]);
