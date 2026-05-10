@@ -1,0 +1,67 @@
+diff --git a/src/d_math.c b/src/d_math.c
+index 082fb078..2d0e090b 100644
+--- a/src/d_math.c
++++ b/src/d_math.c
+@@ -464,7 +464,7 @@ static t_int *mtof_tilde_perform(t_int *w)
+         else
+         {
+             if (f > 1499) f = 1499;
+-            *out = 8.17579891564 * exp(.0577622650 * f);
++            *out = 8.17579891564f * expf(.0577622650f * f);
+         }
+     }
+     return (w + 4);
+@@ -510,7 +510,7 @@ static t_int *ftom_tilde_perform(t_int *w)
+     for (; n--; in++, out++)
+     {
+         t_sample f = *in;
+-        *out = (f > 0 ? 17.3123405046 * log(.12231220585 * f) : -1500);
++        *out = (f > 0 ? 17.3123405046f * logf(.12231220585f * f) : -1500);
+     }
+     return (w + 4);
+ }
+@@ -560,7 +560,7 @@ static t_int *dbtorms_tilde_perform(t_int *w)
+         {
+             if (f > 485)
+                 f = 485;
+-            *out = exp((LOGTEN * 0.05) * (f-100.));
++            *out = expf(0.11512925464f * (f - 100.f));
+         }
+     }
+     return (w + 4);
+@@ -611,7 +611,7 @@ static t_int *rmstodb_tilde_perform(t_int *w)
+         if (f <= 0) *out = 0;
+         else
+         {
+-            t_sample g = 100 + 20./LOGTEN * log(f);
++            t_sample g = 100.f + 8.68588963806f * logf(f);
+             *out = (g < 0 ? 0 : g);
+         }
+     }
+@@ -665,7 +665,7 @@ static t_int *dbtopow_tilde_perform(t_int *w)
+         {
+             if (f > 870)
+                 f = 870;
+-            *out = exp((LOGTEN * 0.1) * (f-100.));
++            *out = expf(0.23025850929f * (f - 100.f));
+         }
+     }
+     return (w + 4);
+@@ -715,7 +715,7 @@ static t_int *powtodb_tilde_perform(t_int *w)
+         if (f <= 0) *out = 0;
+         else
+         {
+-            t_sample g = 100 + 10./LOGTEN * log(f);
++            t_sample g = 100.f + 4.34294481903f * logf(f);
+             *out = (g < 0 ? 0 : g);
+         }
+     }
+@@ -761,7 +761,7 @@ t_int *exp_tilde_perform(t_int *w)
+     t_sample *out = (t_sample *)(w[2]);
+     int n = (int)(w[3]);
+     while (n--)
+-        *out++ = exp(*in1++);
++        *out++ = expf(*in1++);
+     return (w+4);
+ }
+ 

@@ -17,6 +17,8 @@ patches=(
   "pd-global-perf8-and-dsp-tick-iram.patch"
   "pd-d_fft-dsp_add_copy.patch"
   "pd-filter-performs-iram.patch"
+  "pd-d_math-expf-logf.patch"
+  "pd-d_arithmetic-powf-logf.patch"
 )
 
 for p in "${patches[@]}"; do

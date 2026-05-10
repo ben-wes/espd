@@ -1,0 +1,72 @@
+diff --git a/src/d_arithmetic.c b/src/d_arithmetic.c
+index 5fc522cf..a20e2110 100644
+--- a/src/d_arithmetic.c
++++ b/src/d_arithmetic.c
+@@ -966,8 +966,8 @@ t_int *log_tilde_perform(t_int *w)
+         if (f <= 0)
+             *out = -1000;   /* rather than blow up, output a number << 0 */
+         else if (g == 1 || g <= 0)
+-            *out = log(f);
+-        else *out = log(f)/log(g);
++            *out = logf(f);
++        else *out = logf(f)/logf(g);
+         out++;
+     }
+     return (w+5);
+@@ -977,7 +977,7 @@ t_int *log_tilde_perform_scalar(t_int *w)
+ {
+     t_sample *in1 = (t_sample *)(w[1]);
+     t_sample base = *(t_sample *)(w[2]),
+-        multiplier = ((base > 0 && base != 1) ? 1./log(base) : 1);
++        multiplier = ((base > 0 && base != 1) ? 1.f/logf(base) : 1);
+     t_sample *out = (t_sample *)(w[3]);
+     int n = (int)(w[4]);
+     while (n--)
+@@ -985,7 +985,7 @@ t_int *log_tilde_perform_scalar(t_int *w)
+         t_sample f = *in1++;
+         if (f <= 0)
+             *out = -1000;   /* rather than blow up, output a number << 0 */
+-        else *out = log(f) * multiplier;
++        else *out = logf(f) * multiplier;
+         out++;
+     }
+     return (w+5);
+@@ -1003,9 +1003,9 @@ t_int *log_tilde_perform_reversescalar(t_int *w)
+         t_sample base = *in1++;
+         if (base <= 1)
+             *out = -1000;   /* rather than blow up, output a number << 0 */
+-        else if (scalarin <- 0)
++        else if (scalarin <= 0)
+             *out = -1000;
+-        else *out = log(scalarin) / log(base);
++        else *out = logf(scalarin) / logf(base);
+         out++;
+     }
+     return (w+5);
+@@ -1091,7 +1091,7 @@ t_int *pow_tilde_perform(t_int *w)
+         t_sample f = *in1++, g = *in2++;
+         *out++ = (f == 0 && g < 0) ||
+             (f < 0 && (g - (int)g) != 0) ?
+-                0 : pow(f, g);
++                0 : powf(f, g);
+     }
+     return (w+5);
+ }
+@@ -1107,7 +1107,7 @@ t_int *pow_tilde_perform_scalar(t_int *w)
+         t_sample f = *in1++;
+         *out++ = (f == 0 && g < 0) ||
+             (f < 0 && (g - (int)g) != 0) ?
+-                0 : pow(f, g);
++                0 : powf(f, g);
+     }
+     return (w+5);
+ }
+@@ -1123,7 +1123,7 @@ t_int *pow_tilde_perform_reversescalar(t_int *w)
+         t_sample g = *in1++;
+         *out++ = (f == 0 && g < 0) ||
+             (f < 0 && (g - (int)g) != 0) ?
+-                0 : pow(f, g);
++                0 : powf(f, g);
+     }
+     return (w+5);
+ }
