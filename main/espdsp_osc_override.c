@@ -220,7 +220,7 @@ static t_int *espdsp_tabread4_perform(t_int *w)
      if (maxindex < 1)
          goto zero;
 
-     for (i = 0; i < n; i++)
+     for (i = n; i > 0; i--)
      {
          float findex = *in++;
          int ionset = *onset++;
@@ -561,7 +561,7 @@ static IRAM_ATTR t_int *espdsp_sigvcf_perform(t_int *w)
     t_float ampcorrect = 2.f - 2.f / (q + 2.f);
     t_float coefr, coefi;
 
-    for (i = 0; i < n; i++)
+    for (i = n; i > 0; i--)
     {
         t_float cf, r, oneminusr, ins;
         cf = *in2++ * isr;
