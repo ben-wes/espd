@@ -1288,7 +1288,8 @@ static i2s_chan_handle_t rx_handle;
 #endif /* OBSOLETEAPI */
 
 #define BLKSIZE 64
-float soundin[IOCHANS * BLKSIZE], soundout[IOCHANS * BLKSIZE];
+DRAM_ATTR float soundin[IOCHANS * BLKSIZE], soundout[IOCHANS * BLKSIZE];
+DRAM_ATTR short poodle[IOCHANS * BLKSIZE];
 
 static inline short espd_soundout_to_short(float x)
 {
@@ -1304,20 +1305,24 @@ static inline short espd_soundout_to_short(float x)
     return y;
 }
 
-static inline float espd_soundin_from_u16(uint32_t u)
+static inline float espd_soundin_from_i16(int16_t s)
+{
+    return (float)s * (1.f / 32768.f);
+}
+
+/*static inline float espd_soundin_from_u16(uint32_t u)
 {
     const float inv32768 = 1.f / 32768.f;
     float x = (float)(u & 0xffffu) * inv32768;
     if (u & 0x8000u)
         x -= 2.f;
     return x;
-}
+}*/
 
 void senddacs( void)
 {
     int i, j, ret;
     size_t transferred;
-    short poodle[IOCHANS * BLKSIZE];
 
     for (i = j = 0; i < BLKSIZE; i++, j += IOCHANS)
     {
@@ -1366,12 +1371,10 @@ void senddacs( void)
     
     for (i = j = 0; i < BLKSIZE; i++, j += IOCHANS)
     {
-        uint32_t ch1 = poodle[j] & 0xffff;
-#if IOCHANS > 1
-        uint32_t ch2 = poodle[j + 1] & 0xffff;
-        soundin[i + BLKSIZE] = espd_soundin_from_u16(ch2);
-#endif
-        soundin[i] = espd_soundin_from_u16(ch1);
+        soundin[i] = espd_soundin_from_i16(poodle[j]);
+    #if IOCHANS > 1
+        soundin[i + BLKSIZE] = espd_soundin_from_i16(poodle[j + 1]);
+    #endif
     }
 #endif /* USEADC */
 }
