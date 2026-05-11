@@ -169,7 +169,7 @@ void pdmain_init( void)
  * sys_pollgui stays in flash but is cheap (returns fast when no FDs). */
 IRAM_ATTR void pdmain_tick( void)
 {
-    memset(soundout, 0, (size_t)sys_get_outchannels() * DEFDACBLKSIZE * sizeof(t_sample));
+    //memset(soundout, 0, (size_t)sys_get_outchannels() * DEFDACBLKSIZE * sizeof(t_sample));
     sched_tick();
     sys_pollgui();
 }
