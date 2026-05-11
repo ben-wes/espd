@@ -40,16 +40,19 @@ CONFIG_ESP_CONSOLE_UART_NUM=0
 
 # Performance profile:
 # - prioritize DSP/runtime throughput
-# - keep checks/asserts quiet
+# - disable assertions entirely (adds -DNDEBUG, removes assert code and overhead)
 # - allow INFO logs for boot/init diagnostics (audio hot path uses no INFO)
 # CONFIG_COMPILER_OPTIMIZATION_SIZE is not set
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
-CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
-CONFIG_COMPILER_OPTIMIZATION_ASSERTION_LEVEL=1
+# CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_ENABLE is not set
+# CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT is not set
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y
+CONFIG_COMPILER_OPTIMIZATION_ASSERTION_LEVEL=0
 # Leave runtime stats off (saves context-switch overhead). espd/check/cpu was removed;
 # use [cputime] in patches for Pd-side block time. Re-enable here if you use SystemView etc.
 # CONFIG_FREERTOS_USE_TRACE_FACILITY is not set
 # CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS is not set
+CONFIG_FREERTOS_IN_IRAM=y
 # Compile INFO calls in (~few KB flash) but keep the runtime default at WARN so
 # IDF system tags (wifi/lwip/i2s/etc.) stay quiet during boot. app_main does an
 # `esp_log_level_set(TAG, ESP_LOG_INFO)` so our own ESP_LOGIs are visible.
@@ -64,8 +67,9 @@ CONFIG_LOG_MAXIMUM_LEVEL=3
 # CONFIG_ESP_GDBSTUB_ENABLED is not set
 # CONFIG_ESP_DEBUG_OCDAWARE is not set
 
-# Explicitly disable Bluetooth and HTTPS features.
+# Explicitly disable unused subsystems to save flash, RAM, and compile time.
 # CONFIG_BT_ENABLED is not set
+# CONFIG_ETH_ENABLED is not set
 # CONFIG_ESP_HTTP_CLIENT_ENABLE_HTTPS is not set
 # CONFIG_ESP_HTTPS_SERVER_ENABLE is not set
 CONFIG_LWIP_IPV6=y
