@@ -313,8 +313,9 @@ void espd_button_state_changed(int idx, int pressed)
     snprintf(name, sizeof(name), "espd/din/%d", idx);
     sym = gensym(name);
     dest = sym ? sym->s_thing : NULL;
+    //ESP_LOGW(TAG, "Button %d changed: %d", idx, pressed);
     if (dest)
-        pd_float(dest, (t_float)(pressed ? 1 : 0));
+       pd_float(dest, (t_float)(pressed ? 1 : 0));
 }
 #endif /* ESPD_BOARD_WAVESHARE_S3 */
 
@@ -1657,8 +1658,8 @@ void app_main(void)
     /* Light the on-board WS2812 ring early so we can confirm boot visually,
      * even before WiFi/Pd come up. Failures are non-fatal. */
     espd_waveshare_s3_leds_init();
-    espd_waveshare_s3_buttons_init();
 #endif
+
 
 #if defined(PD_USE_SDCARD) && defined(ESPD_BOARD_WAVESHARE_S3)
     /* Mount SD before Pd so main.pd can load from ESPD_SDCARD_MOUNT. */
@@ -1720,6 +1721,11 @@ void app_main(void)
 #endif
 
     initdacs();
+
+#ifdef ESPD_BOARD_WAVESHARE_S3
+    espd_waveshare_s3_buttons_init();
+#endif
+
 #ifdef PD_USE_WIFI
     /* Bring up lwIP + default event loop unconditionally before Pd loads the
      * patch. If the patch contains [netreceive]/[netsend] but Wi-Fi has been
@@ -1800,6 +1806,9 @@ void app_main(void)
 #endif
 #ifdef PD_USE_TOUCH0
         pd_polltouch0();
+#endif
+#ifdef ESPD_BOARD_WAVESHARE_S3
+        espd_waveshare_s3_buttons_poll();
 #endif
 
         pdmain_tick();

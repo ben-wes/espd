@@ -44,6 +44,7 @@ static const char *TAG = "waveshare_buttons";
     /* Debounce: only accept a new state after two consecutive matching polls. */
     static int last_stable[3] = {0, 0, 0};
     static int last_raw[3] = {0, 0, 0};
+    static int last_reported[3] = {0, 0, 0}; 
     static int initialized;
 
 /*
@@ -56,6 +57,8 @@ static const char *TAG = "waveshare_buttons";
  */
 static i2c_master_dev_handle_t s_dev;
 static TaskHandle_t s_poll_task;
+/* Dirty flag: set by button task when state changes, cleared by audio thread. */
+static volatile int s_button_dirty;
 
 static void espd_buttons_poll_task(void *arg);
 
@@ -145,11 +148,24 @@ static void espd_buttons_poll_task(void *arg)
             /* Buttons pull to GND when pressed; invert so "pressed" == 1. */
             int raw = ((in1 >> bits[i]) & 1) ? 0 : 1;
             if (raw == last_raw[i] && raw != last_stable[i]) {
-                //ESP_LOGW(TAG, "Button %d changed: %d", i, raw);
-                espd_button_state_changed(i, raw);
                 last_stable[i] = raw;
+                s_button_dirty = 1;
             }
             last_raw[i] = raw;
+        }
+    }
+}
+/* Consumer: audio thread. Poll dirty flag and forward button states to Pd. */
+void espd_waveshare_s3_buttons_poll(void)
+{
+    if (!s_button_dirty)
+        return;
+
+    s_button_dirty = 0;
+    for (int i = 0; i < 3; i++) {
+        if (last_stable[i] != last_reported[i]) {
+            last_reported[i] = last_stable[i];
+            espd_button_state_changed(i, last_stable[i]);
         }
     }
 }
