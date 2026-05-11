@@ -22,3 +22,6 @@
  *  Safe to call when no expander is present (logs a warning, becomes a no-op). */
 esp_err_t espd_waveshare_s3_buttons_init(void);
 
+/** Poll for button state changes and forward to Pd.
+ *  Call from the audio thread; safe to call every block. */
+void espd_waveshare_s3_buttons_poll(void);
