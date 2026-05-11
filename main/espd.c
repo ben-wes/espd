@@ -1290,6 +1290,20 @@ static i2s_chan_handle_t rx_handle;
 #define BLKSIZE 64
 float soundin[IOCHANS * BLKSIZE], soundout[IOCHANS * BLKSIZE];
 
+static inline short espd_soundout_to_short(float x)
+{
+    if (x > 1.f)
+        x = 1.f;
+    else if (x < -1.f)
+        x = -1.f;
+    short y = (short)lrintf(x * 32768.f);
+    if (y > 32767)
+        y = 32767;
+    else if (y < -32768)
+        y = -32768;
+    return y;
+}
+
 void senddacs( void)
 {
     int i, j, ret;
@@ -1298,27 +1312,11 @@ void senddacs( void)
 
     for (i = j = 0; i < BLKSIZE; i++, j += IOCHANS)
     {
-        int ch1 = floor(0.5 + 32768.*soundout[i]);
+        poodle[j] = espd_soundout_to_short(soundout[i]);
+        soundout[i] = 0.f;
 #if IOCHANS > 1
-        int ch2 = floor(0.5 + 32768.*soundout[i+BLKSIZE]);
-#endif
-        if (ch1 > 32767)
-            ch1 = 32767;
-        else if (ch1 < -32768)
-            ch1 = -32768;
-        ch1 &= 0xffff;
-#if IOCHANS > 1
-        if (ch2 > 32767)
-            ch2 = 32767;
-        else if (ch2 < -32768)
-            ch2 = -32768;
-        ch2 &= 0xffff;
-#endif
-        poodle[j] = ch1;
-        soundout[i] = 0;
-#if IOCHANS > 1
-        poodle[j+1] = ch2;
-        soundout[i+BLKSIZE] = 0;
+        poodle[j + 1] = espd_soundout_to_short(soundout[i + BLKSIZE]);
+        soundout[i + BLKSIZE] = 0.f;
 #endif
     }
 #ifdef OBSOLETEAPI
