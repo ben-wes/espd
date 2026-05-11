@@ -1304,6 +1304,15 @@ static inline short espd_soundout_to_short(float x)
     return y;
 }
 
+static inline float espd_soundin_from_u16(uint32_t u)
+{
+    const float inv32768 = 1.f / 32768.f;
+    float x = (float)(u & 0xffffu) * inv32768;
+    if (u & 0x8000u)
+        x -= 2.f;
+    return x;
+}
+
 void senddacs( void)
 {
     int i, j, ret;
@@ -1359,14 +1368,10 @@ void senddacs( void)
     {
         uint32_t ch1 = poodle[j] & 0xffff;
 #if IOCHANS > 1
-        uint32_t ch2 = poodle[j+1] & 0xffff;
-        if (ch2 & 0x8000)
-            soundin[i+BLKSIZE] = (ch2*(1./32768.)) - 2;
-        else soundin[i+BLKSIZE] = (ch2*(1./32768.));
+        uint32_t ch2 = poodle[j + 1] & 0xffff;
+        soundin[i + BLKSIZE] = espd_soundin_from_u16(ch2);
 #endif
-        if (ch1 & 0x8000)
-            soundin[i] = (ch1*(1./32768.)) - 2;
-        else soundin[i] = (ch1*(1./32768.));
+        soundin[i] = espd_soundin_from_u16(ch1);
     }
 #endif /* USEADC */
 }
@@ -1595,15 +1600,18 @@ void pdmain_print( const char *s)
 
 void trymem(int foo);
 
+/* [cputime]: summed wall µs per audio loop for polls + pdmain_tick + net_alive
+ * only (senddacs excluded — esp_timer is not CPU time and I2S often blocks). */
 static unsigned int cputime;
-void espd_cputime_reset( void)
+
+void espd_cputime_reset(void)
 {
     cputime = 0;
 }
 
-unsigned int espd_cputime_get( void)
+unsigned int espd_cputime_get(void)
 {
-    return (cputime);
+    return cputime;
 }
 
 void app_main(void)
@@ -1810,13 +1818,13 @@ void app_main(void)
 #endif
 
         pdmain_tick();
-        cputime += ((uint64_t)esp_timer_get_time() - t0);
 #ifdef PD_USE_WIFI
 #if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
         if (espd_wifi_net_enabled)
             net_alive();
 #endif
 #endif
+        cputime += (unsigned int)((uint64_t)esp_timer_get_time() - t0);
         senddacs();
     }
 }

@@ -211,7 +211,7 @@ static t_int *espdsp_tabread4_perform(t_int *w)
      int n = (int)(w[5]);
      int maxindex, i;
      t_word *buf, *wp;
-     const t_sample one_over_six = 1./6.;
+     const t_sample one_over_six = 1.f / 6.f;
 
      if (!espdsp_dsparray_get_array(d, &maxindex, &buf, 0))
          goto zero;
@@ -239,9 +239,9 @@ static t_int *espdsp_tabread4_perform(t_int *w)
          d = wp[2].w_float;
          cminusb = c-b;
          *out++ = b + frac * (
-             cminusb - one_over_six * ((t_sample)1.-frac) * (
-                 (d - a - (t_sample)3.0 * cminusb) * frac +
-                 (d + a*(t_sample)2.0 - b*(t_sample)3.0)
+             cminusb - one_over_six * (1.f - frac) * (
+                 (d - a - 3.f * cminusb) * frac +
+                 (d + 2.f * a - 3.f * b)
              )
          );
      }
@@ -289,6 +289,8 @@ static void espdsp_tabread4_free(t_espdsp_tabread4 *x)
 #define ESPDSP_COS_POLY_A1 (4.f * (3.14159265f / 2.f))
 #define ESPDSP_COS_POLY_A3 (64.f * (2.5f - 3.14159265f))
 #define ESPDSP_COS_POLY_A5 (1024.f * ((3.14159265f / 2.f) - 1.5f))
+/* 1/(2π) in float only (avoid double promotion from M_PI / 1.0 literals). */
+#define ESPDSP_INV_TWOPI_F (1.f / 6.2831855f)
 
 static inline float espdsp_poly_wrap_cycles(float f)
 {
@@ -314,13 +316,13 @@ static inline float espdsp_cos_poly_eval_wrapped(float f)
 
 static inline float espdsp_cos_poly_radians(float theta)
 {
-    float cyc = theta * (float)(1.0 / (2.0 * M_PI));
+    float cyc = theta * ESPDSP_INV_TWOPI_F;
     return espdsp_cos_poly_eval_wrapped(espdsp_poly_wrap_cycles(cyc));
 }
 
 static inline float espdsp_sin_poly_radians(float theta)
 {
-    float cyc = theta * (float)(1.0 / (2.0 * M_PI)) - 0.25f;
+    float cyc = theta * ESPDSP_INV_TWOPI_F - 0.25f;
     return espdsp_cos_poly_eval_wrapped(espdsp_poly_wrap_cycles(cyc));
 }
 

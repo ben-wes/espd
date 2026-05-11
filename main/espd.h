@@ -281,7 +281,10 @@ extern int espd_wifi_net_enabled;
 int espd_net_send_ready(void);
 #endif
 
-void espd_cputime_reset( void);
-unsigned int espd_cputime_get( void);
+/** Zero [cputime] accumulated counter. */
+void espd_cputime_reset(void);
+/** Summed wall microseconds per loop (polls + pdmain_tick + net_alive; not
+ *  senddacs). Not true CPU time — cheap esp_timer path; see espd.c. */
+unsigned int espd_cputime_get(void);
 
 #endif /* ESPD_H */

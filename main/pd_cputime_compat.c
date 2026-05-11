@@ -10,22 +10,25 @@ typedef struct _cputime
 
 static void cputime_bang(t_cputime *x)
 {
+    (void)x;
     espd_cputime_reset();
 }
 
+/* Same inlet layout as vanilla [cputime]. bang2 → 0.001 * espd_cputime_get()
+ * (ms of summed wall µs per loop, excluding senddacs — not OS CPU like desktop). */
 static void cputime_bang2(t_cputime *x)
 {
-    outlet_float(x->x_obj.ob_outlet, 0.001 * espd_cputime_get());
+    (void)x;
+    outlet_float(x->x_obj.ob_outlet, 0.001f * (t_float)espd_cputime_get());
 }
 
 static void *cputime_new(void)
 {
     t_cputime *x = (t_cputime *)pd_new(cputime_class);
     outlet_new(&x->x_obj, gensym("float"));
-
     inlet_new(&x->x_obj, &x->x_obj.ob_pd, gensym("bang"), gensym("bang2"));
     cputime_bang(x);
-    return (x);
+    return x;
 }
 
 void espd_cputime_setup(void)

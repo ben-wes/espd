@@ -48,8 +48,8 @@ CONFIG_COMPILER_OPTIMIZATION_PERF=y
 # CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT is not set
 CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y
 CONFIG_COMPILER_OPTIMIZATION_ASSERTION_LEVEL=0
-# Leave runtime stats off (saves context-switch overhead). espd/check/cpu was removed;
-# use [cputime] in patches for Pd-side block time. Re-enable here if you use SystemView etc.
+# Leave runtime stats off (saves context-switch overhead). [cputime] uses a
+# lightweight wall-time sum (see espd.c); enabling stats here would cost perf.
 # CONFIG_FREERTOS_USE_TRACE_FACILITY is not set
 # CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS is not set
 CONFIG_FREERTOS_IN_IRAM=y
