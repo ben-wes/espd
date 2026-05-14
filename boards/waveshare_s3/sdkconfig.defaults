@@ -25,6 +25,10 @@ CONFIG_ESP32S3_REV_MIN_2=y
 CONFIG_ESP32S3_REV_MIN_FULL=2
 CONFIG_ESP_REV_MIN_FULL=2
 
+# Task Watchdog: off so long Pd DSP bursts / blocked main do not reset the chip
+# (idle-task monitoring is what usually trips TWDT on audio-heavy builds).
+# CONFIG_ESP_TASK_WDT_EN is not set
+
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536
 # readsf~/writesf~ use pthread worker threads; give them enough stack to avoid
 # heap/stack corruption under heavier file I/O patches.
