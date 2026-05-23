@@ -120,35 +120,18 @@ void pdmain_init( void)
     espd_main_pd_loaded_from_store = 0;
     espd_main_pd_loaded_dir = NULL;
 
-#ifdef PD_USE_SDCARD
-    /* SD first (expects card mounted at boot on boards that support it). */
-    if (espd_sdcard_main_pd_exists()) {
-        espd_add_patch_dir_to_searchpath(ESPD_SDCARD_MOUNT);
-        espd_print_pd_paths("pd");
-        glob_evalfile(0, gensym("main.pd"), gensym(ESPD_SDCARD_MOUNT));
-        espd_main_pd_loaded_from_store = 1;
-        espd_main_pd_loaded_dir = ESPD_SDCARD_MOUNT;
-    } else
-#endif
-#ifdef PD_USE_USB_MSC
-    /* USB MSC storage second (fallback after SD). */
-    if (espd_storage_main_pd_exists()) {
-        espd_add_patch_dir_to_searchpath(ESPD_STORAGE_MOUNT);
-        espd_print_pd_paths("pd");
-        glob_evalfile(0, gensym("main.pd"), gensym(ESPD_STORAGE_MOUNT));
-        espd_main_pd_loaded_from_store = 1;
-        espd_main_pd_loaded_dir = ESPD_STORAGE_MOUNT;
-    } else
-#endif
-    if (espd_patch_store_main_pd_exists()) {
-        espd_add_patch_dir_to_searchpath(ESPD_PATCH_STORE_MOUNT);
-        espd_print_pd_paths("pd");
-        glob_evalfile(0, gensym("main.pd"), gensym(ESPD_PATCH_STORE_MOUNT));
-        espd_main_pd_loaded_from_store = 1;
-        espd_main_pd_loaded_dir = ESPD_PATCH_STORE_MOUNT;
+    {
+        const char *dir = espd_storage_main_pd_mount_dir();
+        if (dir) {
+            espd_add_patch_dir_to_searchpath(dir);
+            espd_print_pd_paths("pd");
+            glob_evalfile(0, gensym("main.pd"), gensym(dir));
+            espd_main_pd_loaded_from_store = 1;
+            espd_main_pd_loaded_dir = dir;
+        }
     }
 #ifdef PD_INCLUDEPATCH
-    else {
+    if (!espd_main_pd_loaded_from_store) {
         t_binbuf *b = binbuf_new();
         glob_setfilename(0, gensym("main-patch"), gensym("."));
         binbuf_text(b, patchfile, strlen(patchfile));

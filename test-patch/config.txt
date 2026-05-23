@@ -1,0 +1,4 @@
+wifi_ssid=toppless
+wifi_password=ug60topp
+# optional:
+# wifi_enable=1

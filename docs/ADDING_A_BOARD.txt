@@ -134,9 +134,21 @@ Pd I/O surface (core — not BSP-specific)
 | **espd/aout/N**  | LEDC PWM GPIOs                 | **ESPD_AOUT_NUM_CHANNELS**  |
 | **espd/touch/N** | ESP32 touch sensor GPIOs       | **ESPD_PD_USE_TOUCH0**      |
 
-Analog and touch pins are usually listed in **/sdcard/config.txt** on the SD
-card (see **main/espd.h**). Kconfig defaults apply when **config.txt** does not
-set **analog_pins=** or **touch_pins=**.
+Local storage (main.pd, config.txt)
+-----------------------------------
+
+**espd_storage_init()** runs at boot:
+
+1. Mount SD card (when **ESPD_PD_USE_SDCARD** and BSP supports it)
+2. Mount SPIFFS at **/espd_pd** (internal flash)
+3. Pick the first existing **config.txt**: SD → SPIFFS → USB MSC
+4. Pick the first existing **main.pd** with the same priority
+
+Without an SD card, **config.txt** and **main.pd** on SPIFFS are used automatically.
+See **main/espd_storage.c**.
+
+Analog and touch pins are usually listed in **config.txt**. Kconfig defaults apply
+when **config.txt** does not set **analog_pins=** or **touch_pins=**.
 
 Capacitive touch (ESP32 touch sensor)
 -------------------------------------

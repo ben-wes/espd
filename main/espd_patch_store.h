@@ -1,17 +1,7 @@
 /*
- * Optional SPIFFS partition (label from espd.h / Kconfig) holding main.pd.
+ * Deprecated — use espd_storage.h.
  */
-
 #pragma once
+#include "espd_storage.h"
 
-#include <stdbool.h>
-
-void espd_patch_store_init(void);
-bool espd_patch_store_is_mounted(void);
-bool espd_patch_store_main_pd_exists(void);
-
-/** True if ESPD_SDCARD_MAIN_PD_PATH exists (SD must be mounted first). */
-bool espd_sdcard_main_pd_exists(void);
-
-/** True if ESPD_STORAGE_MAIN_PD_PATH exists (USB MSC must be mounted first). */
-bool espd_storage_main_pd_exists(void);
+#define espd_patch_store_init espd_storage_init

@@ -5,7 +5,7 @@ set(MAIN_SRCS
     "pd_lseek64_compat.c"
     "pd_posix_file_compat.c"
     "pd_pdcontrol_compat.c"
-    "espd_patch_store.c"
+    "espd_storage.c"
     "pdmain.c"
     "espdsp_osc_override.c"
     "pd_cputime_compat.c"

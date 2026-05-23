@@ -148,7 +148,9 @@ after boot **unless** a file **main.pd** exists on the SPIFFS patch store.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - **partitions_pd.csv** adds a **512K** SPIFFS partition labeled **pdstore**,
-  mounted at **`/espd_pd`** at boot (see **main/espd_patch_store.c**).
+  mounted at **`/espd_pd`** at boot (see **main/espd_storage.c**). SD card
+  **`/sdcard`** is tried first for **main.pd** and **config.txt**; SPIFFS is the
+  fallback when the SD card is missing or has no files.
 - If **`/espd_pd/main.pd`** is present, it is opened with Pd’s normal file
   loader (**glob_evalfile**); the embedded **testpatch.c** patch is **not** run.
 - Populate SPIFFS with Espressif’s **SPIFFS image generation** tools (see the

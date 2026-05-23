@@ -208,9 +208,11 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #ifndef ESPD_SDCARD_MOUNT
 #define ESPD_SDCARD_MOUNT "/sdcard"
 #endif
-/** If present on the mounted SD card, loaded before USB MSC/SPIFFS (see pdmain_init). */
+/** If present on the mounted SD card, loaded before SPIFFS (see pdmain_init). */
 #define ESPD_SDCARD_MAIN_PD_PATH ESPD_SDCARD_MOUNT "/main.pd"
 #define ESPD_SDCARD_CONFIG_PATH ESPD_SDCARD_MOUNT "/config.txt"
+/** Internal flash (SPIFFS) fallback when SD has no main.pd / config.txt. */
+#define ESPD_PATCH_STORE_CONFIG_PATH ESPD_PATCH_STORE_MOUNT "/config.txt"
 #ifdef PD_USE_USB_MSC
 /** VFS path where USB MSC storage is mounted. */
 #ifndef ESPD_STORAGE_MOUNT
@@ -220,20 +222,19 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #define ESPD_STORAGE_MAIN_PD_PATH ESPD_STORAGE_MOUNT "/main.pd"
 #define ESPD_STORAGE_CONFIG_PATH ESPD_STORAGE_MOUNT "/config.txt"
 #endif
-/* config.txt (SD) optional keys (key=value, # comment):
- * WiFi (when PD_USE_SDCARD): STA starts only if this file exists on the mounted
- *   SD card and wifi_ssid= has a non-empty value (wifi_password optional).
- *   Missing file, empty ssid, or no wifi_ssid line → WiFi stays off (Kconfig
- *   SSID/password are not used as a fallback).
+/* config.txt optional keys (key=value, # comment). Search order: SD card,
+ * then SPIFFS at ESPD_PATCH_STORE_MOUNT, then USB MSC (if enabled).
+ * WiFi (when PD_USE_WIFI): STA starts only if config.txt exists and wifi_ssid=
+ *   has a non-empty value (wifi_password optional). Missing file → with
+ *   PD_USE_SDCARD, STA stays off; otherwise Kconfig/locale defaults apply.
  *   log_broadcast_port=9001
  *     >0 enables UDP broadcast of Pd print/error output to this port
  *     (when WiFi/net is active); 0 or missing keeps default log routing.
  *   wifi_ssid=myap
  *   wifi_password=secret
- * Analog (when PD_USE_SDCARD && PD_USE_ANALOG0): ADC / espd/ain starts only if
- *   analog_pins= lists at least one GPIO (ADC1-capable). Missing file, no
- *   analog_pins key, or analog_pins= with an empty list → analog stays off.
- *   Board headers do not imply runtime pins on SD; use config.txt.
+ * Analog (when PD_USE_ANALOG0): ADC / espd/ain starts only if analog_pins=
+ *   lists at least one GPIO (ADC1-capable). Missing file, no analog_pins key,
+ *   or analog_pins= with an empty list → analog stays off (Kconfig defaults).
  *   analog_pins=3,4,5,6,7 — GPIOs for espd/ain/0.. in order (max 8, ADC1 pins)
  *   analog_pins=      — empty list: do not start analog
  *   analog_task_period_ms=1 — producer wake interval in ms (1..500); lower =
@@ -243,7 +244,7 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
  *   analog_report_every_n_blocks=1 — audio thread forwards at most every N
  *       blocks; keep 1 for lowest latency to Pd when the producer has updates.
  * Touch (when PD_USE_TOUCH0): espd/touch/N from ESP32 touch sensor GPIOs.
- *   Enable in menuconfig (ESPD_PD_USE_TOUCH0). With SD card + config.txt:
+ *   Enable in menuconfig (ESPD_PD_USE_TOUCH0). From config.txt (SD or SPIFFS):
  *   touch_pins= lists touch-capable GPIOs (max 8). Empty list → touch off.
  *   touch_pins=4,5,6      — GPIOs for espd/touch/0.. in order (ESP32-S3: 1–14)
  *   touch_pins=           — empty list: do not start touch
@@ -254,7 +255,7 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 /* [pdcontrol] message "ip" → list of four float octets 0..255, or symbol "noip" when unavailable. */
 #define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"
 
-#include "espd_patch_store.h"
+#include "espd_storage.h"
 
 extern int espd_main_pd_loaded_from_store;
 /** If a local main.pd was opened, which directory it was loaded from (e.g. /sdcard or /espd_pd). */

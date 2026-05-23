@@ -190,11 +190,18 @@ static void pd_aout_init(void)
 }
 #endif
 
+#if defined(PD_USE_SDCARD) || defined(PD_USE_USB_MSC) || defined(PD_USE_WIFI) || \
+    defined(PD_USE_ANALOG0) || defined(PD_USE_TOUCH0)
+#include <stdio.h>
+#endif
 #if defined(PD_USE_SDCARD) || defined(PD_USE_USB_MSC)
 #include <dirent.h>
 #include <errno.h>
-#include <stdio.h>
 #include <sys/stat.h>
+#endif
+#include "espd_storage.h"
+
+#if defined(PD_USE_WIFI) || defined(PD_USE_ANALOG0) || defined(PD_USE_TOUCH0)
 static char *espd_cfg_trim(char *s)
 {
     char *e;
@@ -224,43 +231,50 @@ static void espd_wifi_config_defaults(void)
     espd_wifi_force_enable = 0;
 }
 
-#if defined(PD_USE_SDCARD)
 static int s_wifi_credentials_in_config_txt;
-static const char *espd_preferred_config_path(void)
-{
-    struct stat st;
-#ifdef PD_USE_SDCARD
-    if (stat(ESPD_SDCARD_CONFIG_PATH, &st) == 0 && S_ISREG(st.st_mode))
-        return ESPD_SDCARD_CONFIG_PATH;
-#endif
-#ifdef PD_USE_USB_MSC
-    if (stat(ESPD_STORAGE_CONFIG_PATH, &st) == 0 && S_ISREG(st.st_mode))
-        return ESPD_STORAGE_CONFIG_PATH;
-#endif
-    return ESPD_SDCARD_CONFIG_PATH;
-}
+
 static int espd_wifi_config_txt_allows_sta(void)
 {
+    if (!espd_storage_config_path()) {
+#ifdef PD_USE_SDCARD
+        return 0;
+#else
+        return 1;
+#endif
+    }
     return s_wifi_credentials_in_config_txt;
 }
 
-static void espd_wifi_try_load_sdcard_config(void)
+static void espd_wifi_try_load_config(void)
 {
-    const char *config_path = espd_preferred_config_path();
-    FILE *f = fopen(config_path, "r");
+    const char *config_path = espd_storage_config_path();
+    FILE *f;
     char line[256];
     int ssid_nonempty = 0;
     int saw_wifi_enable_key = 0;
     int wifi_enable_value = 0;
 
+    if (!config_path)
+    {
+        s_wifi_credentials_in_config_txt = 0;
+        espd_wifi_ssid[0] = '\0';
+        espd_wifi_password[0] = '\0';
+        espd_wifi_force_enable = 0;
+#ifdef PD_USE_SDCARD
+        ESP_LOGI(TAG, "wifi: no config.txt on SD or %s — STA disabled",
+            ESPD_PATCH_STORE_MOUNT);
+#endif
+        return;
+    }
+
+    f = fopen(config_path, "r");
     if (!f)
     {
         s_wifi_credentials_in_config_txt = 0;
         espd_wifi_ssid[0] = '\0';
         espd_wifi_password[0] = '\0';
         espd_wifi_force_enable = 0;
-        ESP_LOGI(TAG, "wifi: no %s — STA disabled (use wifi_ssid= / wifi_enable=1 to connect)",
-                 config_path);
+        ESP_LOGI(TAG, "wifi: cannot read %s — STA disabled", config_path);
         return;
     }
     while (fgets(line, sizeof(line), f))
@@ -315,21 +329,14 @@ static void espd_wifi_try_load_sdcard_config(void)
         espd_wifi_password[0] = '\0';
         espd_wifi_force_enable = 0;
         ESP_LOGI(TAG, "wifi: no STA keys in %s — not using Kconfig SSID",
-                 config_path);
+            config_path);
     }
     else if (ssid_nonempty && !saw_wifi_enable_key)
         espd_wifi_force_enable = 1;
     ESP_LOGI(TAG, "loaded WiFi config from %s (ssid=%s, force=%d, sta_ok=%d, log_port=%d)",
-             config_path, espd_wifi_ssid, espd_wifi_force_enable, espd_log_broadcast_port,
-             s_wifi_credentials_in_config_txt);
+        config_path, espd_wifi_ssid, espd_wifi_force_enable,
+        s_wifi_credentials_in_config_txt, espd_log_broadcast_port);
 }
-#else /* !PD_USE_SDCARD */
-static int espd_wifi_config_txt_allows_sta(void)
-{
-    return 1;
-}
-#endif
-
 #endif /* PD_USE_WIFI */
 
 #ifdef PD_USE_ANALOG0
@@ -344,22 +351,24 @@ static int pd_touch_task_period_ms = ESPD_TOUCH_TASK_PERIOD_MS;
 static int pd_touch_report_every_n_blocks = ESPD_TOUCH_REPORT_EVERY_N_BLOCKS;
 #endif
 
-#if defined(PD_USE_SDCARD) && defined(PD_USE_ANALOG0)
-/* Parsed from /sdcard/config.txt before pd_analog0_init (see espd.h). */
+#if defined(PD_USE_ANALOG0)
+/* Parsed from config.txt (SD or SPIFFS) before pd_analog0_init. */
 static int s_analog_cfg_disable;
 static int s_analog_cfg_have_pins;
 static int s_analog_cfg_n;
 static int s_analog_cfg_pins[8];
 
-static void espd_analog_load_sdcard_config(void)
+static void espd_analog_load_config(void)
 {
     FILE *f;
     char line[256];
-    const char *config_path = espd_preferred_config_path();
+    const char *config_path = espd_storage_config_path();
 
     s_analog_cfg_disable = 0;
     s_analog_cfg_have_pins = 0;
     s_analog_cfg_n = 0;
+    if (!config_path)
+        return;
     f = fopen(config_path, "r");
     if (!f)
         return;
@@ -441,20 +450,22 @@ static void espd_analog_load_sdcard_config(void)
 }
 #endif
 
-#if defined(PD_USE_SDCARD) && defined(PD_USE_TOUCH0)
-/* Parsed from /sdcard/config.txt before pd_touch0_init (see espd.h). */
+#if defined(PD_USE_TOUCH0)
+/* Parsed from config.txt (SD or SPIFFS) before pd_touch0_init. */
 static int s_touch_cfg_have_pins;
 static int s_touch_cfg_n;
 static int s_touch_cfg_pins[8];
 
-static void espd_touch_load_sdcard_config(void)
+static void espd_touch_load_config(void)
 {
     FILE *f;
     char line[256];
-    const char *config_path = espd_preferred_config_path();
+    const char *config_path = espd_storage_config_path();
 
     s_touch_cfg_have_pins = 0;
     s_touch_cfg_n = 0;
+    if (!config_path)
+        return;
     f = fopen(config_path, "r");
     if (!f)
         return;
@@ -639,7 +650,7 @@ static void pd_analog0_init(void)
     int i;
     int enabled = 0;
     int nchan;
-#if defined(PD_USE_SDCARD) && defined(PD_USE_ANALOG0)
+#if defined(PD_USE_ANALOG0)
     if (s_analog_cfg_disable) {
         ESP_LOGI(TAG, "analog: not started (analog_enable=0 in config.txt)");
         return;
@@ -891,7 +902,7 @@ static void pd_touch0_init(void)
     int i;
     int nchan = ESPD_TOUCH_NUM_CHANNELS;
     int enabled = 0;
-#if defined(PD_USE_SDCARD) && defined(PD_USE_TOUCH0)
+#if defined(PD_USE_TOUCH0)
     if (s_touch_cfg_have_pins) {
         if (s_touch_cfg_n <= 0) {
             ESP_LOGI(TAG, "touch: not started (touch_pins= empty in config.txt)");
@@ -910,7 +921,7 @@ static void pd_touch0_init(void)
         nchan = 0;
     if (nchan > ESPD_TOUCH_MAX_CHANNELS)
         nchan = ESPD_TOUCH_MAX_CHANNELS;
-#if defined(PD_USE_SDCARD) && defined(PD_USE_TOUCH0)
+#if defined(PD_USE_TOUCH0)
     if (nchan == 0 && !s_touch_cfg_have_pins)
 #else
     if (nchan == 0)
@@ -1460,7 +1471,6 @@ void app_main(void)
     heap_caps_malloc_extmem_enable(4096);
 
     espd_nvs_flash_init();
-    espd_patch_store_init();
 #ifdef PD_USE_WIFI
     espd_wifi_config_defaults();
 #endif
@@ -1493,29 +1503,22 @@ void app_main(void)
 #endif
 
     espd_io_early_init();
+    espd_storage_init();
 
-#ifdef PD_USE_SDCARD
-    {
-        esp_err_t e = espd_io_sdcard_mount();
-        if (e != ESP_OK && e != ESP_ERR_NOT_SUPPORTED)
-            ESP_LOGW(TAG, "SD card not mounted at boot: %s", esp_err_to_name(e));
-    }
+#ifdef PD_USE_ANALOG0
+    espd_analog_load_config();
 #endif
-
-#if defined(PD_USE_SDCARD) && defined(PD_USE_ANALOG0)
-    espd_analog_load_sdcard_config();
+#ifdef PD_USE_TOUCH0
+    espd_touch_load_config();
 #endif
-#if defined(PD_USE_SDCARD) && defined(PD_USE_TOUCH0)
-    espd_touch_load_sdcard_config();
-#endif
-#if defined(PD_USE_WIFI) && defined(PD_USE_SDCARD)
-    espd_wifi_try_load_sdcard_config();
+#ifdef PD_USE_WIFI
+    espd_wifi_try_load_config();
 #endif
 #ifdef PD_USE_WIFI
     if (!espd_wifi_config_txt_allows_sta())
     {
         espd_wifi_net_enabled = 0;
-        ESP_LOGI(TAG, "wifi: STA disabled (no wifi_ssid / wifi_enable=1 in " ESPD_SDCARD_CONFIG_PATH ")");
+        ESP_LOGI(TAG, "wifi: STA disabled (no wifi_ssid / wifi_enable=1 in config.txt)");
     }
 #endif
 
@@ -1523,25 +1526,13 @@ void app_main(void)
 #if !ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     if (espd_wifi_net_enabled)
     {
-        int local_main_present = 0;
-#ifdef PD_USE_USB_MSC
-        if (espd_storage_main_pd_exists())
-            local_main_present = 1;
-#endif
-#ifdef PD_USE_SDCARD
-        if (espd_sdcard_main_pd_exists())
-            local_main_present = 1;
-#endif
-        if (!local_main_present && espd_patch_store_main_pd_exists())
-            local_main_present = 1;
-        if (local_main_present && ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK &&
+        if (espd_storage_local_main_pd_present() && ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK &&
             !espd_wifi_force_enable) {
             espd_wifi_net_enabled = 0;
-            /* CONFIG_LOG_DEFAULT_LEVEL is often WARN on waveshare_s3; printf matches sdcard. */
-            printf("wifi: skipped (main.pd on disk; set wifi_enable=1 or wifi_ssid in"
-                   " " ESPD_SDCARD_CONFIG_PATH " to force STA)\n");
+            printf("wifi: skipped (main.pd on local storage; set wifi_enable=1 or"
+                   " wifi_ssid in config.txt to force STA)\n");
             ESP_LOGI(TAG,
-                     "main.pd detected on disk — skipping WiFi before Pd init");
+                "main.pd detected on local storage — skipping WiFi before Pd init");
         } else {
             espd_wifi_net_enabled = 1;
             ESP_LOGI(TAG, "[ 1a ] start network (early for Pd net objects)");

@@ -1,0 +1,27 @@
+/*
+ * Local patch/config storage: SD card first, internal SPIFFS second, USB MSC third.
+ */
+
+#pragma once
+
+#include <stdbool.h>
+
+/** Mount SD (if enabled), then SPIFFS patch store; resolve config.txt / main.pd. */
+void espd_storage_init(void);
+
+/** Path to the first existing config.txt, or NULL (SD → SPIFFS → USB MSC). */
+const char *espd_storage_config_path(void);
+
+/** Mount dir containing main.pd (e.g. /sdcard), or NULL if not found. */
+const char *espd_storage_main_pd_mount_dir(void);
+
+/** True when main.pd exists on any local storage backend. */
+bool espd_storage_local_main_pd_present(void);
+
+bool espd_storage_spiffs_mounted(void);
+
+/* Legacy helpers (prefer espd_storage_* above). */
+bool espd_patch_store_is_mounted(void);
+bool espd_patch_store_main_pd_exists(void);
+bool espd_sdcard_main_pd_exists(void);
+bool espd_storage_main_pd_exists(void);
