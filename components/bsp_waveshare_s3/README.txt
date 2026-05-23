@@ -11,7 +11,7 @@ ES8311 (not the full Espressif ADF). I2C 10/11, I2S MCLK/BCLK/LRCK/DOUT/DIN
 Build (from repo root)
 ------------------------------------------------------------
 
-Set up the toolchain the same way as in the top-level **README.txt** (Espressif
+Set up the toolchain the same way as in the top-level **README.md** (Espressif
 getting-started guide): point **IDF_PATH** (and optionally **IDF_TOOLS_PATH**)
 at your ESP-IDF tree, then source **export.sh** so **idf.py** is on **PATH**.
 If you use **ESP-ADF**, its bundled IDF works too, for example:
