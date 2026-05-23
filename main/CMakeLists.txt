@@ -1,5 +1,7 @@
 set(MAIN_SRCS
     "espd.c"
+    "espd_board.c"
+    "espd_io.c"
     "pd_lseek64_compat.c"
     "pd_posix_file_compat.c"
     "pd_pdcontrol_compat.c"
@@ -96,6 +98,7 @@ set(MAIN_REQUIRES
     esp_codec_dev
     lwip
     pthread
+    espd_integration
 )
 
 idf_component_register(
@@ -104,19 +107,32 @@ idf_component_register(
     REQUIRES ${MAIN_REQUIRES}
 )
 
-if(CONFIG_ESPD_BOARD_WAVESHARE_S3 STREQUAL "y")
-    target_sources(${COMPONENT_LIB} PRIVATE
-        "espd_audio_waveshare.c"
-        "boards/waveshare_s3/waveshare_s3_buttons.c"
-        "boards/waveshare_s3/waveshare_s3_leds.c"
-        "boards/waveshare_s3/waveshare_s3_sdcard.c")
-    idf_component_get_property(_bsp_lib bsp_waveshare_s3 COMPONENT_LIB)
-    target_link_libraries(${COMPONENT_LIB} PUBLIC ${_bsp_lib})
-    idf_component_get_property(_fatfs_lib fatfs COMPONENT_LIB)
-    idf_component_get_property(_sdmmc_lib esp_driver_sdmmc COMPONENT_LIB)
-    target_link_libraries(${COMPONENT_LIB} PUBLIC ${_fatfs_lib} ${_sdmmc_lib})
-elseif(CONFIG_ESPD_BOARD_GENERIC STREQUAL "y")
+if(CONFIG_ESPD_AUDIO_BACKEND_BSP_CODEC STREQUAL "y")
+    target_sources(${COMPONENT_LIB} PRIVATE "espd_audio_codec.c")
+elseif(CONFIG_ESPD_AUDIO_BACKEND_GENERIC_I2S STREQUAL "y")
     target_sources(${COMPONENT_LIB} PRIVATE "espd_audio_generic.c")
+endif()
+
+# Link BSP when menuconfig sets CONFIG_ESPD_BSP_COMPONENT_NAME, or when
+# -DESPD_BSP_COMPONENT=... overrides at configure time.
+set(_espd_bsp_component "")
+if(ESPD_BSP_COMPONENT)
+    set(_espd_bsp_component ${ESPD_BSP_COMPONENT})
+elseif(CONFIG_ESPD_BSP_COMPONENT_NAME AND NOT CONFIG_ESPD_BSP_COMPONENT_NAME STREQUAL "")
+    set(_espd_bsp_component ${CONFIG_ESPD_BSP_COMPONENT_NAME})
+elseif(EXISTS "${CMAKE_SOURCE_DIR}/sdkconfig")
+    file(READ "${CMAKE_SOURCE_DIR}/sdkconfig" _espd_sdkconfig_board)
+    if(_espd_sdkconfig_board MATCHES "CONFIG_ESPD_BSP_COMPONENT_NAME=\"([^\"]*)\"")
+        set(_espd_bsp_component ${CMAKE_MATCH_1})
+    endif()
+endif()
+if(_espd_bsp_component)
+    idf_component_get_property(_espd_bsp_lib ${_espd_bsp_component} COMPONENT_LIB)
+    if(_espd_bsp_lib)
+        target_link_libraries(${COMPONENT_LIB} PUBLIC ${_espd_bsp_lib})
+    else()
+        message(WARNING "BSP component '${_espd_bsp_component}' not found")
+    endif()
 endif()
 
 idf_component_get_property(_espd_main_lib ${COMPONENT_NAME} COMPONENT_LIB)

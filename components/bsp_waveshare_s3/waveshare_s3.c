@@ -480,9 +480,13 @@ esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void)
     return s_codec_dac;
 }
 
-#if CONFIG_BSP_WAVESHARE_ENABLE_MIC
+#if BSP_CAPS_AUDIO_MIC
 esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void)
 {
+#if CONFIG_BSP_WAVESHARE_ENABLE_MIC
     return s_codec_mic;
+#else
+    return NULL;
+#endif
 }
 #endif

@@ -1,4 +1,9 @@
-# Default board and project-wide Kconfig defaults.
-# Waveshare-specific IDF tuning is in components/bsp_waveshare_s3/sdkconfig.defaults.
+# Generic ESPD defaults. After menuconfig selects a BSP board,
+# components/<bsp>/sdkconfig.defaults is merged on the next configure.
 
-CONFIG_ESPD_BOARD_WAVESHARE_S3=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_pd.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_pd.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y

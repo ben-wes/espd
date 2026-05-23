@@ -19,15 +19,16 @@ If you use **ESP-ADF**, its bundled IDF works too, for example:
   export ADF_PATH=/path/to/esp-adf
   . "$ADF_PATH/esp-idf/export.sh"
 
-Then:
+Then (Waveshare — this repository's reference board):
 
   idf.py set-target esp32s3
   idf.py menuconfig    # ESPD Configuration → Target board → Waveshare ESP32-S3-AUDIO
-  idf.py fullclean
   idf.py build
 
-The default **sdkconfig.defaults** already selects the Waveshare board; you only
-need menuconfig when switching boards or tuning options.
+**CONFIG_ESPD_BSP_COMPONENT_NAME** in **sdkconfig** selects the linked BSP; no
+extra **-D** flags are required.
+
+Generic I2S is the menuconfig default when no Waveshare board is selected.
 
 **idf.py build** alone is enough to verify the firmware compiles; you do not
 need to flash.
@@ -44,10 +45,10 @@ This project pins a specific Pd submodule commit for reproducible firmware
 builds.
 
 The top-level CMakeLists.txt merges **sdkconfig.defaults** and
-**components/bsp_waveshare_s3/sdkconfig.defaults** (delete **build/** and
-**sdkconfig** if Kconfig changes seem ignored). For a generic I2S board, set
-**ESPD Configuration → Target board → Generic I2S** in menuconfig and copy
-**sdkconfig.wroom** / **sdkconfig.lyrat** as needed for other legacy hardware.
+**main/boards/generic/sdkconfig.defaults** by default. After you select this
+board in menuconfig, **components/bsp_waveshare_s3/sdkconfig.defaults** is merged
+on the next configure (PSRAM, stacks, partition profile). Delete **sdkconfig**
+when switching boards.
 
 If **idf.py build** fails at the end with **app partition is too small**, your
 **sdkconfig** was probably created before this board picked **partitions_pd.csv**
@@ -224,22 +225,23 @@ are weaker: e.g. treat **USB bus reset / enumeration** (TinyUSB “mounted”) a
 Software architecture
 ---------------------
 
-Board selection and ESPD features are configured in **idf.py menuconfig → ESPD
-Configuration**. Hardware bring-up follows the esp-bsp pattern:
+**main/Kconfig.projbuild** is board-agnostic: **Generic I2S** is the default
+choice. The Waveshare option is registered by **components/bsp_waveshare_s3/Kconfig**
+(choice member + **imply** profile + hardware menu).
 
-- **components/bsp_waveshare_s3/** — I2C, TCA9555 I/O expander (USB mux, PA,
-  SD CS), I2S, ES8311 DAC, ES7210 mic. Public API: **bsp/waveshare_s3.h**.
-- **main/espd_audio_waveshare.c** — board-neutral Pd audio path (**dac~** /
-  **adc~**) calling the BSP codec layer.
-- **main/boards/waveshare_s3/** — WS2812 LEDs, TCA9555 buttons, SD mount (ESPD
-  glue; to be folded into a generic I/O registry in a later step).
-- **partitions_pd.csv** — factory app **1536K**, **pdstore** SPIFFS 512K,
-  **storage** FAT ~14M.
+Select **ESPD Configuration → Target board → Waveshare ESP32-S3-AUDIO** in
+menuconfig. **CONFIG_ESPD_BSP_COMPONENT_NAME** links the BSP; **sdkconfig.defaults**
+from this component merges on the next configure.
 
-**components/bsp_waveshare_s3/sdkconfig.defaults** merges with the project
-defaults (octal PSRAM, ES8311/ES7210 codecs, performance profile). After
-changing Kconfig or partition layout, delete **sdkconfig** and **build/** once,
-then **idf.py build** (or **fullclean build**).
+- **components/bsp_waveshare_s3/** — I2C, TCA9555, I2S, ES8311/ES7210, LED,
+  buttons, SD card (upstream-safe **bsp_*** only).
+- **components/espd_integration/** — optional **bsp_*** contract + weak stubs.
+- **main/espd_board.c** — probes linked **bsp_*** drivers (no board names).
+- **main/espd_io.c** — generic Pd **espd/din** / **espd/led** bindings.
+- **main/espd_audio_codec.c** — generic codec backend for **dac~** / **adc~**.
+- **main/boards/generic/sdkconfig.defaults** — profile when Generic is selected.
+
+After switching boards, delete **sdkconfig** and run **idf.py build** again.
 
 Implemented today (audio + expander)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

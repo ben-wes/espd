@@ -30,7 +30,8 @@ jobs:
           target: esp32s3
           command: >-
             idf.py set-target esp32s3 &&
-            idf.py fullclean build
+            printf '%s\n' 'CONFIG_ESPD_BOARD_WAVESHARE_S3=y' 'CONFIG_ESPD_BSP_COMPONENT_NAME="bsp_waveshare_s3"' >> sdkconfig &&
+            idf.py build
 
       - name: Upload firmware as action artifact
         uses: actions/upload-artifact@v4

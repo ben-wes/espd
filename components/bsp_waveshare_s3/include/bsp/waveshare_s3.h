@@ -62,6 +62,17 @@ extern "C" {
 #define BSP_IO_EXPANDER_I2C_ADDR       0x20
 #define BSP_IO_EXPANDER_I2C_ADDR_ALT   0x22
 
+/** On-board push buttons on TCA9555 port1 (active low). */
+#define BSP_BUTTON_COUNT               3
+#define BSP_BUTTON0_PORT1_BIT          1  /* EXIO9 */
+#define BSP_BUTTON1_PORT1_BIT          2  /* EXIO10 */
+#define BSP_BUTTON2_PORT1_BIT          3  /* EXIO11 */
+
+/** WS2812 boot indicator color (RGB 0..255). */
+#define BSP_LED_BOOT_R                 0
+#define BSP_LED_BOOT_G                 0
+#define BSP_LED_BOOT_B                 0
+
 /** EXIO7 level routing Type-C D+/D- to SoC USB (GPIO19/20). */
 #ifndef CONFIG_BSP_WAVESHARE_EXIO7_USB_ROUTE_LEVEL
 #define CONFIG_BSP_WAVESHARE_EXIO7_USB_ROUTE_LEVEL 1
@@ -120,8 +131,8 @@ esp_err_t bsp_audio_init(void);
 /** Speaker codec handle. NULL before bsp_audio_init(). */
 esp_codec_dev_handle_t bsp_audio_codec_speaker_init(void);
 
-#if CONFIG_BSP_WAVESHARE_ENABLE_MIC
-/** Microphone codec handle. NULL if capture unavailable. */
+#if BSP_CAPS_AUDIO_MIC
+/** Microphone codec handle. NULL if capture unavailable or disabled in Kconfig. */
 esp_codec_dev_handle_t bsp_audio_codec_microphone_init(void);
 #endif
 

@@ -1,11 +1,16 @@
 /*
- * Waveshare board audio backend (bsp_waveshare_s3).
+ * BSP codec audio backend for Pd dac~ / adc~.
+ *
+ * Requires a BSP that defines BSP_CAPS_AUDIO and the esp-bsp-style audio API
+ * (bsp_audio_init, bsp_audio_codec_speaker_init, …). Include path comes from
+ * bsp/config.h, which each BSP package provides in the project.
  */
 
 #include "espd_audio.h"
 #include "espd_config.h"
 
-#include "bsp/waveshare_s3.h"
+#include "bsp/bsp_audio.h"
+
 #include "esp_check.h"
 #include "esp_codec_dev.h"
 #include "esp_log.h"

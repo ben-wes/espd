@@ -9,6 +9,7 @@
 
 #include "espd.h"
 #include "espd_audio.h"
+#include "espd_io.h"
 #include "../pd/src/m_pd.h"
 #include <string.h>
 #include <math.h>
@@ -29,12 +30,6 @@
 #include "esp_pthread.h"
 #include "esp_task_wdt.h"
 #include "esp_heap_caps.h"
-#if CONFIG_ESPD_BOARD_WAVESHARE_S3
-#include "boards/waveshare_s3/espd_board.h"
-#include "boards/waveshare_s3/waveshare_s3_buttons.h"
-#include "boards/waveshare_s3/waveshare_s3_leds.h"
-#include "boards/waveshare_s3/waveshare_s3_sdcard.h"
-#endif
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "esp_timer.h"
@@ -194,131 +189,6 @@ static void pd_aout_init(void)
     }
 }
 #endif
-
-#if CONFIG_ESPD_BOARD_WAVESHARE_S3
-/*
- * Pd glue for the WS2812 ring on the Waveshare S3 board.
- *
- *   [r espd/led]      list r g b           → fill all LEDs
- *                     list idx r g b       → set one LED
- *                     symbol "clear"/"off" → all off
- *   [r espd/led/N]    list r g b           → set LED N
- *
- * RGB values are 0..255 (clamped). After every message the strip is refreshed
- * so the change is visible immediately.
- */
-#define ESPD_LED_MAX_RECEIVERS 16
-
-typedef struct _espd_led_receiver
-{
-    t_pd x_pd;
-    int idx;       /* -1 = master "espd/led", >=0 = per-LED "espd/led/N" */
-} t_espd_led_receiver;
-
-static t_class *espd_led_receiver_class;
-static t_espd_led_receiver pd_led_master;
-static t_espd_led_receiver pd_led_per[ESPD_LED_MAX_RECEIVERS];
-static int pd_led_bound;
-
-static int espd_led_clamp(t_float f)
-{
-    int v = (int)(f + 0.5f);
-    if (v < 0) v = 0;
-    else if (v > 255) v = 255;
-#if ESPD_LED_MAX_BRIGHTNESS < 255
-    /* Scale down proportionally so colors keep their hue while peak current
-     * drawn by the WS2812 ring is reduced (cuts supply-rail coupling into
-     * the audio codec). */
-    v = (v * ESPD_LED_MAX_BRIGHTNESS) / 255;
-    if (v > ESPD_LED_MAX_BRIGHTNESS) v = ESPD_LED_MAX_BRIGHTNESS;
-#endif
-    return v;
-}
-
-static void espd_led_receiver_list(t_espd_led_receiver *x,
-    t_symbol *s, int argc, t_atom *argv)
-{
-    (void)s;
-    if (x->idx >= 0) {
-        /* Per-LED receiver: expect 3 floats r g b. */
-        if (argc < 3) return;
-        uint8_t r = espd_led_clamp(atom_getfloat(argv));
-        uint8_t g = espd_led_clamp(atom_getfloat(argv + 1));
-        uint8_t b = espd_led_clamp(atom_getfloat(argv + 2));
-        espd_waveshare_s3_leds_set(x->idx, r, g, b);
-        espd_waveshare_s3_leds_mark_dirty();
-        return;
-    }
-    /* Master receiver. */
-    if (argc == 3) {
-        uint8_t r = espd_led_clamp(atom_getfloat(argv));
-        uint8_t g = espd_led_clamp(atom_getfloat(argv + 1));
-        uint8_t b = espd_led_clamp(atom_getfloat(argv + 2));
-        espd_waveshare_s3_leds_fill(r, g, b);
-        espd_waveshare_s3_leds_mark_dirty();
-    } else if (argc >= 4) {
-        int idx = (int)atom_getfloat(argv);
-        uint8_t r = espd_led_clamp(atom_getfloat(argv + 1));
-        uint8_t g = espd_led_clamp(atom_getfloat(argv + 2));
-        uint8_t b = espd_led_clamp(atom_getfloat(argv + 3));
-        espd_waveshare_s3_leds_set(idx, r, g, b);
-        espd_waveshare_s3_leds_mark_dirty();
-    }
-}
-
-static void espd_led_receiver_clear(t_espd_led_receiver *x)
-{
-    (void)x;
-    espd_waveshare_s3_leds_clear();
-}
-
-static void pd_led_init(void)
-{
-    int i;
-    int count = ESPD_WAVESHARE_LED_COUNT;
-    if (count > ESPD_LED_MAX_RECEIVERS) count = ESPD_LED_MAX_RECEIVERS;
-    if (pd_led_bound) return;
-
-    if (!espd_led_receiver_class) {
-        espd_led_receiver_class = class_new(gensym("_espd_led_receiver"),
-            0, 0, sizeof(t_espd_led_receiver), CLASS_PD, 0);
-        class_addlist(espd_led_receiver_class, (t_method)espd_led_receiver_list);
-        class_addmethod(espd_led_receiver_class,
-            (t_method)espd_led_receiver_clear, gensym("clear"), 0);
-        class_addmethod(espd_led_receiver_class,
-            (t_method)espd_led_receiver_clear, gensym("off"), 0);
-    }
-
-    /* Master "espd/led". */
-    pd_led_master.x_pd = espd_led_receiver_class;
-    pd_led_master.idx = -1;
-    pd_bind((t_pd *)&pd_led_master, gensym("espd/led"));
-
-    /* Per-LED "espd/led/N". */
-    for (i = 0; i < count; i++) {
-        char name[16];
-        pd_led_per[i].x_pd = espd_led_receiver_class;
-        pd_led_per[i].idx = i;
-        snprintf(name, sizeof(name), "espd/led/%d", i);
-        pd_bind((t_pd *)&pd_led_per[i], gensym(name));
-    }
-    pd_led_bound = 1;
-}
-/* Strong override of the weak stub in waveshare_s3_buttons.c: forward each
- * debounced press/release as a float to [r espd/din/<idx>]. */
-void espd_button_state_changed(int idx, int pressed)
-{
-    char name[16];
-    t_symbol *sym;
-    t_pd *dest;
-    snprintf(name, sizeof(name), "espd/din/%d", idx);
-    sym = gensym(name);
-    dest = sym ? sym->s_thing : NULL;
-    //ESP_LOGW(TAG, "Button %d changed: %d", idx, pressed);
-    if (dest)
-       pd_float(dest, (t_float)(pressed ? 1 : 0));
-}
-#endif /* CONFIG_ESPD_BOARD_WAVESHARE_S3 */
 
 #if defined(PD_USE_SDCARD) || defined(PD_USE_USB_MSC)
 #include <dirent.h>
@@ -1610,18 +1480,12 @@ void app_main(void)
    
 #endif
 
-#if CONFIG_ESPD_BOARD_WAVESHARE_S3
-    /* Light the on-board WS2812 ring early so we can confirm boot visually,
-     * even before WiFi/Pd come up. Failures are non-fatal. */
-    espd_waveshare_s3_leds_init();
-#endif
+    espd_io_early_init();
 
-
-#if defined(PD_USE_SDCARD) && CONFIG_ESPD_BOARD_WAVESHARE_S3
-    /* Mount SD before Pd so main.pd can load from ESPD_SDCARD_MOUNT. */
+#ifdef PD_USE_SDCARD
     {
-        esp_err_t e = espd_waveshare_s3_sdcard_mount();
-        if (e != ESP_OK)
+        esp_err_t e = espd_io_sdcard_mount();
+        if (e != ESP_OK && e != ESP_ERR_NOT_SUPPORTED)
             ESP_LOGW(TAG, "SD card not mounted at boot: %s", esp_err_to_name(e));
     }
 #endif
@@ -1678,9 +1542,7 @@ void app_main(void)
 
     initdacs();
 
-#if CONFIG_ESPD_BOARD_WAVESHARE_S3
-    espd_waveshare_s3_buttons_init();
-#endif
+    espd_io_board_init();
 
 #ifdef PD_USE_WIFI
     /* Bring up lwIP + default event loop unconditionally before Pd loads the
@@ -1763,9 +1625,7 @@ void app_main(void)
 #ifdef PD_USE_TOUCH0
         pd_polltouch0();
 #endif
-#if CONFIG_ESPD_BOARD_WAVESHARE_S3
-        espd_waveshare_s3_buttons_poll();
-#endif
+        espd_io_poll();
 
         pdmain_tick();
 #ifdef PD_USE_WIFI
@@ -1784,9 +1644,7 @@ void espd_control_io_init(void)
 #if ESPD_AOUT_NUM_CHANNELS > 0
     pd_aout_init();
 #endif
-#if CONFIG_ESPD_BOARD_WAVESHARE_S3
-    pd_led_init();
-#endif
+    espd_io_bind();
 }
 
 #ifdef PD_USE_SDCARD
@@ -1799,15 +1657,12 @@ void sd_init( void)
     esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
     esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
     audio_board_sdcard_init(set, SD_MODE_1_LINE);
-#elif CONFIG_ESPD_BOARD_WAVESHARE_S3
+#else
     {
-        esp_err_t e = espd_waveshare_s3_sdcard_mount();
-        if (e != ESP_OK)
+        esp_err_t e = espd_io_sdcard_mount();
+        if (e != ESP_OK && e != ESP_ERR_NOT_SUPPORTED)
             ESP_LOGW(TAG, "SD mount: %s", esp_err_to_name(e));
     }
-#else
-    ESP_LOGW(TAG, "SD init not implemented for this board; checking %s only",
-             ESPD_SDCARD_MOUNT);
 #endif
     ESP_LOGI(TAG, "[ 1b ] done starting network");
 }

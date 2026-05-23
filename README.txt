@@ -65,7 +65,7 @@ uses a WROOM-only module, turn off PSRAM in menuconfig before flashing.
 For the Waveshare ESP32-S3-AUDIO / AI Smart Speaker board, use ESP-IDF (not full
 ADF) with the Component Manager codec package: in menuconfig set **ESPD
 Configuration → Target board → Waveshare ESP32-S3-AUDIO** and follow
-boards/waveshare_s3/README.txt. That keeps
+components/bsp_waveshare_s3/README.txt. That keeps
 LyraT / WROOM sdkconfig.* samples unchanged for other hardware.
 
 In addition to the sources youre looking at you'll need Pd source code. This is
@@ -130,10 +130,12 @@ idf.py -p /dev/ttyUSB0 flash
 Waveshare quick start (ESP32-S3-AUDIO)
 --------------------------------------
 
-Target **esp32s3**, then **idf.py menuconfig → ESPD Configuration → Target board →
-Waveshare ESP32-S3-AUDIO** (default in **sdkconfig.defaults**). Board-specific
-IDF tuning lives in **components/bsp_waveshare_s3/sdkconfig.defaults**.
+Target **esp32s3**, select the board in menuconfig, then build:
 
-For Waveshare-specific steps, including build, flash, and monitor notes, see:
+  idf.py set-target esp32s3
+  idf.py menuconfig    # ESPD Configuration → Target board → Waveshare ESP32-S3-AUDIO
+  idf.py build flash monitor
 
-boards/waveshare_s3/README.txt
+The BSP links automatically from **sdkconfig** after menuconfig. On the next
+**idf.py build**, **components/bsp_waveshare_s3/sdkconfig.defaults** is merged
+for IDF tuning (PSRAM, stacks, etc.). See **components/bsp_waveshare_s3/README.txt**.
