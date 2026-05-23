@@ -2,7 +2,7 @@ menu "ESPD Configuration"
 
 choice ESPD_BOARD
     prompt "Target board"
-    default ESPD_BOARD_GENERIC
+    default ESPD_BOARD_GENERIC if IDF_TARGET_ESP32
     help
         Select the hardware board. Board-specific options are registered by BSP
         components (see menuconfig after selecting a board). Each board may select
@@ -20,11 +20,10 @@ endchoice
 
 config ESPD_BSP_COMPONENT_NAME
     string
-    default ""
     help
         Set automatically by the selected board BSP (each BSP registers its
         component name in its own Kconfig). Override at configure time with
-        -DESPD_BSP_COMPONENT=... if needed.
+        -DESPD_BSP_COMPONENT=... if needed. Unset for Generic I2S.
 
 menu "Audio (dac~ / adc~)"
 
@@ -91,6 +90,7 @@ config ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
 config ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     bool "Legacy espd TCP/UDP transport (port 4498)"
     depends on ESPD_PD_USE_WIFI
+    default y if ESPD_BOARD_GENERIC
     default n
     help
         Old host-driven patch loading over TCP/UDP. Not needed for Pd

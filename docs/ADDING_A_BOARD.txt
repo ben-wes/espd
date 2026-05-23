@@ -113,15 +113,17 @@ Then the chained **build** runs with the updated **sdkconfig**.
 
 - Writes **sdkconfig** with the board choice.
 - The BSP Kconfig sets **CONFIG_ESPD_BSP_COMPONENT_NAME** (empty for Generic I2S).
-- BSP **select** rules turn on that board's compile-time profile (ADC, SD card,
-  **espd/ain** / **espd/aout** support, etc.). Locked options show as `-*-`
-  in menuconfig (on, selected by the board).
+- BSP **select** rules turn on that board's compile-time profile and force key IDF
+  options (PSRAM, 240 MHz, CPU affinities, perf compiler, …). Locked options
+  show as `-*-` in menuconfig.
 
 **What the next build does**
 
 - CMake reads **sdkconfig** and merges **one** profile defaults file:
-  **main/boards/generic/sdkconfig.defaults** when the BSP component name is empty,
-  otherwise **components/<bsp>/sdkconfig.defaults**.
+  **main/boards/generic/sdkconfig.defaults** only when **Generic I2S** is selected;
+  otherwise **components/<bsp>/sdkconfig.defaults** when a BSP board is selected.
+  Before any board is chosen, only root **sdkconfig.defaults** applies (no generic
+  profile on **esp32s3** — that avoids sticky 32768 stack / 160 MHz defaults).
 - **main/CMakeLists.txt** links the BSP named by **CONFIG_ESPD_BSP_COMPONENT_NAME**.
 
 **Different SoC** (e.g. first time on a new chip):
@@ -130,6 +132,11 @@ Then the chained **build** runs with the updated **sdkconfig**.
 idf.py set-target esp32s3 menuconfig build flash monitor
 ```
 
+For **esp32s3**, this repo ships **sdkconfig.defaults.esp32s3** (IDF merges it
+automatically on **set-target**). That applies the full Waveshare tune: octal
+PSRAM 80 MHz, 240 MHz CPU, 65536 main stack, CPU1 audio / CPU0 WiFi, perf
+compiler, etc. Pick **Target board → Waveshare** in menuconfig if needed, Save.
+
 **Override BSP link name** (rare; BSP still chosen in menuconfig):
 
 ```
@@ -137,8 +144,35 @@ idf.py -DESPD_BSP_COMPONENT=bsp_myboard build flash
 ```
 
 **Stale profile** (switched boards but menuconfig still shows the old feature flags):
-delete **sdkconfig**, then **idf.py menuconfig build** and select the board again.
+delete **sdkconfig**, then reconfigure with the **correct chip target** in the chain
+(Waveshare S3 → **esp32s3**; generic WROOM → **esp32**). Example:
+
+```
+idf.py set-target esp32s3 fullclean menuconfig build flash monitor
+```
+
+**set-target** must run when **sdkconfig** is missing — otherwise IDF defaults to
+**esp32** and Component Manager fails (e.g. **esp_tinyusb** is S2/S3-only). Pick
+**Target board** in menuconfig → Save → exit.
+
+If **idf.py** warns that the active Python differs from the last configure, run
+**fullclean** once, then use one IDF environment per shell (**export.sh** or
+**activate.py** from the same IDF tree — avoid mixing a separate **(venv)**).
+
 Or re-open menuconfig, re-select the target board, Save, then build.
+
+Also check **Component config → ESP System Settings → Main task stack size**.
+Pd runs on **app_main**; IDF's default (3584) is far too small. Waveshare defaults
+use **65536**; generic profile uses **32768**. If your **sdkconfig** still has
+3584 from an old configure, FFT patches will stack-overflow before **cputime**
+is useful — raise the stack and rebuild.
+
+**BSP boards with PSRAM** (e.g. Waveshare): verify **CONFIG_SPIRAM=y** after
+configure. Without PSRAM, large FFT blocks fail with **getbytes() out of memory**.
+If **CONFIG_ESPD_BSP_COMPONENT_NAME** is empty or SPIRAM is off after a board
+switch, delete **sdkconfig** and run **idf.py menuconfig build** (select board,
+Save). Kconfig **select SPIRAM** on the board choice applies on save; stale
+**sdkconfig** keys are not updated by **sdkconfig.defaults** alone.
 
 Step 3 — Audio backend
 ----------------------

@@ -44,7 +44,7 @@ idf.py set-target esp32s3 menuconfig build flash monitor
 
 In menuconfig: **ESPD Configuration** → pick **Target board**, WiFi, SD, audio, etc. → **Save** → exit; the chained **build** uses the updated **sdkconfig**.
 
-**Switching boards:** [docs/ADDING_A_BOARD.txt](docs/ADDING_A_BOARD.txt) (*Switching boards*). Short version: `idf.py menuconfig build` — select board, Save, then build.
+**Switching boards:** [docs/ADDING_A_BOARD.txt](docs/ADDING_A_BOARD.txt) (*Switching boards*). Short version: `idf.py menuconfig build` — select board, Save, then build. If you delete **sdkconfig**, include **set-target** (e.g. `idf.py set-target esp32s3 menuconfig build` for Waveshare).
 
 **Generic I2S:** manual GPIO pins under **ESPD Configuration** (INMP441 + MAX98357A, etc.). SPH0645 mic is known **not** to work on ESP32. Legacy presets: `sdkconfig.wroom`, `sdkconfig.lyrat`, `sdkconfig.lyratmini`, `sdkconfig.bn085`.
 

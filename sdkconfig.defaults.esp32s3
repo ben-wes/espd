@@ -1,8 +1,9 @@
-# Waveshare ESP32-S3-AUDIO-Board defaults (when this BSP board is selected).
-# See components/bsp_waveshare_s3/README.txt
-# This repo also ships sdkconfig.defaults.esp32s3 (same tune for set-target esp32s3).
+# ESP32-S3 target defaults for this project (reference kit: Waveshare ESP32-S3-AUDIO).
+# IDF merges this automatically on idf.py set-target esp32s3. Kept in sync with
+# components/bsp_waveshare_s3/sdkconfig.defaults.
 
-# ESPD compile-time profile (also forced via Kconfig select when board is chosen).
+CONFIG_ESPD_BOARD_WAVESHARE_S3=y
+CONFIG_ESPD_BSP_COMPONENT_NAME="bsp_waveshare_s3"
 CONFIG_ESPD_USE_ADC=y
 CONFIG_ESPD_PD_USE_SDCARD=y
 CONFIG_ESPD_PD_USE_ANALOG0=y
@@ -10,7 +11,6 @@ CONFIG_ESPD_PD_INCLUDEPATCH=y
 CONFIG_ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK=y
 CONFIG_ESPD_ENABLE_LEGACY_WIFI_TRANSPORT=n
 CONFIG_ESPD_PD_USE_AOUT=y
-CONFIG_ESPD_BSP_COMPONENT_NAME="bsp_waveshare_s3"
 
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 
@@ -19,7 +19,7 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_pd.csv"
 CONFIG_PARTITION_TABLE_FILENAME="partitions_pd.csv"
 CONFIG_PARTITION_TABLE_OFFSET=0x8000
 
-# Octal PSRAM (WROVER-class module on this kit). Required for FFT-sized patches.
+# Octal PSRAM — required for FFT-sized Pd patches.
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
@@ -56,7 +56,7 @@ CONFIG_LOG_MAXIMUM_LEVEL=3
 CONFIG_LWIP_IPV6=y
 CONFIG_MBEDTLS_TLS_CLIENT_ONLY=y
 
-# Audio on CPU1; network stack on CPU0.
+# Audio (app_main) on CPU1; network on CPU0.
 CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y
 CONFIG_ESP_MAIN_TASK_AFFINITY=0x1
 CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_0=y

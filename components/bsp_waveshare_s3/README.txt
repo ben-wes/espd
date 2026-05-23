@@ -21,9 +21,12 @@ If you use **ESP-ADF**, its bundled IDF works too, for example:
 
 Then (Waveshare — this repository's reference board):
 
-  idf.py set-target esp32s3
-  idf.py menuconfig    # ESPD Configuration → Target board → Waveshare ESP32-S3-AUDIO
-  idf.py build
+  idf.py set-target esp32s3 menuconfig build flash monitor
+
+**sdkconfig.defaults.esp32s3** at the repo root applies the full Waveshare tune
+(PSRAM oct 80 MHz, 240 MHz, 65536 main stack, CPU affinities) on **set-target
+esp32s3** — no manual Component config tuning needed. Pick **Target board →
+Waveshare** in menuconfig if it is not already selected, Save, then build.
 
 **CONFIG_ESPD_BSP_COMPONENT_NAME** in **sdkconfig** selects the linked BSP; no
 extra **-D** flags are required.
@@ -44,11 +47,12 @@ commits pinned by the checked-out branch:
 This project pins a specific Pd submodule commit for reproducible firmware
 builds.
 
-The top-level CMakeLists.txt merges **sdkconfig.defaults** and
-**main/boards/generic/sdkconfig.defaults** by default. After you select this
-board in menuconfig, **components/bsp_waveshare_s3/sdkconfig.defaults** is merged
-on the next configure (PSRAM, stacks, partition profile). Delete **sdkconfig**
-when switching boards.
+The top-level CMakeLists.txt merges **sdkconfig.defaults** plus one board profile
+(**main/boards/generic/** or **components/bsp_*/**). After you select this board
+in menuconfig and Save, Kconfig applies the full tune (PSRAM, 240 MHz, CPU
+affinities). If **sdkconfig** predates the board switch, delete it and run
+**idf.py menuconfig build** so PSRAM and other IDF keys refresh — see
+*Switching boards* below.
 
 If **idf.py build** fails at the end with **app partition is too small**, your
 **sdkconfig** was probably created before this board picked **partitions_pd.csv**
@@ -56,7 +60,9 @@ If **idf.py build** fails at the end with **app partition is too small**, your
 defaults merge again (factory app slot is **1536K** in **partitions_pd.csv**).
 
 This board fragment enables octal PSRAM (per the WROVER-class S3 module on the
-kit) and uses a 32 KB main task stack.
+kit) and uses a **65536** byte main task stack. Pd FFT patches require PSRAM;
+if boot logs **getbytes() failed** or **SPIRAM is off**, delete **sdkconfig**
+and reconfigure (see *Switching boards* below).
 
 Performance / memory profile
 ----------------------------
@@ -197,8 +203,15 @@ idf.py menuconfig build flash monitor
 Board-locked options show as `-*-` in menuconfig (e.g. **espd/ain**, **espd/aout** compile
 support). Runtime GPIOs still come from **config.txt** (**ain_pins=**, **aout_pins=**, …).
 
-If the profile looks wrong after a switch, delete **sdkconfig** and run
-**idf.py menuconfig build** again (fullclean is only needed when changing SoC target).
+If the profile looks wrong after a switch, delete **sdkconfig** and reconfigure
+with **set-target** in the chain (this kit is **esp32s3**, not **esp32**):
+
+```
+idf.py set-target esp32s3 fullclean menuconfig build flash monitor
+```
+
+Pick **Target board** → Save. Without **set-target**, a fresh configure defaults
+to **esp32** and the build fails on S3-only components (**esp_tinyusb**, PSRAM, …).
 
 USB “disc” vs audio + Pd (hotplug, future work)
 -----------------------------------------------

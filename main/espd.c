@@ -1963,6 +1963,25 @@ void app_main(void)
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
+#if CONFIG_ESP_MAIN_TASK_STACK_SIZE < 16384
+    ESP_LOGW(TAG,
+        "Main task stack is %d bytes — too small for Pd (use >= 32768, "
+        "65536 for FFT-heavy patches). menuconfig → Component config → "
+        "ESP System Settings → Main task stack size",
+        CONFIG_ESP_MAIN_TASK_STACK_SIZE);
+#endif
+
+#if !CONFIG_SPIRAM
+    if (CONFIG_ESPD_BSP_COMPONENT_NAME[0] != '\0')
+    {
+        ESP_LOGE(TAG,
+            "SPIRAM is off but a BSP board is selected (%s). Pd FFT buffers "
+            "need PSRAM — delete sdkconfig, then: idf.py menuconfig build "
+            "(pick board, Save). Or enable Component config → ESP PSRAM.",
+            CONFIG_ESPD_BSP_COMPONENT_NAME);
+    }
+#endif
+
     /* Allocation routing for generic malloc/calloc (incl. Pd's getbytes):
      *   < 4 KB → prefer internal SRAM (object state, signal vectors,
      *            dsp_add argument arrays — per-block hot path)

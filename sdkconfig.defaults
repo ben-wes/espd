@@ -7,3 +7,7 @@ CONFIG_PARTITION_TABLE_FILENAME="partitions_pd.csv"
 CONFIG_PARTITION_TABLE_OFFSET=0x8000
 
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# Pd audio loop runs on the main task (app_main). IDF default 3584 overflows
+# quickly; FFT-heavy patches need much more.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536

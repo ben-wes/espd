@@ -8,15 +8,29 @@ choice ESPD_BOARD
         select ESPD_PD_INCLUDEPATCH
         select ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
         select BSP_WAVESHARE_ENABLE_MIC
+        select SPIRAM
+        select FREERTOS_IN_IRAM
         help
             Waveshare AI Smart Speaker / ESP32-S3-AUDIO-Board (ES8311 DAC,
             ES7210 mic). Select in menuconfig; **ESPD_BSP_COMPONENT_NAME** links
             the BSP automatically (see components/bsp_waveshare_s3/README.txt).
+            On **esp32s3**, **sdkconfig.defaults.esp32s3** in the project root
+            applies the full IDF tune (PSRAM oct 80 MHz, 240 MHz, CPU affinities).
 
+endchoice
+
+choice ESPD_BOARD
+    default ESPD_BOARD_WAVESHARE_S3 if IDF_TARGET_ESP32S3
 endchoice
 
 config ESPD_BSP_COMPONENT_NAME
     default "bsp_waveshare_s3" if ESPD_BOARD_WAVESHARE_S3
+
+config PTHREAD_TASK_STACK_SIZE_DEFAULT
+    default 8192 if ESPD_BOARD_WAVESHARE_S3
+
+config ESP_MAIN_TASK_STACK_SIZE
+    default 65536 if ESPD_BOARD_WAVESHARE_S3
 
 menu "Board Support Package (Waveshare S3)"
     depends on ESPD_BOARD_WAVESHARE_S3
