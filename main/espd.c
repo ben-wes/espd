@@ -9,6 +9,7 @@
 
 #include "espd.h"
 #include "espd_audio.h"
+#include "espd_board.h"
 #include "espd_io.h"
 #include "bsp/bsp_io.h"
 #include "../pd/src/m_pd.h"
@@ -2023,7 +2024,7 @@ void app_main(void)
    
 #endif
 
-    espd_io_early_init();
+    espd_board_early_init();
     espd_storage_init();
 
 #ifdef PD_USE_SDCARD
@@ -2081,7 +2082,7 @@ void app_main(void)
 
     initdacs();
 
-    espd_io_board_init();
+    espd_board_init();
 #ifdef PD_USE_DIN0
     pd_din_gpio_init();
 #endif

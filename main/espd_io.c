@@ -127,20 +127,6 @@ void espd_din_changed(int idx, int pressed)
         pd_float(dest, (t_float)(pressed ? 1 : 0));
 }
 
-void espd_io_early_init(void)
-{
-    esp_err_t err = espd_board_early_init();
-    if (err != ESP_OK)
-        ESP_LOGW(TAG, "board early init: %s", esp_err_to_name(err));
-}
-
-void espd_io_board_init(void)
-{
-    esp_err_t err = espd_board_init();
-    if (err != ESP_OK)
-        ESP_LOGW(TAG, "board init: %s", esp_err_to_name(err));
-}
-
 void espd_io_poll(void)
 {
     espd_board_poll();
