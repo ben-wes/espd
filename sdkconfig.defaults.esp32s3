@@ -1,9 +1,8 @@
 # ESP32-S3 target defaults for this project (reference kit: Waveshare ESP32-S3-AUDIO).
-# IDF merges this automatically on idf.py set-target esp32s3. Kept in sync with
-# components/bsp_waveshare_s3/sdkconfig.defaults.
+# IDF merges this automatically on idf.py set-target esp32s3. Board profile
+# tuning lives in components/espd_bsp_selector/sdkconfig.defaults.
 
 CONFIG_ESPD_BOARD_WAVESHARE_S3=y
-CONFIG_ESPD_BSP_COMPONENT_NAME="bsp_waveshare_s3"
 CONFIG_ESPD_USE_ADC=y
 CONFIG_ESPD_PD_USE_SDCARD=y
 CONFIG_ESPD_PD_USE_ANALOG0=y

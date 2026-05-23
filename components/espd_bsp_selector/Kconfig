@@ -1,0 +1,32 @@
+choice ESPD_BOARD
+    config ESPD_BOARD_WAVESHARE_S3
+        bool "Waveshare ESP32-S3-AUDIO"
+        select ESPD_USE_ADC
+        select ESPD_PD_USE_SDCARD
+        select ESPD_PD_USE_ANALOG0
+        select ESPD_PD_USE_AOUT
+        select ESPD_PD_INCLUDEPATCH
+        select ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
+        select SPIRAM
+        select FREERTOS_IN_IRAM
+        help
+            Waveshare AI Smart Speaker / ESP32-S3-AUDIO-Board (ES8311 DAC,
+            ES7210 mic). Hardware comes from esp-bsp via Component Manager
+            (see components/espd_bsp_selector/idf_component.yml).
+
+endchoice
+
+choice ESPD_BOARD
+    default ESPD_BOARD_WAVESHARE_S3 if IDF_TARGET_ESP32S3
+endchoice
+
+config WAVESHARE_ESP32_S3_AUDIO
+    int
+    default 1 if ESPD_BOARD_WAVESHARE_S3
+    default 0
+
+config PTHREAD_TASK_STACK_SIZE_DEFAULT
+    default 8192 if ESPD_BOARD_WAVESHARE_S3
+
+config ESP_MAIN_TASK_STACK_SIZE
+    default 65536 if ESPD_BOARD_WAVESHARE_S3

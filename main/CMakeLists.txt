@@ -99,7 +99,13 @@ set(MAIN_REQUIRES
     lwip
     pthread
     espd_integration
+    espd_bsp_shim
+    espd_bsp_selector
 )
+
+if(CONFIG_ESPD_BOARD_WAVESHARE_S3 STREQUAL "y")
+    list(APPEND MAIN_REQUIRES waveshare_esp32_s3_audio)
+endif()
 
 idf_component_register(
     SRCS ${MAIN_SRCS}
@@ -111,28 +117,6 @@ if(CONFIG_ESPD_AUDIO_BACKEND_BSP_CODEC STREQUAL "y")
     target_sources(${COMPONENT_LIB} PRIVATE "espd_audio_codec.c")
 elseif(CONFIG_ESPD_AUDIO_BACKEND_GENERIC_I2S STREQUAL "y")
     target_sources(${COMPONENT_LIB} PRIVATE "espd_audio_generic.c")
-endif()
-
-# Link BSP when menuconfig sets CONFIG_ESPD_BSP_COMPONENT_NAME, or when
-# -DESPD_BSP_COMPONENT=... overrides at configure time.
-set(_espd_bsp_component "")
-if(ESPD_BSP_COMPONENT)
-    set(_espd_bsp_component ${ESPD_BSP_COMPONENT})
-elseif(CONFIG_ESPD_BSP_COMPONENT_NAME AND NOT CONFIG_ESPD_BSP_COMPONENT_NAME STREQUAL "")
-    set(_espd_bsp_component ${CONFIG_ESPD_BSP_COMPONENT_NAME})
-elseif(EXISTS "${CMAKE_SOURCE_DIR}/sdkconfig")
-    file(READ "${CMAKE_SOURCE_DIR}/sdkconfig" _espd_sdkconfig_board)
-    if(_espd_sdkconfig_board MATCHES "CONFIG_ESPD_BSP_COMPONENT_NAME=\"([^\"]*)\"")
-        set(_espd_bsp_component ${CMAKE_MATCH_1})
-    endif()
-endif()
-if(_espd_bsp_component)
-    idf_component_get_property(_espd_bsp_lib ${_espd_bsp_component} COMPONENT_LIB)
-    if(_espd_bsp_lib)
-        target_link_libraries(${COMPONENT_LIB} PUBLIC ${_espd_bsp_lib})
-    else()
-        message(WARNING "BSP component '${_espd_bsp_component}' not found")
-    endif()
 endif()
 
 idf_component_get_property(_espd_main_lib ${COMPONENT_NAME} COMPONENT_LIB)

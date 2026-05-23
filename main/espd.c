@@ -1971,14 +1971,12 @@ void app_main(void)
         CONFIG_ESP_MAIN_TASK_STACK_SIZE);
 #endif
 
-#if !CONFIG_SPIRAM
-    if (CONFIG_ESPD_BSP_COMPONENT_NAME[0] != '\0')
+#if !CONFIG_SPIRAM && CONFIG_ESPD_BOARD_WAVESHARE_S3
     {
         ESP_LOGE(TAG,
-            "SPIRAM is off but a BSP board is selected (%s). Pd FFT buffers "
+            "SPIRAM is off but Waveshare S3 is selected. Pd FFT buffers "
             "need PSRAM — delete sdkconfig, then: idf.py menuconfig build "
-            "(pick board, Save). Or enable Component config → ESP PSRAM.",
-            CONFIG_ESPD_BSP_COMPONENT_NAME);
+            "(pick board, Save). Or enable Component config → ESP PSRAM.");
     }
 #endif
 

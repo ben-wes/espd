@@ -1,266 +1,209 @@
 # Adding a board to ESPD
 
-ESPD core firmware is board-neutral. Hardware lives in optional BSP components
-that you add to **components/** (or pull in via the ESP-IDF Component Manager).
+ESPD core firmware is board-neutral. Hardware comes from **esp-bsp** (Component
+Manager git deps) plus a thin **espd_bsp_shim** adapter, or from an optional
+in-tree BSP component under **components/**.
 
-Reference implementation: **components/bsp_waveshare_s3/**.
+Reference board: **Waveshare ESP32-S3-AUDIO** — esp-bsp package
+`waveshare_esp32_s3_audio` from [r1ckp0/esp-bsp @ waveshare-bsp](https://github.com/r1ckp0/esp-bsp/tree/waveshare-bsp).
 
 ## Overview
 
 ```
-  Pd patch  ──►  main/espd.c, espd_io.c     (board-agnostic)
+  Pd patch  ──►  main/espd.c, espd_io.c          (board-agnostic)
                       │
                       ▼
-               main/espd_board.c            (probes optional bsp_*)
+               main/espd_board.c                 (probes optional bsp_*)
                       │
-         ┌────────────┴────────────┐
-         ▼                         ▼
-  espd_integration            your BSP component
-  (weak bsp_* stubs)          (strong bsp_* drivers)
+         ┌────────────┴────────────────────────────┐
+         ▼                                          ▼
+  espd_integration                         espd_bsp_shim (per board)
+  (weak bsp_* stubs)                       adapts esp-bsp → bsp_io.h
+         │                                          │
+         │                                          ▼
+         │                               espd_bsp_selector
+         │                               (conditional git dep on esp-bsp)
+         └──────────────────────────────────────────┘
 ```
 
-**main/** never names a specific board. **menuconfig** selects the BSP;
-**CONFIG_ESPD_BSP_COMPONENT_NAME** links it in **main/CMakeLists.txt**.
+**main/** never names a specific board. **menuconfig** selects the board;
+**main/CMakeLists.txt** pulls in **espd_bsp_shim** and **espd_bsp_selector**;
+the selector fetches the matching esp-bsp package when `CONFIG_ESPD_BOARD_*` is set.
 
-## Step 1 — Create the BSP component
+## Waveshare (managed esp-bsp) — how it is wired today
 
-Minimum layout:
+| Piece | Role |
+|-------|------|
+| **components/espd_bsp_selector/** | Kconfig board choice; **idf_component.yml** git-dep on `waveshare_esp32_s3_audio` when `ESPD_BOARD_WAVESHARE_S3` |
+| **components/espd_bsp_shim/** | Implements **bsp_io.h** (LED, buttons) and **espd_bsp_waveshare_sdcard_mount()** on top of esp-bsp |
+| **main/espd_audio_codec.c** | Calls **bsp/esp-bsp.h** directly (48 kHz stereo I2S + ES8311/ES7210) |
+| **components/espd_integration/** | Weak **bsp_*** stubs when no hardware is linked |
+
+First build needs **network access** to fetch esp-bsp into **managed_components/**;
+**dependencies.lock** is updated automatically.
+
+Display/camera/LVGL deps are declared by upstream esp-bsp but **dead-stripped**
+from **espd.bin** — ESPD does not init the LCD or camera.
+
+## Adding another board (two paths)
+
+### Path A — esp-bsp package (preferred when upstream has your board)
+
+1. Ensure the board exists in [esp-bsp](https://github.com/espressif/esp-bsp)
+   (or your fork, e.g. **r1ckp0/esp-bsp** until merged upstream).
+
+2. In **components/espd_bsp_selector/idf_component.yml**, add a conditional git
+   dependency (same pattern as Waveshare):
+
+   ```yaml
+   my_board_audio:
+     git: https://github.com/r1ckp0/esp-bsp.git
+     path: bsp/my_board_audio
+     version: my-branch-or-tag
+     public: true
+     matches:
+       - if: $CONFIG{ESPD_BOARD_MYBOARD} == True
+   ```
+
+3. In **components/espd_bsp_selector/Kconfig**, add a **choice ESPD_BOARD** entry,
+   **select** rules for the ESPD profile (PSRAM, **ESPD_USE_ADC**, …), and stack
+   defaults if needed.
+
+4. Add **components/espd_bsp_shim/** sources (or a new file) that implement
+   **bsp_io.h** against that board's **bsp/esp-bsp.h**. Guard with
+   `CONFIG_ESPD_BOARD_MYBOARD`.
+
+5. Put IDF tuning in **components/espd_bsp_selector/sdkconfig.defaults** and
+   extend root **CMakeLists.txt** board-profile merge if the board name is not
+   Waveshare (see the `CONFIG_ESPD_BOARD_WAVESHARE_S3` branch).
+
+6. Wire **main/CMakeLists.txt**: **REQUIRES** must include **espd_bsp_shim**,
+   **espd_bsp_selector**, and the managed BSP component name when your board is
+   selected.
+
+**Audio:** **espd_audio_codec.c** expects esp-bsp's
+**bsp_audio_init(i2s_std_config_t *)** and codec inits. Pass 48 kHz stereo (or
+your project's rate) in the I2S config.
+
+**SD card:** esp-bsp uses **bsp_sdcard_mount(void)** with a Kconfig mount point;
+ESPD expects **bsp_sdcard_mount(const char *)** in **bsp_io.h**. Use a shim helper
+(see **espd_bsp_waveshare_sdcard_mount()**) and **ESPD_BSP_IO_NO_SDCARD_DECL** when
+including both headers.
+
+### Path B — in-tree BSP component (generic / custom hardware)
+
+Use when the board is not in esp-bsp. Layout:
 
 ```
 components/bsp_myboard/
   CMakeLists.txt
   Kconfig
-  idf_component.yml          # optional managed deps (codec, io expander, …)
-  sdkconfig.defaults         # IDF tuning when this board is selected
+  sdkconfig.defaults
   include/bsp/
-    config.h                 # #include "bsp/myboard.h" + sample rate, caps
-    myboard.h                # pins, BSP_CAPS_* , public bsp_* declarations
-    bsp_audio.h              # only if you wrap esp_codec_dev (optional)
-  myboard.c                  # I2C, audio, expander, …
-  bsp_led.c                  # optional
-  bsp_button.c
-  bsp_sdcard.c
+    config.h
+    bsp_io.h hooks via myboard.h   # optional split
+  myboard.c                        # audio, I2C, …
+  bsp_led.c, bsp_button.c, …       # optional
 ```
 
-Match the optional API in **components/espd_integration/include/bsp/**:
+Implement the optional API in **components/espd_integration/include/bsp/**:
 
-| Header       | Implement when the board has…                          |
-|--------------|--------------------------------------------------------|
-| **bsp_io.h** | WS2812/LED, physical buttons, SD slot                  |
-| **bsp_audio.h** | Codec path (ES8311, …) via **esp_codec_dev**      |
+| Header | Implement when the board has… |
+|--------|-----------------------------|
+| **bsp_io.h** | WS2812/LED, physical buttons, SD slot |
+| **bsp_audio.h** | Legacy void **bsp_audio_init()** (only if not using esp-bsp headers in **espd_audio_codec.c**) |
 
-Return **ESP_ERR_NOT_SUPPORTED** for peripherals you do not have. ESPD ignores
-that at boot.
+Return **ESP_ERR_NOT_SUPPORTED** for missing peripherals. No **espd_*** symbols
+in the BSP.
 
-**Do not** add **espd_*** symbols or **espd_port.c** in the BSP — keep it
-upstreamable (esp-bsp style).
-
-## Step 2 — Register in Kconfig
-
-In **components/bsp_myboard/Kconfig**:
-
-```
-choice ESPD_BOARD
-    config ESPD_BOARD_MYBOARD
-        bool "My custom board"
-        select ESPD_USE_ADC              # compile-time profile for this board
-        select ESPD_PD_USE_SDCARD
-        help
-            Short description for menuconfig.
-
-endchoice
-
-config ESPD_BSP_COMPONENT_NAME
-    default "bsp_myboard" if ESPD_BOARD_MYBOARD
-
-menu "Board Support Package (My board)"
-    depends on ESPD_BOARD_MYBOARD
-    # board-specific tuning (PA GPIO, mic enable, …)
-endmenu
-```
-
-**main/Kconfig.projbuild** only defines **ESPD_BOARD_GENERIC**. Each BSP adds
-its own **choice ESPD_BOARD** entry (Kconfig merges them).
-
-Set **sdkconfig.defaults** under the BSP for PSRAM, stacks, partition table,
-codec Kconfig symbols, and ESPD profile options (**CONFIG_ESPD_USE_ADC**, etc.).
-
-Root **CMakeLists.txt** merges **sdkconfig.defaults** plus **one** board profile file:
-**main/boards/generic/sdkconfig.defaults** when Generic I2S is selected, or
-**components/<bsp>/sdkconfig.defaults** when **CONFIG_ESPD_BSP_COMPONENT_NAME**
-is set in **sdkconfig**. Never merge both profiles. BSP boards use Kconfig
-**select** (not **imply**) so the feature profile applies when switching boards.
+Register in **components/bsp_myboard/Kconfig** with **choice ESPD_BOARD** and
+**select** profile rules. Link from **main/CMakeLists.txt** via **REQUIRES**
+when that board is selected.
 
 ## Switching boards
 
-Configure first, then build. **idf.py** subcommands chain left to right.
+Configure first, then build (**idf.py** subcommands chain left to right).
 
-**Everyday switch** (Generic I2S ↔ any BSP, or BSP ↔ BSP):
+**Everyday switch:**
 
-```
+```bash
 idf.py menuconfig build flash monitor
 ```
 
-In menuconfig: **ESPD Configuration → Target board** → pick the board → **Save** → exit.
-Then the chained **build** runs with the updated **sdkconfig**.
+**ESPD Configuration → Target board** → pick board → **Save** → exit.
 
-**What menuconfig save does**
+**Different SoC / clean slate:**
 
-- Writes **sdkconfig** with the board choice.
-- The BSP Kconfig sets **CONFIG_ESPD_BSP_COMPONENT_NAME** (empty for Generic I2S).
-- BSP **select** rules turn on that board's compile-time profile and force key IDF
-  options (PSRAM, 240 MHz, CPU affinities, perf compiler, …). Locked options
-  show as `-*-` in menuconfig.
-
-**What the next build does**
-
-- CMake reads **sdkconfig** and merges **one** profile defaults file:
-  **main/boards/generic/sdkconfig.defaults** only when **Generic I2S** is selected;
-  otherwise **components/<bsp>/sdkconfig.defaults** when a BSP board is selected.
-  Before any board is chosen, only root **sdkconfig.defaults** applies (no generic
-  profile on **esp32s3** — that avoids sticky 32768 stack / 160 MHz defaults).
-- **main/CMakeLists.txt** links the BSP named by **CONFIG_ESPD_BSP_COMPONENT_NAME**.
-
-**Different SoC** (e.g. first time on a new chip):
-
-```
-idf.py set-target esp32s3 menuconfig build flash monitor
-```
-
-For **esp32s3**, this repo ships **sdkconfig.defaults.esp32s3** (IDF merges it
-automatically on **set-target**). That applies the full Waveshare tune: octal
-PSRAM 80 MHz, 240 MHz CPU, 65536 main stack, CPU1 audio / CPU0 WiFi, perf
-compiler, etc. Pick **Target board → Waveshare** in menuconfig if needed, Save.
-
-**Override BSP link name** (rare; BSP still chosen in menuconfig):
-
-```
-idf.py -DESPD_BSP_COMPONENT=bsp_myboard build flash
-```
-
-**Stale profile** (switched boards but menuconfig still shows the old feature flags):
-delete **sdkconfig**, then reconfigure with the **correct chip target** in the chain
-(Waveshare S3 → **esp32s3**; generic WROOM → **esp32**). Example:
-
-```
+```bash
 idf.py set-target esp32s3 fullclean menuconfig build flash monitor
 ```
 
-**set-target** must run when **sdkconfig** is missing — otherwise IDF defaults to
-**esp32** and Component Manager fails (e.g. **esp_tinyusb** is S2/S3-only). Pick
-**Target board** in menuconfig → Save → exit.
+For **esp32s3**, **sdkconfig.defaults.esp32s3** applies Waveshare as the default
+board reference. Profile tuning merges from
+**components/espd_bsp_selector/sdkconfig.defaults** when Waveshare is selected.
 
-If **idf.py** warns that the active Python differs from the last configure, run
-**fullclean** once, then use one IDF environment per shell (**export.sh** or
-**activate.py** from the same IDF tree — avoid mixing a separate **(venv)**).
+**Stale sdkconfig** after a board switch: delete **sdkconfig**, then
+**set-target** + **menuconfig** + **build**. Verify **CONFIG_SPIRAM=y** for
+PSRAM boards and **Main task stack size ≥ 32768** (65536 for FFT-heavy Waveshare
+patches).
 
-Or re-open menuconfig, re-select the target board, Save, then build.
+Use one IDF environment per shell. Recommended:
 
-Also check **Component config → ESP System Settings → Main task stack size**.
-Pd runs on **app_main**; IDF's default (3584) is far too small. Waveshare defaults
-use **65536**; generic profile uses **32768**. If your **sdkconfig** still has
-3584 from an old configure, FFT patches will stack-overflow before **cputime**
-is useful — raise the stack and rebuild.
-
-**BSP boards with PSRAM** (e.g. Waveshare): verify **CONFIG_SPIRAM=y** after
-configure. Without PSRAM, large FFT blocks fail with **getbytes() out of memory**.
-If **CONFIG_ESPD_BSP_COMPONENT_NAME** is empty or SPIRAM is off after a board
-switch, delete **sdkconfig** and run **idf.py menuconfig build** (select board,
-Save). Kconfig **select SPIRAM** on the board choice applies on save; stale
-**sdkconfig** keys are not updated by **sdkconfig.defaults** alone.
-
-## Step 3 — Audio backend
-
-| Board type              | menuconfig backend              | ESPD file              |
-|-------------------------|----------------------------------|------------------------|
-| Bare I2S pins           | Generic I2S                      | **espd_audio_generic.c** |
-| External codec (I2C+I2S)| BSP codec                        | **espd_audio_codec.c** |
-
-BSP codec path: implement **bsp_audio_init()**,
-**bsp_audio_codec_speaker_init()**, and optionally
-**bsp_audio_codec_microphone_init()** (see **bsp_waveshare_s3/waveshare_s3.c**).
-
-## Step 4 — Build and verify
-
+```bash
+alias idf='. ~/.espressif/tools/activate_idf_v6.0.1.sh'   # in ~/.zshrc
+deactivate   # if a project (venv) is active
+idf
 ```
+
+Do not mix **`export.sh`**, **`(venv)`**, and **`activate_idf_v6.0.1.sh`**. After
+switching Python envs, run **`idf.py fullclean`** once before **`build`**.
+
+## Build and verify
+
+From repo root (after **apply-pd-patches.sh** and IDF env active):
+
+```bash
+./scripts/apply-pd-patches.sh
 idf.py set-target esp32s3 menuconfig build flash monitor
 ```
 
-In menuconfig: **ESPD Configuration → Target board** → your board → Save.
-See **Switching boards** above for the full configure-then-build flow.
+In menuconfig: **ESPD Configuration → Target board → Waveshare ESP32-S3-AUDIO**
+(if not already default on esp32s3) → **Save**.
 
-Override BSP name at configure time if needed:
-
-```
-idf.py -D ESPD_BSP_COMPONENT=bsp_myboard build
-```
-
-Boot log: **espd_board** reports optional inits; **espd_io** binds **espd/led**
-when **bsp_led_count() > 0**; **espd/din/N** fires when buttons call the handler.
+Boot log: **espd_board** optional inits; **espd_io** binds **espd/led** when
+**bsp_led_count() > 0**; **espd/din/0..2** from K1/K2/K3 on Waveshare.
 
 ## Pd I/O surface (core — not BSP-specific)
 
-| Pd receiver      | Source                         | Enable in menuconfig        |
-|------------------|--------------------------------|-----------------------------|
-| **dac~** / **adc~** | Audio backend               | **ESPD_USE_ADC** for input  |
-| **espd/din/N**   | **bsp_button_*** + optional **din_pins=** | BSP automatic; **ESPD_PD_USE_DIN0** + **din_pins=** for GPIO |
-| **espd/led**, **espd/led/N** | **bsp_led_*** (WS2812 etc.) | (automatic if BSP has LEDs) |
-| **espd/ain/N**   | ESP32 ADC1 GPIOs               | **ESPD_PD_USE_ANALOG0** + **ain_pins=** in config.txt |
-| **espd/aout/N**  | LEDC PWM GPIOs                 | **ESPD_PD_USE_AOUT** + **aout_pins=** in config.txt |
-| **espd/dout/N**  | GPIO digital out               | **ESPD_PD_USE_DOUT0** + **dout_pins=** in config.txt |
-| **espd/touch/N** | ESP32 touch sensor GPIOs       | **ESPD_PD_USE_TOUCH0** + **touch_pins=** in config.txt |
+| Pd receiver | Source | Enable |
+|-------------|--------|--------|
+| **dac~** / **adc~** | Audio backend | **ESPD_USE_ADC** for input |
+| **espd/din/N** | **bsp_button_*** + optional **din_pins=** | BSP automatic; **ESPD_PD_USE_DIN0** + **din_pins=** for extra GPIO |
+| **espd/led**, **espd/led/N** | **bsp_led_*** | Automatic if BSP has LEDs |
+| **espd/ain/N** | ADC1 GPIOs | **ESPD_PD_USE_ANALOG0** + **ain_pins=** |
+| **espd/aout/N** | LEDC PWM | **ESPD_PD_USE_AOUT** + **aout_pins=** |
+| **espd/dout/N** | GPIO out | **ESPD_PD_USE_DOUT0** + **dout_pins=** |
+| **espd/touch/N** | Touch sensor | **ESPD_PD_USE_TOUCH0** + **touch_pins=** |
 
 ## Local storage (main.pd, config.txt)
 
-**espd_storage_init()** mounts SPIFFS at **/espd_pd** and probes paths. SD is
-mounted separately via **espd_storage_mount_sdcard()** (before reading SD-only
-**config.txt**, and again before **main.pd** load if needed). Boot order keeps
-codec init before SD when **config.txt** is already on SPIFFS.
+**espd_storage_init()** mounts SPIFFS at **/espd_pd** and probes paths. SD mounts
+via **espd_board_sdcard_mount()** when enabled. Boot order keeps codec init before
+SD when **config.txt** is on SPIFFS.
 
-1. Mount SPIFFS at **/espd_pd** (internal flash)
-2. Probe **config.txt** and **main.pd**: SD → SPIFFS → USB MSC
-3. Mount SD when required (SD-only config, or **main.pd** on SD)
-4. Audio init runs after **config.txt** is readable (for **audio_dma_*** keys)
+Without SD, **config.txt** and **main.pd** on SPIFFS are used automatically.
+See **main/espd_storage.c** and **main/espd.h**.
 
-Without an SD card, **config.txt** and **main.pd** on SPIFFS are used automatically.
-See **main/espd_storage.c** and **main/espd.h** (full **config.txt** key list).
+## Capacitive touch
 
-**espd/ain**, **espd/touch**, **espd/aout**, **espd/din** (GPIO), and **espd/dout**
-GPIOs are listed in **config.txt** (**ain_pins=**, **touch_pins=**, **aout_pins=**,
-**din_pins=**, **dout_pins=**); without those keys the firmware does not start
-ADC, touch, PWM, or extra GPIO digital I/O. BSP buttons still map to
-**espd/din/0..** without **din_pins=**.
+SoC touch → **espd/touch/N**. **ESPD_PD_USE_TOUCH0** + **touch_pins=** in
+**config.txt**. Waveshare has no touch pads (buttons → **espd/din/N**). External
+I2C touch panels are not supported yet.
 
-## Capacitive touch (ESP32 touch sensor)
+## Moving BSP out of this repository
 
-ESPD reads the SoC's built-in capacitive touch peripheral (not I2C display
-controllers). Raw counts are sent to **espd/touch/0**, **espd/touch/1**, …
+Waveshare already uses esp-bsp via git dependency — no vendored board tree in
+ESPD. For new boards, prefer Path A (esp-bsp + selector + shim) over copying
+drivers into **components/bsp_*/**.
 
-Enable: compile **ESPD_PD_USE_TOUCH0** in menuconfig, then list GPIOs in
-**config.txt**:
-
-```
-touch_pins=4,5
-touch_task_period_ms=5
-```
-
-On ESP32-S3, touch-capable GPIOs are **1–14**. Wire copper pads or electrodes
-to a free GPIO.
-
-**Waveshare ESP32-S3-AUDIO** has no on-board touch pads (physical buttons use the
-I2C expander → **espd/din/N**). To experiment, solder pads to unused touch GPIOs
-(e.g. **4**, **5**) that do not conflict with I2S/I2C/SD pins — see
-**components/bsp_waveshare_s3/include/bsp/waveshare_s3.h**.
-
-Test patch: **test-patch/touch-test.pd** (prints **espd/touch/0**).
-
-External I2C touch panels (FT6336, GT911, …) are not supported yet; add a
-**bsp_touch_*** API in **espd_integration** when you need one.
-
-## Moving a BSP out of this repository
-
-1. Publish **bsp_myboard** as its own git repo or Component Manager package.
-2. In your project **idf_component.yml**, depend on it.
-3. Drop the copy under **components/** — menuconfig and linking work the same.
-
-See also **components/espd_integration/README.md**.
+See **components/espd_integration/README.md**.

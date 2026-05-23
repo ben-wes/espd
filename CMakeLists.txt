@@ -9,8 +9,6 @@ cmake_minimum_required(VERSION 3.5)
 
 set(SDKCONFIG_DEFAULTS "${CMAKE_SOURCE_DIR}/sdkconfig.defaults")
 
-option(ESPD_BSP_COMPONENT "Override CONFIG_ESPD_BSP_COMPONENT_NAME at configure time" "")
-
 # Merge at most one board profile defaults file. Never default to generic — that
 # profile is for CONFIG_ESPD_BOARD_GENERIC only and must not run before a BSP
 # board is chosen (would stick 32768 stack / legacy WiFi on esp32s3 builds).
@@ -21,39 +19,26 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/sdkconfig")
     if(_espd_sdkconfig MATCHES "CONFIG_ESPD_BOARD_GENERIC=y")
         set(_espd_profile_defaults
             "${CMAKE_SOURCE_DIR}/main/boards/generic/sdkconfig.defaults")
+    elseif(_espd_sdkconfig MATCHES "CONFIG_ESPD_BOARD_WAVESHARE_S3=y")
+        set(_espd_profile_defaults
+            "${CMAKE_SOURCE_DIR}/components/espd_bsp_selector/sdkconfig.defaults")
     else()
-        set(_espd_bsp_defaults "")
-
-        if(_espd_sdkconfig MATCHES "CONFIG_ESPD_BSP_COMPONENT_NAME=\"([^\"]+)\"")
-            set(_espd_bsp_name "${CMAKE_MATCH_1}")
-            if(_espd_bsp_name)
-                set(_espd_bsp_defaults
-                    "${CMAKE_SOURCE_DIR}/components/${_espd_bsp_name}/sdkconfig.defaults")
+        string(REGEX MATCHALL "CONFIG_ESPD_BOARD_[A-Z0-9_]+=y" _espd_board_syms
+            "${_espd_sdkconfig}")
+        foreach(_sym IN LISTS _espd_board_syms)
+            if(_sym STREQUAL "CONFIG_ESPD_BOARD_GENERIC=y")
+                continue()
             endif()
-        endif()
-
-        if(NOT _espd_bsp_defaults OR NOT EXISTS "${_espd_bsp_defaults}")
-            string(REGEX MATCHALL "CONFIG_ESPD_BOARD_[A-Z0-9_]+=y" _espd_board_syms
-                "${_espd_sdkconfig}")
-            foreach(_sym IN LISTS _espd_board_syms)
-                if(_sym STREQUAL "CONFIG_ESPD_BOARD_GENERIC=y")
-                    continue()
+            if(_sym MATCHES "CONFIG_ESPD_BOARD_([A-Z0-9_]+)=y")
+                string(TOLOWER "${CMAKE_MATCH_1}" _board_suffix)
+                set(_candidate
+                    "${CMAKE_SOURCE_DIR}/components/espd_bsp_selector/sdkconfig.defaults")
+                if(EXISTS "${_candidate}")
+                    set(_espd_profile_defaults "${_candidate}")
+                    break()
                 endif()
-                if(_sym MATCHES "CONFIG_ESPD_BOARD_([A-Z0-9_]+)=y")
-                    string(TOLOWER "${CMAKE_MATCH_1}" _board_suffix)
-                    set(_candidate
-                        "${CMAKE_SOURCE_DIR}/components/bsp_${_board_suffix}/sdkconfig.defaults")
-                    if(EXISTS "${_candidate}")
-                        set(_espd_bsp_defaults "${_candidate}")
-                        break()
-                    endif()
-                endif()
-            endforeach()
-        endif()
-
-        if(_espd_bsp_defaults AND EXISTS "${_espd_bsp_defaults}")
-            set(_espd_profile_defaults "${_espd_bsp_defaults}")
-        endif()
+            endif()
+        endforeach()
     endif()
 endif()
 

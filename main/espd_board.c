@@ -1,8 +1,7 @@
 /*
  * Generic board bring-up: probe optional bsp_* peripherals and use what exists.
  *
- * A linked BSP package overrides weak stubs from espd_integration with real
- * drivers. No board-specific code or espd_port.c in BSP components.
+ * Managed esp-bsp boards use espd_bsp_shim for I/O and SD card.
  */
 
 #include "espd_board.h"
@@ -11,6 +10,10 @@
 #include "bsp/bsp_io.h"
 
 #include "esp_log.h"
+
+#if CONFIG_ESPD_BOARD_WAVESHARE_S3
+#include "espd_bsp_shim.h"
+#endif
 
 static const char *TAG = "espd_board";
 
@@ -40,7 +43,11 @@ void espd_board_poll(void)
 
 esp_err_t espd_board_sdcard_mount(void)
 {
+#if CONFIG_ESPD_BOARD_WAVESHARE_S3
+    return espd_bsp_waveshare_sdcard_mount();
+#else
     return bsp_sdcard_mount(ESPD_SDCARD_MOUNT);
+#endif
 }
 
 int espd_board_led_count(void)

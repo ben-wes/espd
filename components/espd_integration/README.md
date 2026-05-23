@@ -3,71 +3,55 @@
 Short reference — full guide: **docs/ADDING_A_BOARD.md**
 
 ESPD does not embed board-specific logic. Core firmware probes optional
-**bsp_*** symbols; a BSP package you add to the project provides the ones
-it supports.
+**bsp_*** symbols; hardware comes from **esp-bsp** (Component Manager) plus
+**espd_bsp_shim**, or from an in-tree BSP under **components/**.
 
-## Upstream BSP (esp-bsp) — no ESPD code
+## Waveshare (reference)
 
-Implement only the hardware drivers your board has. Match the optional
-signatures in **espd_integration/include/bsp/bsp_io.h** and **bsp_audio.h**
-(LED, buttons, SD, codec audio). No **espd_*** references.
+| Component | Purpose |
+|-----------|---------|
+| **espd_bsp_selector** | Kconfig + conditional git dep on `waveshare_esp32_s3_audio` |
+| **espd_bsp_shim** | **bsp_io.h** (LED, buttons), SD mount helper |
+| **espd_integration** | Weak stubs when nothing else is linked |
 
-## How ESPD discovers hardware
+Audio: **main/espd_audio_codec.c** includes **bsp/esp-bsp.h** and configures
+48 kHz stereo I2S before opening ES8311/ES7210 via **esp_codec_dev**.
 
-1. **espd_integration** ships weak stub **bsp_*** functions (no-op /
-   `ESP_ERR_NOT_SUPPORTED`).
-2. Your BSP component provides strong implementations for the peripherals it
-   has.
-3. **main/espd_board.c** calls every optional init at boot; failures other than
-   `NOT_SUPPORTED` are logged.
-4. **main/espd_io.c** binds Pd receivers when **bsp_led_count() > 0**.
+## Optional **bsp_*** contract
 
-No **espd_port.c** in the BSP.
+Headers in **include/bsp/**:
+
+| Header | Symbols | Notes |
+|--------|---------|-------|
+| **bsp_io.h** | LED, buttons, **bsp_sdcard_mount(mount_point)** | Shim implements for Waveshare; weak stubs otherwise |
+| **bsp_audio.h** | void **bsp_audio_init()**, codec inits | Used only for in-tree BSPs; esp-bsp path uses **bsp/esp-bsp.h** |
+
+**espd_board.c** calls inits at boot; **espd_io.c** binds **espd/led** when
+**bsp_led_count() > 0**. No **espd_port.c** in BSP packages.
 
 ## Project wiring
 
-1. Add the BSP component to **components/** (or a managed dependency).
-2. Select the board in menuconfig (**ESPD Configuration → Target board**), Save,
-   then build. See **Switching boards** in **docs/ADDING_A_BOARD.md**.
-3. Override at configure time with **-DESPD_BSP_COMPONENT=...** if needed.
-4. Each BSP registers in **Kconfig**: board choice, **ESPD_BSP_COMPONENT_NAME**
-   default, **select** profile, and **sdkconfig.defaults** under **components/<name>/**.
+1. **menuconfig** → **ESPD Configuration → Target board** → Save.
+2. **main/CMakeLists.txt** → **REQUIRES** includes **espd_bsp_shim** and
+   **espd_bsp_selector**; adds the managed BSP component when the board is selected.
+3. First build fetches esp-bsp (network required); **dependencies.lock** is updated.
 
-## Switching boards
+Switching boards: **docs/ADDING_A_BOARD.md** (*Switching boards*).
 
-Configure first, then build (**idf.py** chains left to right):
+## Audio backends
 
-```
-idf.py menuconfig build flash monitor
-```
+| menuconfig | File | Backend |
+|------------|------|---------|
+| Generic I2S | **espd_audio_generic.c** | Manual GPIO I2S |
+| BSP codec | **espd_audio_codec.c** | esp-bsp + **esp_codec_dev** |
 
-Pick **Target board** → Save → exit; the chained **build** picks up **sdkconfig**,
-merges that BSP's **sdkconfig.defaults**, and links **CONFIG_ESPD_BSP_COMPONENT_NAME**.
-Full flow: **docs/ADDING_A_BOARD.md** (*Switching boards*).
+## GPIO / touch / storage
 
-## Audio
+- BSP buttons → **espd/din/0..**; extra GPIO din → **ESPD_PD_USE_DIN0** + **din_pins=**
+- **espd/dout**, **espd/aout**, **espd/ain**, **espd/touch** — see **docs/ADDING_A_BOARD.md**
+- **main.pd** / **config.txt** — SD (**/sdcard**) then SPIFFS (**/espd_pd**)
 
-- **Generic I2S** → **espd_audio_generic.c**
-- **BSP codec** → **espd_audio_codec.c** (calls **bsp_audio_init()** etc.)
+## Adding a new board
 
-Select **ESPD Configuration → Audio backend** in menuconfig.
-
-## Capacitive touch
-
-SoC touch sensor → **espd/touch/N** (not BSP). Compile **ESPD_PD_USE_TOUCH0**;
-activate with **touch_pins=** in **config.txt**. See **docs/ADDING_A_BOARD.md**.
-
-## Digital in / out (GPIO)
-
-BSP buttons → **espd/din/0..** automatically when the BSP implements
-**bsp_button_***. Extra GPIO digital inputs append at higher indices: compile
-**ESPD_PD_USE_DIN0**, set **din_pins=** in **config.txt** (boot log lists the
-full **espd/din/N** map). GPIO digital outputs: **ESPD_PD_USE_DOUT0** +
-**dout_pins=** → **espd/dout/0..** (float ≥ 0.5 = high). PWM analog out is
-separate: **ESPD_PD_USE_AOUT** + **aout_pins=** → **espd/aout/0..**.
-
-## Moving BSP out of the ESPD tree
-
-The reference **bsp_waveshare_s3** component is an example only. Production
-projects should depend on it (or upstream esp-bsp) via Component Manager /
-**idf_component.yml**, not fork it inside ESPD.
+Prefer esp-bsp + **espd_bsp_selector** + **espd_bsp_shim** (see full doc). In-tree
+**components/bsp_myboard/** remains valid for boards not in esp-bsp.

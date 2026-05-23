@@ -13,17 +13,10 @@ config ESPD_BOARD_GENERIC
     imply ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     help
         Bare I2S pins without an external codec driver. Tune GPIOs under
-        "Generic board I2S pins" below. Additional boards are added by BSP
-        components (e.g. under components/ in this repository).
+        "Generic board I2S pins" below. Additional boards are added via
+        espd_bsp_selector (Component Manager git deps on esp-bsp).
 
 endchoice
-
-config ESPD_BSP_COMPONENT_NAME
-    string
-    help
-        Set automatically by the selected board BSP (each BSP registers its
-        component name in its own Kconfig). Override at configure time with
-        -DESPD_BSP_COMPONENT=... if needed. Unset for Generic I2S.
 
 menu "Audio (dac~ / adc~)"
 

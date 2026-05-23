@@ -21,4 +21,6 @@ int bsp_button_count(void);
 void bsp_button_set_handler(void (*handler)(int idx, int pressed));
 void bsp_button_poll(void);
 
+#ifndef ESPD_BSP_IO_NO_SDCARD_DECL
 esp_err_t bsp_sdcard_mount(const char *mount_point);
+#endif
