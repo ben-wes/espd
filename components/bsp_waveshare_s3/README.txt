@@ -167,19 +167,19 @@ after boot **unless** a file **main.pd** exists on the SPIFFS patch store.
 SD card runtime WiFi config (optional)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-When **PD_USE_WIFI** and **PD_USE_SDCARD** are enabled, firmware also checks
-for **`/sdcard/config.txt`** at boot. If present, it can override AP
-credentials at runtime:
+When **PD_USE_WIFI** and **PD_USE_SDCARD** are enabled, firmware reads
+**config.txt** (SD → SPIFFS) at boot. STA connects when **wifi_ssid** is
+non-empty:
 
   wifi_ssid=YourNetwork
   wifi_password=YourPassword
-  wifi_enable=1
 
-Notes:
-- `wifi_enable` is optional; non-zero forces WiFi on even when a local
-  **main.pd** would otherwise skip network startup.
-- Ports are intentionally not configured in this file; use Pd networking
-  objects / patch logic for transport behavior.
+Optional **wifi_enable** (only needed for overrides):
+- **wifi_enable=0** — disable STA even if **wifi_ssid** is set
+- **wifi_enable=1** — force STA when **ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK**
+  would otherwise skip WiFi
+
+Ports are not configured in this file; use Pd **netsend** / **netreceive**.
 
 If you need stock Pd behaviour for A/B tests, use the *~_aliased objects from
 **main/espdsp_osc_override.c** (see comments there).

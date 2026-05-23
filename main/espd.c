@@ -318,7 +318,7 @@ static void espd_wifi_try_load_config(void)
         espd_wifi_password[0] = '\0';
         espd_wifi_force_enable = 0;
 #ifdef PD_USE_SDCARD
-        ESP_LOGI(TAG, "wifi: no config.txt on SD or %s — STA disabled",
+        ESP_LOGI(TAG, "wifi: no config.txt on SD or %s",
             ESPD_PATCH_STORE_MOUNT);
 #endif
         return;
@@ -331,7 +331,7 @@ static void espd_wifi_try_load_config(void)
         espd_wifi_ssid[0] = '\0';
         espd_wifi_password[0] = '\0';
         espd_wifi_force_enable = 0;
-        ESP_LOGI(TAG, "wifi: cannot read %s — STA disabled", config_path);
+        ESP_LOGI(TAG, "wifi: cannot read %s", config_path);
         return;
     }
     while (fgets(line, sizeof(line), f))
@@ -385,14 +385,14 @@ static void espd_wifi_try_load_config(void)
         espd_wifi_ssid[0] = '\0';
         espd_wifi_password[0] = '\0';
         espd_wifi_force_enable = 0;
-        ESP_LOGI(TAG, "wifi: no STA keys in %s — not using Kconfig SSID",
-            config_path);
+        ESP_LOGI(TAG, "wifi: no wifi_ssid in %s — STA off", config_path);
     }
     else if (ssid_nonempty && !saw_wifi_enable_key)
         espd_wifi_force_enable = 1;
-    ESP_LOGI(TAG, "loaded WiFi config from %s (ssid=%s, force=%d, sta_ok=%d, log_port=%d)",
-        config_path, espd_wifi_ssid, espd_wifi_force_enable,
-        s_wifi_credentials_in_config_txt, espd_log_broadcast_port);
+    ESP_LOGI(TAG, "wifi: %s (ssid=%s, sta_ok=%d, force=%d, log_port=%d)",
+        config_path, espd_wifi_ssid[0] ? espd_wifi_ssid : "(none)",
+        s_wifi_credentials_in_config_txt, espd_wifi_force_enable,
+        espd_log_broadcast_port);
 }
 #endif /* PD_USE_WIFI */
 
@@ -1567,6 +1567,12 @@ void app_main(void)
     espd_io_early_init();
     espd_storage_init();
 
+    /* If config.txt is SD-only, mount once before reading keys (idempotent later). */
+#ifdef PD_USE_SDCARD
+    if (!espd_storage_config_path())
+        espd_storage_mount_sdcard();
+#endif
+
 #ifdef PD_USE_ANALOG0
     espd_analog_load_config();
 #endif
@@ -1578,29 +1584,11 @@ void app_main(void)
     espd_wifi_try_load_config();
 #endif
 
-    /* Init codec/I2S before SD mount when config is on SPIFFS (restores pre-storage
-     * boot order). If config.txt lives on SD only, mount SD first so dma keys apply. */
-    if (!espd_storage_config_path()) {
-#ifdef PD_USE_SDCARD
-        espd_storage_mount_sdcard();
-        espd_audio_load_config();
-#ifdef PD_USE_ANALOG0
-        espd_analog_load_config();
-#endif
-#ifdef PD_USE_TOUCH0
-        espd_touch_load_config();
-#endif
-#ifdef PD_USE_WIFI
-        espd_wifi_try_load_config();
-#endif
-#endif
-    }
-
 #ifdef PD_USE_WIFI
     if (!espd_wifi_config_txt_allows_sta())
     {
         espd_wifi_net_enabled = 0;
-        ESP_LOGI(TAG, "wifi: STA disabled (no wifi_ssid / wifi_enable=1 in config.txt)");
+        ESP_LOGI(TAG, "wifi: STA off (set wifi_ssid= in config.txt to connect)");
     }
 #endif
 
@@ -1611,8 +1599,8 @@ void app_main(void)
         if (espd_storage_local_main_pd_present() && ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK &&
             !espd_wifi_force_enable) {
             espd_wifi_net_enabled = 0;
-            printf("wifi: skipped (main.pd on local storage; set wifi_enable=1 or"
-                   " wifi_ssid in config.txt to force STA)\n");
+            printf("wifi: skipped (main.pd on local storage; set wifi_ssid= or"
+                   " wifi_enable=1 in config.txt to force STA)\n");
             ESP_LOGI(TAG,
                 "main.pd detected on local storage — skipping WiFi before Pd init");
         } else {

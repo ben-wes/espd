@@ -1,4 +1,6 @@
-wifi_ssid=toppless
-wifi_password=ug60topp
-# optional:
-# wifi_enable=1
+# Example config.txt — copy to /sdcard or /espd_pd and edit before use.
+# wifi_ssid=MyNetwork
+# wifi_password=secret
+# wifi_enable=1          # optional: force STA or disable (see main/espd.h)
+# audio_dma_desc_num=4
+# audio_dma_frame_num=128

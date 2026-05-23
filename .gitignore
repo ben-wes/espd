@@ -4,4 +4,5 @@ dependencies.lock
 managed_components
 main/locale.h
 sdkconfig
+sdkconfig.old
 .cache

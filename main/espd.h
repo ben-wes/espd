@@ -224,9 +224,11 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #endif
 /* config.txt optional keys (key=value, # comment). Search order: SD card,
  * then SPIFFS at ESPD_PATCH_STORE_MOUNT, then USB MSC (if enabled).
- * WiFi (when PD_USE_WIFI): STA starts only if config.txt exists and wifi_ssid=
- *   has a non-empty value (wifi_password optional). Missing file → with
- *   PD_USE_SDCARD, STA stays off; otherwise Kconfig/locale defaults apply.
+ * WiFi (when PD_USE_WIFI): STA starts when config.txt has a non-empty wifi_ssid=
+ *   (wifi_password optional). wifi_enable=0 disables STA even if wifi_ssid is set;
+ *   wifi_enable=1 forces STA when ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK would
+ *   otherwise skip WiFi. Missing config.txt → with PD_USE_SDCARD, STA stays off;
+ *   otherwise Kconfig/locale defaults apply.
  *   log_broadcast_port=9001
  *     >0 enables UDP broadcast of Pd print/error output to this port
  *     (when WiFi/net is active); 0 or missing keeps default log routing.

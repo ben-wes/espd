@@ -55,7 +55,7 @@ idf.py build flash monitor
 | File | Location (priority) | Purpose |
 |------|---------------------|---------|
 | `main.pd` | `/sdcard` → `/espd_pd` (SPIFFS) → USB MSC | Pd patch loaded at boot |
-| `config.txt` | same order | WiFi, analog pins, touch pins, etc. |
+| `config.txt` | same order | WiFi, analog/touch pins, **audio_dma_***, etc. |
 
 Without files on SD, SPIFFS at **`/espd_pd`** is used when populated. If no **main.pd** is found, an embedded test patch runs when **PD_INCLUDEPATCH** is enabled in menuconfig (`main/testpatch.c`).
 
@@ -67,7 +67,10 @@ Example patches: [test-patch/](test-patch/). **config.txt** keys: [main/espd.h](
 
 ## WiFi and remote patches
 
-Configure STA via **config.txt** (`wifi_ssid=`, `wifi_password=`) or Kconfig/locale when no local config file is used.
+Configure STA via **config.txt** with **wifi_ssid=** (and optional
+**wifi_password=**). **wifi_enable** is only for explicit off or forcing STA
+when skip-WiFi-on-local-main-pd is enabled. Without **config.txt**, Kconfig
+defaults apply.
 
 Optional legacy host transport: board connects on port 4498; load patches with `pd begin-new …` / `pd end-new`. Examples in [test-patch/](test-patch/).
 

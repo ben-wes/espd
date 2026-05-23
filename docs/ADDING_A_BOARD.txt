@@ -137,15 +137,18 @@ Pd I/O surface (core — not BSP-specific)
 Local storage (main.pd, config.txt)
 -----------------------------------
 
-**espd_storage_init()** runs at boot:
+**espd_storage_init()** mounts SPIFFS at **/espd_pd** and probes paths. SD is
+mounted separately via **espd_storage_mount_sdcard()** (before reading SD-only
+**config.txt**, and again before **main.pd** load if needed). Boot order keeps
+codec init before SD when **config.txt** is already on SPIFFS.
 
-1. Mount SD card (when **ESPD_PD_USE_SDCARD** and BSP supports it)
-2. Mount SPIFFS at **/espd_pd** (internal flash)
-3. Pick the first existing **config.txt**: SD → SPIFFS → USB MSC
-4. Pick the first existing **main.pd** with the same priority
+1. Mount SPIFFS at **/espd_pd** (internal flash)
+2. Probe **config.txt** and **main.pd**: SD → SPIFFS → USB MSC
+3. Mount SD when required (SD-only config, or **main.pd** on SD)
+4. Audio init runs after **config.txt** is readable (for **audio_dma_*** keys)
 
 Without an SD card, **config.txt** and **main.pd** on SPIFFS are used automatically.
-See **main/espd_storage.c**.
+See **main/espd_storage.c** and **main/espd.h** (full **config.txt** key list).
 
 Analog and touch pins are usually listed in **config.txt**. Kconfig defaults apply
 when **config.txt** does not set **analog_pins=** or **touch_pins=**.
