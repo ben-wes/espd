@@ -67,8 +67,8 @@ In **components/bsp_myboard/Kconfig**:
 choice ESPD_BOARD
     config ESPD_BOARD_MYBOARD
         bool "My custom board"
-        imply ESPD_USE_ADC              # optional feature profile
-        imply ESPD_PD_USE_SDCARD
+        select ESPD_USE_ADC              # compile-time profile for this board
+        select ESPD_PD_USE_SDCARD
         help
             Short description for menuconfig.
 
@@ -89,8 +89,56 @@ its own **choice ESPD_BOARD** entry (Kconfig merges them).
 Set **sdkconfig.defaults** under the BSP for PSRAM, stacks, partition table,
 codec Kconfig symbols, and ESPD profile options (**CONFIG_ESPD_USE_ADC**, etc.).
 
-Root **CMakeLists.txt** merges **components/<bsp>/sdkconfig.defaults** after
-menuconfig sets **CONFIG_ESPD_BSP_COMPONENT_NAME**.
+Root **CMakeLists.txt** merges **sdkconfig.defaults** plus **one** board profile file:
+**main/boards/generic/sdkconfig.defaults** when Generic I2S is selected, or
+**components/<bsp>/sdkconfig.defaults** when **CONFIG_ESPD_BSP_COMPONENT_NAME**
+is set in **sdkconfig**. Never merge both profiles. BSP boards use Kconfig
+**select** (not **imply**) so the feature profile applies when switching boards.
+
+Switching boards
+----------------
+
+Configure first, then build. **idf.py** subcommands chain left to right.
+
+**Everyday switch** (Generic I2S ↔ any BSP, or BSP ↔ BSP):
+
+```
+idf.py menuconfig build flash monitor
+```
+
+In menuconfig: **ESPD Configuration → Target board** → pick the board → **Save** → exit.
+Then the chained **build** runs with the updated **sdkconfig**.
+
+**What menuconfig save does**
+
+- Writes **sdkconfig** with the board choice.
+- The BSP Kconfig sets **CONFIG_ESPD_BSP_COMPONENT_NAME** (empty for Generic I2S).
+- BSP **select** rules turn on that board's compile-time profile (ADC, SD card,
+  **espd/ain** / **espd/aout** support, etc.). Locked options show as `-*-`
+  in menuconfig (on, selected by the board).
+
+**What the next build does**
+
+- CMake reads **sdkconfig** and merges **one** profile defaults file:
+  **main/boards/generic/sdkconfig.defaults** when the BSP component name is empty,
+  otherwise **components/<bsp>/sdkconfig.defaults**.
+- **main/CMakeLists.txt** links the BSP named by **CONFIG_ESPD_BSP_COMPONENT_NAME**.
+
+**Different SoC** (e.g. first time on a new chip):
+
+```
+idf.py set-target esp32s3 menuconfig build flash monitor
+```
+
+**Override BSP link name** (rare; BSP still chosen in menuconfig):
+
+```
+idf.py -DESPD_BSP_COMPONENT=bsp_myboard build flash
+```
+
+**Stale profile** (switched boards but menuconfig still shows the old feature flags):
+delete **sdkconfig**, then **idf.py menuconfig build** and select the board again.
+Or re-open menuconfig, re-select the target board, Save, then build.
 
 Step 3 — Audio backend
 ----------------------
@@ -108,10 +156,11 @@ Step 4 — Build and verify
 ---------------------------
 
 ```
-idf.py set-target esp32s3          # or your SoC
-idf.py menuconfig                  # ESPD Configuration → your board
-idf.py build flash monitor
+idf.py set-target esp32s3 menuconfig build flash monitor
 ```
+
+In menuconfig: **ESPD Configuration → Target board** → your board → Save.
+See **Switching boards** above for the full configure-then-build flow.
 
 Override BSP name at configure time if needed:
 
@@ -128,11 +177,12 @@ Pd I/O surface (core — not BSP-specific)
 | Pd receiver      | Source                         | Enable in menuconfig        |
 |------------------|--------------------------------|-----------------------------|
 | **dac~** / **adc~** | Audio backend               | **ESPD_USE_ADC** for input  |
-| **espd/din/N**   | **bsp_button_***               | (automatic if BSP has buttons) |
-| **espd/led**, **espd/led/N** | **bsp_led_***      | (automatic if BSP has LEDs) |
-| **espd/ain/N**   | ESP32 ADC1 GPIOs               | **ESPD_PD_USE_ANALOG0**     |
-| **espd/aout/N**  | LEDC PWM GPIOs                 | **ESPD_AOUT_NUM_CHANNELS**  |
-| **espd/touch/N** | ESP32 touch sensor GPIOs       | **ESPD_PD_USE_TOUCH0**      |
+| **espd/din/N**   | **bsp_button_*** + optional **din_pins=** | BSP automatic; **ESPD_PD_USE_DIN0** + **din_pins=** for GPIO |
+| **espd/led**, **espd/led/N** | **bsp_led_*** (WS2812 etc.) | (automatic if BSP has LEDs) |
+| **espd/ain/N**   | ESP32 ADC1 GPIOs               | **ESPD_PD_USE_ANALOG0** + **ain_pins=** in config.txt |
+| **espd/aout/N**  | LEDC PWM GPIOs                 | **ESPD_PD_USE_AOUT** + **aout_pins=** in config.txt |
+| **espd/dout/N**  | GPIO digital out               | **ESPD_PD_USE_DOUT0** + **dout_pins=** in config.txt |
+| **espd/touch/N** | ESP32 touch sensor GPIOs       | **ESPD_PD_USE_TOUCH0** + **touch_pins=** in config.txt |
 
 Local storage (main.pd, config.txt)
 -----------------------------------
@@ -150,8 +200,11 @@ codec init before SD when **config.txt** is already on SPIFFS.
 Without an SD card, **config.txt** and **main.pd** on SPIFFS are used automatically.
 See **main/espd_storage.c** and **main/espd.h** (full **config.txt** key list).
 
-Analog and touch pins are usually listed in **config.txt**. Kconfig defaults apply
-when **config.txt** does not set **analog_pins=** or **touch_pins=**.
+**espd/ain**, **espd/touch**, **espd/aout**, **espd/din** (GPIO), and **espd/dout**
+GPIOs are listed in **config.txt** (**ain_pins=**, **touch_pins=**, **aout_pins=**,
+**din_pins=**, **dout_pins=**); without those keys the firmware does not start
+ADC, touch, PWM, or extra GPIO digital I/O. BSP buttons still map to
+**espd/din/0..** without **din_pins=**.
 
 Capacitive touch (ESP32 touch sensor)
 -------------------------------------
@@ -159,17 +212,16 @@ Capacitive touch (ESP32 touch sensor)
 ESPD reads the SoC's built-in capacitive touch peripheral (not I2C display
 controllers). Raw counts are sent to **espd/touch/0**, **espd/touch/1**, …
 
-Enable: **ESPD Configuration → Enable espd/touch (capacitive inputs)**.
-
-On ESP32-S3, touch-capable GPIOs are **1–14**. Wire copper pads or electrodes
-to a free GPIO and list it in **config.txt**:
+Enable: compile **ESPD_PD_USE_TOUCH0** in menuconfig, then list GPIOs in
+**config.txt**:
 
 ```
 touch_pins=4,5
 touch_task_period_ms=5
 ```
 
-Or set default GPIOs under **Capacitive touch (espd/touch)** in menuconfig.
+On ESP32-S3, touch-capable GPIOs are **1–14**. Wire copper pads or electrodes
+to a free GPIO.
 
 **Waveshare ESP32-S3-AUDIO** has no on-board touch pads (physical buttons use the
 I2C expander → **espd/din/N**). To experiment, solder pads to unused touch GPIOs

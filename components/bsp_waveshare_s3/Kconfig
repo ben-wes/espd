@@ -1,11 +1,13 @@
 choice ESPD_BOARD
     config ESPD_BOARD_WAVESHARE_S3
         bool "Waveshare ESP32-S3-AUDIO"
-        imply ESPD_USE_ADC
-        imply ESPD_PD_USE_SDCARD
-        imply ESPD_PD_USE_ANALOG0
-        imply ESPD_PD_INCLUDEPATCH
-        imply ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
+        select ESPD_USE_ADC
+        select ESPD_PD_USE_SDCARD
+        select ESPD_PD_USE_ANALOG0
+        select ESPD_PD_USE_AOUT
+        select ESPD_PD_INCLUDEPATCH
+        select ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
+        select BSP_WAVESHARE_ENABLE_MIC
         help
             Waveshare AI Smart Speaker / ESP32-S3-AUDIO-Board (ES8311 DAC,
             ES7210 mic). Select in menuconfig; **ESPD_BSP_COMPONENT_NAME** links

@@ -36,17 +36,19 @@ $IDF_PATH/tools/activate.py
 . $IDF_PATH/export.sh
 ```
 
-Build and flash (from the **espd** repo root):
+Build and flash (from the **espd** repo root). **idf.py** subcommands chain; configure before build when **menuconfig** is in the chain:
 
 ```bash
-idf.py set-target esp32s3      # or esp32 for older boards
-idf.py menuconfig              # ESPD Configuration → board, WiFi, SD, audio, …
-idf.py build flash monitor
+idf.py set-target esp32s3 menuconfig build flash monitor
 ```
 
-**Waveshare:** menuconfig → **ESPD Configuration → Target board → Waveshare ESP32-S3-AUDIO**. The BSP links from **sdkconfig**; `components/bsp_waveshare_s3/sdkconfig.defaults` merges on the next build. Details: [components/bsp_waveshare_s3/README.txt](components/bsp_waveshare_s3/README.txt).
+In menuconfig: **ESPD Configuration** → pick **Target board**, WiFi, SD, audio, etc. → **Save** → exit; the chained **build** uses the updated **sdkconfig**.
 
-**Generic I2S:** menuconfig → **Generic I2S**, set GPIO pins (INMP441 + MAX98357A, etc.). SPH0645 mic is known **not** to work on ESP32. Legacy presets: `sdkconfig.wroom`, `sdkconfig.lyrat`, `sdkconfig.lyratmini`, `sdkconfig.bn085`.
+**Switching boards:** [docs/ADDING_A_BOARD.txt](docs/ADDING_A_BOARD.txt) (*Switching boards*). Short version: `idf.py menuconfig build` — select board, Save, then build.
+
+**Generic I2S:** manual GPIO pins under **ESPD Configuration** (INMP441 + MAX98357A, etc.). SPH0645 mic is known **not** to work on ESP32. Legacy presets: `sdkconfig.wroom`, `sdkconfig.lyrat`, `sdkconfig.lyratmini`, `sdkconfig.bn085`.
+
+**Reference BSP:** [Waveshare ESP32-S3-AUDIO](components/bsp_waveshare_s3/README.txt) — board-specific hardware notes only; switching boards uses the same menuconfig flow as any BSP.
 
 **LyraT (legacy):** enable ADF in root `CMakeLists.txt`, use `sdkconfig.lyrat*`, export ADF’s IDF instead of standalone IDF.
 
@@ -55,7 +57,7 @@ idf.py build flash monitor
 | File | Location (priority) | Purpose |
 |------|---------------------|---------|
 | `main.pd` | `/sdcard` → `/espd_pd` (SPIFFS) → USB MSC | Pd patch loaded at boot |
-| `config.txt` | same order | WiFi, analog/touch pins, **audio_dma_***, etc. |
+| `config.txt` | same order | WiFi, ain/touch/aout/din/dout pins, **audio_dma_***, etc. |
 
 Without files on SD, SPIFFS at **`/espd_pd`** is used when populated. If no **main.pd** is found, an embedded test patch runs when **PD_INCLUDEPATCH** is enabled in menuconfig (`main/testpatch.c`).
 

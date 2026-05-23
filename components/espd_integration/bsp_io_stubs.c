@@ -45,6 +45,11 @@ __attribute__((weak)) esp_err_t bsp_button_init(void)
     return ESP_ERR_NOT_SUPPORTED;
 }
 
+__attribute__((weak)) int bsp_button_count(void)
+{
+    return 0;
+}
+
 __attribute__((weak)) void bsp_button_set_handler(void (*handler)(int idx, int pressed))
 {
     (void)handler;

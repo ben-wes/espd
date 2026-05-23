@@ -27,13 +27,23 @@ No **espd_port.c** in the BSP.
 ## Project wiring
 
 1. Add the BSP component to **components/** (or a managed dependency).
-2. Select the board in **idf.py menuconfig → ESPD Configuration → Target board**.
-   The BSP sets **CONFIG_ESPD_BSP_COMPONENT_NAME**; **main/CMakeLists.txt** links
-   that component automatically.
+2. Select the board in menuconfig (**ESPD Configuration → Target board**), Save,
+   then build. See **Switching boards** in **docs/ADDING_A_BOARD.txt**.
 3. Override at configure time with **-DESPD_BSP_COMPONENT=...** if needed.
-4. Each BSP registers in **Kconfig**: board choice + **ESPD_BSP_COMPONENT_NAME**
-   default + **sdkconfig.defaults** under **components/<name>/** (merged after
-   menuconfig selects that board).
+4. Each BSP registers in **Kconfig**: board choice, **ESPD_BSP_COMPONENT_NAME**
+   default, **select** profile, and **sdkconfig.defaults** under **components/<name>/**.
+
+## Switching boards
+
+Configure first, then build (**idf.py** chains left to right):
+
+```
+idf.py menuconfig build flash monitor
+```
+
+Pick **Target board** → Save → exit; the chained **build** picks up **sdkconfig**,
+merges that BSP's **sdkconfig.defaults**, and links **CONFIG_ESPD_BSP_COMPONENT_NAME**.
+Full flow: **docs/ADDING_A_BOARD.txt** (*Switching boards*).
 
 ## Audio
 
@@ -44,8 +54,17 @@ Select **ESPD Configuration → Audio backend** in menuconfig.
 
 ## Capacitive touch
 
-SoC touch sensor → **espd/touch/N** (not BSP). Enable **ESPD_PD_USE_TOUCH0** in
-menuconfig; set GPIOs in **config.txt** or Kconfig. See **docs/ADDING_A_BOARD.txt**.
+SoC touch sensor → **espd/touch/N** (not BSP). Compile **ESPD_PD_USE_TOUCH0**;
+activate with **touch_pins=** in **config.txt**. See **docs/ADDING_A_BOARD.txt**.
+
+## Digital in / out (GPIO)
+
+BSP buttons → **espd/din/0..** automatically when the BSP implements
+**bsp_button_***. Extra GPIO digital inputs append at higher indices: compile
+**ESPD_PD_USE_DIN0**, set **din_pins=** in **config.txt** (boot log lists the
+full **espd/din/N** map). GPIO digital outputs: **ESPD_PD_USE_DOUT0** +
+**dout_pins=** → **espd/dout/0..** (float ≥ 0.5 = high). PWM analog out is
+separate: **ESPD_PD_USE_AOUT** + **aout_pins=** → **espd/aout/0..**.
 
 ## Moving BSP out of the ESPD tree
 

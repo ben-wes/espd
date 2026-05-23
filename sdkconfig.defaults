@@ -1,5 +1,5 @@
-# Generic ESPD defaults. After menuconfig selects a BSP board,
-# components/<bsp>/sdkconfig.defaults is merged on the next configure.
+# Generic ESPD defaults (partition table, flash size). Board profile defaults
+# are merged separately in CMakeLists.txt (generic vs BSP), not from here.
 
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_pd.csv"

@@ -187,10 +187,18 @@ If you need stock Pd behaviour for A/B tests, use the *~_aliased objects from
 Switching boards
 ----------------
 
-Switch boards in **idf.py menuconfig → ESPD Configuration → Target board**.
-For generic I2S, select **Generic I2S** and tune GPIO pins in the same menu.
-Remove **build/** and **sdkconfig** (or run **idf.py fullclean**) when changing
-target or board defaults so CMake does not reuse a stale merged sdkconfig.
+Same flow as any BSP — see **docs/ADDING_A_BOARD.txt** (*Switching boards*):
+
+```
+idf.py menuconfig build flash monitor
+```
+
+**ESPD Configuration → Target board** → pick this board or **Generic I2S** → Save.
+Board-locked options show as `-*-` in menuconfig (e.g. **espd/ain**, **espd/aout** compile
+support). Runtime GPIOs still come from **config.txt** (**ain_pins=**, **aout_pins=**, …).
+
+If the profile looks wrong after a switch, delete **sdkconfig** and run
+**idf.py menuconfig build** again (fullclean is only needed when changing SoC target).
 
 USB “disc” vs audio + Pd (hotplug, future work)
 -----------------------------------------------
@@ -259,9 +267,12 @@ Implemented today (audio + expander)
   JTAG share the internal USB PHY on ESP32-S3.
 
 Input: three physical buttons → **espd/din/0..2** (TCA9555, not capacitive
-touch). This kit has no on-board touch pads; for **espd/touch** wire external
-electrodes to free touch GPIOs (1–14) and enable **ESPD_PD_USE_TOUCH0** — see
-**docs/ADDING_A_BOARD.txt**.
+touch). Optional GPIO digital ins append after those indices (**din_pins=** in
+**config.txt**, **ESPD_PD_USE_DIN0**); e.g. **din_pins=4,5** → **espd/din/3..4**
+when three BSP buttons are present. Boot log prints the full map. This kit has
+no on-board touch pads; for **espd/touch** wire external electrodes to free
+touch GPIOs (1–14), enable **ESPD_PD_USE_TOUCH0**, and set **touch_pins=** in
+**config.txt** — see **docs/ADDING_A_BOARD.txt**.
 
 USB MSC / VBUS hotplug disc mode is still planned; see the sections above for
 design notes. Next step: TinyUSB MSC + FAT per

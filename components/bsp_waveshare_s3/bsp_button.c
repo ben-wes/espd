@@ -39,6 +39,11 @@ static bsp_button_handler_t s_handler;
 
 static void bsp_button_poll_task(void *arg);
 
+int bsp_button_count(void)
+{
+    return s_dev ? BSP_BUTTON_COUNT : 0;
+}
+
 esp_err_t bsp_button_init(void)
 {
     esp_err_t err;

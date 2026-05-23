@@ -5,7 +5,7 @@ choice ESPD_BOARD
     default ESPD_BOARD_GENERIC
     help
         Select the hardware board. Board-specific options are registered by BSP
-        components (see menuconfig after selecting a board). Each board may imply
+        components (see menuconfig after selecting a board). Each board may select
         an ESPD feature profile and ship sdkconfig.defaults for IDF tuning.
 
 config ESPD_BOARD_GENERIC
@@ -14,32 +14,35 @@ config ESPD_BOARD_GENERIC
     help
         Bare I2S pins without an external codec driver. Tune GPIOs under
         "Generic board I2S pins" below. Additional boards are added by BSP
-        components (e.g. bsp_waveshare_s3 in this repository).
+        components (e.g. under components/ in this repository).
 
 endchoice
 
 config ESPD_BSP_COMPONENT_NAME
-    string "BSP component to link"
+    string
     default ""
     help
-        Set automatically by the selected board (each BSP registers its
-        component name). Override at configure time with -DESPD_BSP_COMPONENT=...
+        Set automatically by the selected board BSP (each BSP registers its
+        component name in its own Kconfig). Override at configure time with
+        -DESPD_BSP_COMPONENT=... if needed.
+
+menu "Audio (dac~ / adc~)"
 
 config ESPD_IOCHANS
-    int "Audio I/O channels (dac~ / adc~)"
+    int "I/O channel count"
     default 2
     range 1 2
 
 config ESPD_USE_ADC
-    bool "Enable audio input (adc~)"
+    bool "Enable adc~ capture"
     default n
     help
         When enabled, espd_audio reads from the board microphone / ADC path.
 
 choice ESPD_AUDIO_BACKEND
-    prompt "Audio backend"
+    prompt "Backend"
     default ESPD_AUDIO_BACKEND_GENERIC_I2S if ESPD_BOARD_GENERIC
-    default ESPD_AUDIO_BACKEND_BSP_CODEC if ESPD_BOARD_WAVESHARE_S3
+    default ESPD_AUDIO_BACKEND_BSP_CODEC
     help
         Generic I2S drives pins directly. BSP codec uses bsp_audio_* from the
         active BSP package (see bsp/config.h in the linked BSP component).
@@ -54,127 +57,97 @@ config ESPD_AUDIO_BACKEND_BSP_CODEC
 
 endchoice
 
-config ESPD_PD_USE_WIFI
-    bool "Enable WiFi for Pd net objects"
-    default y
+endmenu
 
-config ESPD_PD_USE_CONSOLE
-    bool "Enable USB serial console for Pd messages"
-    default y
+menu "Storage & patches"
 
 config ESPD_PD_USE_SDCARD
-    bool "Enable SD card support"
+    bool "Enable SD card"
     default n
-
-config ESPD_PD_USE_ANALOG0
-    bool "Enable espd/ain analog inputs"
-    default n
-
-config ESPD_PD_USE_TOUCH0
-    bool "Enable espd/touch capacitive inputs"
-    default n
-    help
-        Uses the ESP32 touch sensor on touch-capable GPIOs. Pin list from
-        /sdcard/config.txt (touch_pins=) or the defaults below. Not for I2C
-        display touch controllers — those need a BSP driver.
 
 config ESPD_PD_INCLUDEPATCH
-    bool "Embed test patch at build time"
+    bool "Embed fallback test patch at build time"
     default n
-
-config ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
-    bool "Skip WiFi when main.pd is loaded from local storage"
-    default n
-
-config ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
-    bool "Run legacy espd TCP/UDP transport tasks"
-    default n
-
-config ESPD_AOUT_NUM_CHANNELS
-    int "PWM analog output channels (espd/aout/N)"
-    default 0
-    range 0 4
-
-config ESPD_AOUT_PIN_0
-    int "espd/aout/0 GPIO (-1 = disabled)"
-    default -1
-    range -1 48
-
-config ESPD_AOUT_PIN_1
-    int "espd/aout/1 GPIO"
-    default -1
-    range -1 48
-
-config ESPD_AOUT_PWM_FREQ_HZ
-    int "PWM frequency for espd/aout (Hz)"
-    default 20000
-
-config ESPD_ANALOG_TASK_PERIOD_MS
-    int "Analog input producer task period (ms)"
-    default 5
-    range 1 500
-
-menu "Capacitive touch (espd/touch)"
-    depends on ESPD_PD_USE_TOUCH0
-
-config ESPD_TOUCH_NUM_CHANNELS
-    int "Default channel count (when config.txt has no touch_pins=)"
-    default 0
-    range 0 8
     help
-        0 = infer from the highest GPIO slot configured below.
-
-config ESPD_TOUCH_PIN_0
-    int "GPIO for espd/touch/0 (-1 = disabled)"
-    default -1
-    range -1 48
-
-config ESPD_TOUCH_PIN_1
-    int "GPIO for espd/touch/1"
-    default -1
-    range -1 48
-
-config ESPD_TOUCH_PIN_2
-    int "GPIO for espd/touch/2"
-    default -1
-    range -1 48
-
-config ESPD_TOUCH_PIN_3
-    int "GPIO for espd/touch/3"
-    default -1
-    range -1 48
-
-config ESPD_TOUCH_PIN_4
-    int "GPIO for espd/touch/4"
-    default -1
-    range -1 48
-
-config ESPD_TOUCH_PIN_5
-    int "GPIO for espd/touch/5"
-    default -1
-    range -1 48
-
-config ESPD_TOUCH_PIN_6
-    int "GPIO for espd/touch/6"
-    default -1
-    range -1 48
-
-config ESPD_TOUCH_PIN_7
-    int "GPIO for espd/touch/7"
-    default -1
-    range -1 48
-
-config ESPD_TOUCH_TASK_PERIOD_MS
-    int "Touch sampling task period (ms)"
-    default 5
-    range 1 500
-
-config ESPD_TOUCH_REPORT_EVERY_N_BLOCKS
-    int "Forward touch updates every N audio blocks"
-    default 1
-    range 1 64
+        Used when no main.pd is found on SD or SPIFFS at boot.
 
 endmenu
+
+menu "WiFi & network"
+
+config ESPD_PD_USE_WIFI
+    bool "Enable WiFi (Pd netsend / netreceive)"
+    default y
+
+config ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
+    bool "Skip STA when main.pd is on local storage"
+    depends on ESPD_PD_USE_WIFI
+    default n
+    help
+        When enabled, do not join an AP at boot if main.pd was loaded from SD
+        or SPIFFS, even when wifi_ssid= is set in config.txt. Use wifi_enable=1
+        in config.txt to override. When disabled, config.txt alone controls STA.
+
+config ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
+    bool "Legacy espd TCP/UDP transport (port 4498)"
+    depends on ESPD_PD_USE_WIFI
+    default n
+    help
+        Old host-driven patch loading over TCP/UDP. Not needed for Pd
+        [netsend] / [netreceive]. Generic I2S profile enables this by default.
+
+endmenu
+
+config ESPD_PD_USE_CONSOLE
+    bool "USB serial console for Pd messages"
+    default y
+
+config ESPD_PD_USE_ANALOG0
+    bool "Compile espd/ain support (ADC GPIO inputs)"
+    default n
+    help
+        Links ADC / espd/ain code into the firmware. Sampling starts only when
+        config.txt lists GPIOs: ain_pins=3,4 (SD or SPIFFS). No ain_pins=
+        key, empty list, or ain_enable=0 → no ADC task, no polling (same idea
+        as WiFi STA waiting for wifi_ssid=). Optional tuning in config.txt:
+        ain_task_period_ms, ain_deadband, ain_report_every_n_blocks.
+
+config ESPD_PD_USE_TOUCH0
+    bool "Compile espd/touch support (capacitive GPIO inputs)"
+    default n
+    help
+        Links ESP32 touch-sensor / espd/touch code into the firmware. Sampling
+        starts only when config.txt lists GPIOs: touch_pins=4,5 (SD or SPIFFS).
+        No touch_pins= key or empty list → no touch task, no polling (same idea
+        as ain_pins= and wifi_ssid=). Optional tuning in config.txt:
+        touch_task_period_ms, touch_report_every_n_blocks.
+
+config ESPD_PD_USE_AOUT
+    bool "Compile espd/aout support (PWM GPIO outputs)"
+    default n
+    help
+        Links LEDC PWM / espd/aout code into the firmware. Channels start only
+        when config.txt lists GPIOs: aout_pins=8,9 (SD or SPIFFS). No
+        aout_pins= key or empty list → no LEDC setup. Updates only when the Pd
+        patch sends floats (no background polling). Optional in config.txt:
+        aout_pwm_freq_hz=20000.
+
+config ESPD_PD_USE_DIN0
+    bool "Compile espd/din GPIO support (extra digital inputs)"
+    default n
+    help
+        Links GPIO poll task for extra espd/din channels. BSP buttons (if any)
+        occupy espd/din/0.. first; config.txt din_pins= appends GPIO channels
+        at higher indices. No din_pins= key → no GPIO polling (BSP din still
+        works). Optional: din_active_low, din_task_period_ms.
+
+config ESPD_PD_USE_DOUT0
+    bool "Compile espd/dout support (GPIO digital outputs)"
+    default n
+    help
+        Links GPIO digital out / espd/dout code. Channels start only when
+        config.txt lists GPIOs: dout_pins=8,9. Float >= 0.5 → high. No
+        dout_pins= key or empty list → no GPIO outputs configured.
 
 menu "Generic board I2S pins"
     depends on ESPD_BOARD_GENERIC

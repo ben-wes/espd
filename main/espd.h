@@ -191,6 +191,20 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #define ESPD_AOUT_PWM_FALLBACK_FREQ_HZ 10000
 #endif
 
+/* GPIO digital inputs (config.txt din_pins=); indices follow BSP button count. */
+#ifndef ESPD_DIN_GPIO_ACTIVE_LOW
+#define ESPD_DIN_GPIO_ACTIVE_LOW 1
+#endif
+#ifndef ESPD_DIN_GPIO_TASK_PERIOD_MS
+#define ESPD_DIN_GPIO_TASK_PERIOD_MS 5
+#endif
+#ifndef ESPD_DIN_GPIO_TASK_PRIO
+#define ESPD_DIN_GPIO_TASK_PRIO 2
+#endif
+#ifndef ESPD_DIN_GPIO_TASK_CORE
+#define ESPD_DIN_GPIO_TASK_CORE 0
+#endif
+
 #ifndef ESPD_PATCH_STORE_MOUNT
 #define ESPD_PATCH_STORE_MOUNT "/espd_pd"
 #endif
@@ -234,25 +248,40 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
  *     (when WiFi/net is active); 0 or missing keeps default log routing.
  *   wifi_ssid=myap
  *   wifi_password=secret
- * Analog (when PD_USE_ANALOG0): ADC / espd/ain starts only if analog_pins=
- *   lists at least one GPIO (ADC1-capable). Missing file, no analog_pins key,
- *   or analog_pins= with an empty list → analog stays off (Kconfig defaults).
- *   analog_pins=3,4,5,6,7 — GPIOs for espd/ain/0.. in order (max 8, ADC1 pins)
- *   analog_pins=      — empty list: do not start analog
- *   analog_task_period_ms=1 — producer wake interval in ms (1..500); lower =
+ * Analog (when PD_USE_ANALOG0 compiled in): espd/ain starts only if config.txt
+ *   has ain_pins= with at least one ADC1-capable GPIO. No config.txt, no
+ *   ain_pins key, empty list, or ain_enable=0 → no ADC task / no polling.
+ *   ain_pins=3,4,5,6,7 — GPIOs for espd/ain/0.. in order (max 8, ADC1 pins)
+ *   ain_pins=      — empty list: analog off
+ *   ain_task_period_ms=1 — producer wake interval in ms (1..500); lower =
  *       more samples in time (more ADC-task CPU). Does not loosen filtering.
- *   analog_deadband=N — raw delta to treat as a new value (1..2047); noise gate
+ *   ain_deadband=N — raw delta to treat as a new value (1..2047); noise gate
  *       only — smaller = more sensitive / more messages when the input moves.
- *   analog_report_every_n_blocks=1 — audio thread forwards at most every N
+ *   ain_report_every_n_blocks=1 — audio thread forwards at most every N
  *       blocks; keep 1 for lowest latency to Pd when the producer has updates.
- * Touch (when PD_USE_TOUCH0): espd/touch/N from ESP32 touch sensor GPIOs.
- *   Enable in menuconfig (ESPD_PD_USE_TOUCH0). From config.txt (SD or SPIFFS):
- *   touch_pins= lists touch-capable GPIOs (max 8). Empty list → touch off.
+ * Touch (when PD_USE_TOUCH0 compiled in): espd/touch starts only if config.txt
+ *   has touch_pins= with at least one touch-capable GPIO. No config.txt, no
+ *   touch_pins key, or empty list → no touch task / no polling.
  *   touch_pins=4,5,6      — GPIOs for espd/touch/0.. in order (ESP32-S3: 1–14)
- *   touch_pins=           — empty list: do not start touch
+ *   touch_pins=            — empty list: touch off
  *   touch_task_period_ms=5 — producer wake interval in ms (1..500)
  *   touch_report_every_n_blocks=1 — audio thread forwards at most every N blocks
- *   Without config.txt, use menuconfig → Capacitive touch (espd/touch) defaults.
+ * PWM out (when PD_USE_AOUT compiled in): espd/aout starts only if config.txt
+ *   has aout_pins= with at least one GPIO. No aout_pins key or empty list →
+ *   no LEDC setup (patch floats are ignored). No background polling.
+ *   aout_pins=8,9 — GPIOs for espd/aout/0.. in order (max 4)
+ *   aout_pwm_freq_hz=20000 — LEDC frequency (optional; default 20000)
+ * Digital in (when PD_USE_DIN0 compiled in): GPIO channels append after BSP
+ *   buttons. espd/din/0..(N-1) are board digital ins (e.g. Waveshare TCA9555);
+ *   din_pins= adds espd/din/N.. at indices bsp_button_count()+i. Boot log lists
+ *   the full map. No din_pins= key → no extra GPIO polling (BSP din still works).
+ *   din_pins=4,5 — GPIOs for extra espd/din channels (max 8)
+ *   din_active_low=1 — treat low level as pressed (default 1)
+ *   din_task_period_ms=5 — GPIO poll interval in ms (1..500)
+ * Digital out (when PD_USE_DOUT0 compiled in): espd/dout starts only if config.txt
+ *   has dout_pins= with at least one GPIO. Float >= 0.5 → high, else low. No
+ *   background polling.
+ *   dout_pins=8,9 — GPIOs for espd/dout/0.. in order (max 8)
  * Audio I2S DMA (codec and generic I2S backends):
  *   audio_dma_desc_num=3 — number of DMA buffers (2..16; IDF default 6)
  *   audio_dma_frame_num=64 — frames per buffer (8..1024; IDF default 240)

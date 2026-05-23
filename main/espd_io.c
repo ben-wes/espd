@@ -6,6 +6,7 @@
 #include "espd_io.h"
 #include "espd_board.h"
 #include "espd.h"
+#include "espd_config.h"
 
 #include "../pd/src/m_pd.h"
 
@@ -143,6 +144,14 @@ void espd_io_board_init(void)
 void espd_io_poll(void)
 {
     espd_board_poll();
+#ifdef PD_USE_DIN0
+    espd_din_gpio_poll();
+#endif
+}
+
+void espd_io_log_din_map(void)
+{
+    espd_din_log_map();
 }
 
 void espd_io_bind(void)
