@@ -19,6 +19,7 @@ patches=(
   "pd-filter-performs-iram.patch"
   "pd-d_math-expf-logf.patch"
   "pd-d_arithmetic-powf-logf.patch"
+  "pd-fft-ooura-internal-ram.patch"
 )
 
 for p in "${patches[@]}"; do

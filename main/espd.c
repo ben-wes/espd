@@ -1983,12 +1983,12 @@ void app_main(void)
 #endif
 
     /* Allocation routing for generic malloc/calloc (incl. Pd's getbytes):
-     *   < 4 KB → prefer internal SRAM (object state, signal vectors,
-     *            dsp_add argument arrays — per-block hot path)
-     *   >= 4 KB → prefer external PSRAM (user arrays, abstraction trees,
-     *            delay-line buffers — touched but not at sample rate)
-     * Falls back to PSRAM if internal heap is exhausted. */
-    heap_caps_malloc_extmem_enable(4096);
+     *   < 16 KB → prefer internal SRAM (signal vectors at block 2048,
+     *            object state, per-block hot path)
+     *   >= 16 KB → prefer external PSRAM (delay lines, large arrays)
+     * Falls back to PSRAM if internal heap is exhausted. Ooura FFT tables
+     * are forced internal in pd/src/d_fft_fftsg.c regardless. */
+    heap_caps_malloc_extmem_enable(16384);
 
     espd_nvs_flash_init();
 #ifdef PD_USE_WIFI

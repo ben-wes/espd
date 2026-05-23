@@ -1,0 +1,89 @@
+diff --git a/src/d_fft_fftsg.c b/src/d_fft_fftsg.c
+index a5b68ffe..a59cbeb3 100644
+--- a/src/d_fft_fftsg.c
++++ b/src/d_fft_fftsg.c
+@@ -28,6 +28,28 @@ for another, more permissive-sounding copyright notice.  -MSP
+ #define FFTFLT double
+ #endif
+ 
++#if defined(ESP_PLATFORM)
++#include "esp_heap_caps.h"
++/* Ooura's working set is touched every sample of rdft(); keep it in internal
++ * SRAM even when generic getbytes() routes large blocks to PSRAM. */
++static void *ooura_getbytes(size_t nbytes)
++{
++    void *p = heap_caps_calloc(1, nbytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
++    if (!p)
++        p = t_getbytes(nbytes);
++    return p;
++}
++static void ooura_freebytes(void *p, size_t nbytes)
++{
++    (void)nbytes;
++    if (p)
++        free(p);
++}
++#else
++#define ooura_getbytes(n) t_getbytes(n)
++#define ooura_freebytes(p, n) t_freebytes(p, n)
++#endif
++
+ static void cdft(int, int, FFTFLT *, int *, FFTFLT *);
+ static void rdft(int, int, FFTFLT *, int *, FFTFLT *);
+ 
+@@ -86,12 +108,12 @@ static int ooura_init( int n)
+     {
+         if (ooura_maxn)
+         {
+-            t_freebytes(ooura_bitrev, ooura_bitrevsize);
+-            t_freebytes(ooura_costab, ooura_maxn * sizeof(FFTFLT) / 2);
+-            t_freebytes(ooura_buffer, ooura_maxn * sizeof(FFTFLT));
++            ooura_freebytes(ooura_bitrev, ooura_bitrevsize);
++            ooura_freebytes(ooura_costab, ooura_maxn * sizeof(FFTFLT) / 2);
++            ooura_freebytes(ooura_buffer, ooura_maxn * sizeof(FFTFLT));
+         }
+         ooura_bitrevsize = sizeof(int) * (2 + (1 << (ilog2(n)/2)));
+-        ooura_bitrev = (int *)t_getbytes(ooura_bitrevsize);
++        ooura_bitrev = (int *)ooura_getbytes(ooura_bitrevsize);
+         ooura_bitrev[0] = 0;
+         if (!ooura_bitrev)
+         {
+@@ -99,20 +121,20 @@ static int ooura_init( int n)
+             ooura_maxn = 0;
+             return (0);
+         }
+-        ooura_costab = (FFTFLT *)t_getbytes(n * sizeof(FFTFLT)/2);
++        ooura_costab = (FFTFLT *)ooura_getbytes(n * sizeof(FFTFLT)/2);
+         if (!ooura_costab)
+         {
+             pd_error(0, "out of memory allocating FFT buffer");
+-            t_freebytes(ooura_bitrev, ooura_bitrevsize);
++            ooura_freebytes(ooura_bitrev, ooura_bitrevsize);
+             ooura_maxn = 0;
+             return (0);
+         }
+-        ooura_buffer = (FFTFLT *)t_getbytes(n * sizeof(FFTFLT));
++        ooura_buffer = (FFTFLT *)ooura_getbytes(n * sizeof(FFTFLT));
+         if (!ooura_buffer)
+         {
+             pd_error(0, "out of memory allocating FFT buffer");
+-            t_freebytes(ooura_bitrev, ooura_bitrevsize);
+-            t_freebytes(ooura_costab, n * sizeof(FFTFLT) / 2);
++            ooura_freebytes(ooura_bitrev, ooura_bitrevsize);
++            ooura_freebytes(ooura_costab, n * sizeof(FFTFLT) / 2);
+             ooura_maxn = 0;
+             return (0);
+         }
+@@ -126,9 +148,9 @@ static void ooura_term( void)
+ {
+     if (!ooura_maxn)
+         return;
+-    t_freebytes(ooura_bitrev, ooura_bitrevsize);
+-    t_freebytes(ooura_costab, ooura_maxn * sizeof(FFTFLT)/2);
+-    t_freebytes(ooura_buffer, ooura_maxn * sizeof(FFTFLT));
++    ooura_freebytes(ooura_bitrev, ooura_bitrevsize);
++    ooura_freebytes(ooura_costab, ooura_maxn * sizeof(FFTFLT)/2);
++    ooura_freebytes(ooura_buffer, ooura_maxn * sizeof(FFTFLT));
+     ooura_maxn = 0;
+     ooura_bitrev = 0;
+     ooura_bitrevsize = 0;
