@@ -103,10 +103,6 @@ set(MAIN_REQUIRES
     espd_bsp_selector
 )
 
-if(CONFIG_ESPD_BOARD_WAVESHARE_S3 STREQUAL "y")
-    list(APPEND MAIN_REQUIRES waveshare_esp32_s3_audio)
-endif()
-
 idf_component_register(
     SRCS ${MAIN_SRCS}
     INCLUDE_DIRS "."

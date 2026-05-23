@@ -11,11 +11,11 @@ ESPD does not embed board-specific logic. Core firmware probes optional
 | Component | Purpose |
 |-----------|---------|
 | **espd_bsp_selector** | Kconfig + conditional git dep on `waveshare_esp32_s3_audio` |
-| **espd_bsp_shim** | **bsp_io.h** (LED, buttons), SD mount helper |
+| **espd_bsp_shim** | **bsp_io.h**, SD + audio hardware hooks |
 | **espd_integration** | Weak stubs when nothing else is linked |
 
-Audio: **main/espd_audio_codec.c** includes **bsp/esp-bsp.h** and configures
-48 kHz stereo I2S before opening ES8311/ES7210 via **esp_codec_dev**.
+**espd_bsp_sdcard_mount()** and **espd_bsp_audio_hw_init()** — shim overrides for
+managed boards. **main/espd_audio_codec.c** handles Pd **esp_codec_dev** policy.
 
 ## Optional **bsp_*** contract
 
@@ -32,8 +32,7 @@ Headers in **include/bsp/**:
 ## Project wiring
 
 1. **menuconfig** → **ESPD Configuration → Target board** → Save.
-2. **main/CMakeLists.txt** → **REQUIRES** includes **espd_bsp_shim** and
-   **espd_bsp_selector**; adds the managed BSP component when the board is selected.
+2. **main/CMakeLists.txt** → **REQUIRES** **espd_bsp_shim** and **espd_bsp_selector**.
 3. First build fetches esp-bsp (network required); **dependencies.lock** is updated.
 
 Switching boards: **docs/ADDING_A_BOARD.md** (*Switching boards*).
@@ -43,7 +42,7 @@ Switching boards: **docs/ADDING_A_BOARD.md** (*Switching boards*).
 | menuconfig | File | Backend |
 |------------|------|---------|
 | Generic I2S | **espd_audio_generic.c** | Manual GPIO I2S |
-| BSP codec | **espd_audio_codec.c** | esp-bsp + **esp_codec_dev** |
+| BSP codec | **espd_audio_codec.c** | **espd_bsp_audio_hw_init** + **esp_codec_dev** |
 
 ## GPIO / touch / storage
 

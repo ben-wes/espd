@@ -1,20 +1,19 @@
 /*
  * BSP codec audio backend for Pd dac~ / adc~.
  *
- * Uses esp-bsp (Component Manager) when a managed board is selected; otherwise
- * the weak bsp_audio_* stubs from espd_integration apply.
+ * Pd policy (rate, channels, volume, gain) lives here; board I2S wiring and
+ * codec chip setup via espd_bsp_audio_hw_init() in espd_bsp_shim.
  */
 
 #include "espd_audio.h"
+#include "espd_bsp_audio.h"
 #include "espd_config.h"
-
-#include "bsp/esp-bsp.h"
-#include "driver/i2s_std.h"
 
 #include "esp_check.h"
 #include "esp_codec_dev.h"
 #include "esp_log.h"
 #include <stdlib.h>
+#include <string.h>
 
 static const char *TAG = "espd_audio";
 
@@ -30,43 +29,21 @@ struct espd_audio {
     int channels;
 };
 
-static esp_codec_dev_sample_info_t espd_bsp_sample_info(void)
+static esp_codec_dev_sample_info_t espd_codec_sample_info(int sample_rate)
 {
     return (esp_codec_dev_sample_info_t){
-        .bits_per_sample = I2S_DATA_BIT_WIDTH_16BIT,
+        .bits_per_sample = 16,
         .channel = 2,
         .channel_mask = 0x03,
-        .sample_rate = ESPD_BSP_AUDIO_RATE_HZ,
+        .sample_rate = sample_rate,
     };
-}
-
-static esp_err_t espd_bsp_audio_init_i2s(void)
-{
-    i2s_std_config_t std_cfg = {
-        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(ESPD_BSP_AUDIO_RATE_HZ),
-        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT,
-            I2S_SLOT_MODE_STEREO),
-        .gpio_cfg = {
-            .mclk = BSP_I2S_MCLK,
-            .bclk = BSP_I2S_SCLK,
-            .ws = BSP_I2S_LCLK,
-            .dout = BSP_I2S_DOUT,
-            .din = BSP_I2S_DSIN,
-            .invert_flags = {
-                .mclk_inv = false,
-                .bclk_inv = false,
-                .ws_inv = false,
-            },
-        },
-    };
-
-    std_cfg.clk_cfg.mclk_multiple = ESPD_BSP_AUDIO_MCLK_MULTIPLE;
-    return bsp_audio_init(&std_cfg);
 }
 
 esp_err_t espd_audio_init(espd_audio_t **out)
 {
     espd_audio_t *a;
+    espd_bsp_audio_hw_t hw;
+    espd_bsp_audio_hw_params_t hw_params;
     esp_codec_dev_sample_info_t sample_cfg;
 
     if (!out)
@@ -78,15 +55,19 @@ esp_err_t espd_audio_init(espd_audio_t **out)
 
     a->sample_rate = ESPD_BSP_AUDIO_RATE_HZ;
     a->channels = IOCHANS;
-    sample_cfg = espd_bsp_sample_info();
+    sample_cfg = espd_codec_sample_info(a->sample_rate);
 
-    ESP_RETURN_ON_ERROR(espd_bsp_audio_init_i2s(), TAG, "bsp_audio_init");
+    hw_params = (espd_bsp_audio_hw_params_t){
+        .sample_rate_hz = a->sample_rate,
+        .channels = (uint8_t)a->channels,
+        .bits_per_sample = 16,
+        .mclk_multiple = ESPD_BSP_AUDIO_MCLK_MULTIPLE,
+    };
 
-    a->spk = bsp_audio_codec_speaker_init();
-    if (!a->spk) {
-        free(a);
-        return ESP_FAIL;
-    }
+    ESP_RETURN_ON_ERROR(espd_bsp_audio_hw_init(&hw_params, &hw), TAG,
+        "espd_bsp_audio_hw_init");
+
+    a->spk = hw.spk;
     if (esp_codec_dev_open(a->spk, &sample_cfg) != ESP_CODEC_DEV_OK) {
         free(a);
         return ESP_FAIL;
@@ -96,11 +77,20 @@ esp_err_t espd_audio_init(espd_audio_t **out)
         return ESP_FAIL;
     }
 
+    {
+        /* Flush DAC with digital zero before Pd may enable dsp~ output. */
+        enum { ESPD_AUDIO_BLOCK_SAMPLES = 64, ESPD_AUDIO_PREROLL_BLOCKS = 4 };
+        int16_t silence[ESPD_AUDIO_BLOCK_SAMPLES * IOCHANS];
+
+        memset(silence, 0, sizeof(silence));
+        for (int n = 0; n < ESPD_AUDIO_PREROLL_BLOCKS; n++)
+            (void)esp_codec_dev_write(a->spk, silence, (int)sizeof(silence));
+    }
+
 #ifdef USEADC
-    a->mic = bsp_audio_codec_microphone_init();
+    a->mic = hw.mic;
     if (a->mic) {
-        esp_err_t mic_err = esp_codec_dev_open(a->mic, &sample_cfg);
-        if (mic_err != ESP_CODEC_DEV_OK) {
+        if (esp_codec_dev_open(a->mic, &sample_cfg) != ESP_CODEC_DEV_OK) {
             ESP_LOGW(TAG, "mic open failed");
             a->mic = NULL;
         } else if (esp_codec_dev_set_in_gain(a->mic, 30.0f) != ESP_CODEC_DEV_OK) {

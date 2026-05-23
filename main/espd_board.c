@@ -5,15 +5,12 @@
  */
 
 #include "espd_board.h"
+#include "espd_bsp_sdcard.h"
 #include "espd_io.h"
 
 #include "bsp/bsp_io.h"
 
 #include "esp_log.h"
-
-#if CONFIG_ESPD_BOARD_WAVESHARE_S3
-#include "espd_bsp_shim.h"
-#endif
 
 static const char *TAG = "espd_board";
 
@@ -43,11 +40,7 @@ void espd_board_poll(void)
 
 esp_err_t espd_board_sdcard_mount(void)
 {
-#if CONFIG_ESPD_BOARD_WAVESHARE_S3
-    return espd_bsp_waveshare_sdcard_mount();
-#else
-    return bsp_sdcard_mount(ESPD_SDCARD_MOUNT);
-#endif
+    return espd_bsp_sdcard_mount(ESPD_SDCARD_MOUNT);
 }
 
 int espd_board_led_count(void)

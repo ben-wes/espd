@@ -3,6 +3,8 @@
  */
 
 #include "bsp/bsp_io.h"
+#include "espd_bsp_sdcard.h"
+#include "espd_bsp_audio.h"
 
 __attribute__((weak)) esp_err_t bsp_led_init(void)
 {
@@ -62,5 +64,18 @@ __attribute__((weak)) void bsp_button_poll(void)
 __attribute__((weak)) esp_err_t bsp_sdcard_mount(const char *mount_point)
 {
     (void)mount_point;
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+__attribute__((weak)) esp_err_t espd_bsp_sdcard_mount(const char *mount_point)
+{
+    return bsp_sdcard_mount(mount_point);
+}
+
+__attribute__((weak)) esp_err_t espd_bsp_audio_hw_init(
+    const espd_bsp_audio_hw_params_t *params, espd_bsp_audio_hw_t *hw)
+{
+    (void)params;
+    (void)hw;
     return ESP_ERR_NOT_SUPPORTED;
 }

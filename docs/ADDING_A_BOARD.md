@@ -35,8 +35,8 @@ the selector fetches the matching esp-bsp package when `CONFIG_ESPD_BOARD_*` is 
 | Piece | Role |
 |-------|------|
 | **components/espd_bsp_selector/** | Kconfig board choice; **idf_component.yml** git-dep on `waveshare_esp32_s3_audio` when `ESPD_BOARD_WAVESHARE_S3` |
-| **components/espd_bsp_shim/** | Implements **bsp_io.h** (LED, buttons) and **espd_bsp_waveshare_sdcard_mount()** on top of esp-bsp |
-| **main/espd_audio_codec.c** | Calls **bsp/esp-bsp.h** directly (48 kHz stereo I2S + ES8311/ES7210) |
+| **espd_bsp_shim** | **bsp_io.h**, **espd_bsp_sdcard_mount()**, **espd_bsp_audio_hw_init()** on esp-bsp |
+| **main/espd_audio_codec.c** | Pd audio policy (48 kHz, **esp_codec_dev_open**, read/write) |
 | **components/espd_integration/** | Weak **bsp_*** stubs when no hardware is linked |
 
 First build needs **network access** to fetch esp-bsp into **managed_components/**;
@@ -77,18 +77,18 @@ from **espd.bin** — ESPD does not init the LCD or camera.
    extend root **CMakeLists.txt** board-profile merge if the board name is not
    Waveshare (see the `CONFIG_ESPD_BOARD_WAVESHARE_S3` branch).
 
-6. Wire **main/CMakeLists.txt**: **REQUIRES** must include **espd_bsp_shim**,
-   **espd_bsp_selector**, and the managed BSP component name when your board is
-   selected.
+6. Wire **main/CMakeLists.txt**: **REQUIRES** **espd_bsp_shim** and
+   **espd_bsp_selector** (managed BSP deps are pulled by the shim/selector).
 
-**Audio:** **espd_audio_codec.c** expects esp-bsp's
-**bsp_audio_init(i2s_std_config_t *)** and codec inits. Pass 48 kHz stereo (or
-your project's rate) in the I2S config.
+**Audio:** implement **espd_bsp_audio_hw_init()** in **espd_bsp_shim** (I2S GPIO +
+**bsp_audio_init**, codec device handles). **main/espd_audio_codec.c** opens codecs
+for Pd (sample rate, volume, gain) — do not move **esp_codec_dev_open** into the shim.
 
-**SD card:** esp-bsp uses **bsp_sdcard_mount(void)** with a Kconfig mount point;
-ESPD expects **bsp_sdcard_mount(const char *)** in **bsp_io.h**. Use a shim helper
-(see **espd_bsp_waveshare_sdcard_mount()**) and **ESPD_BSP_IO_NO_SDCARD_DECL** when
-including both headers.
+**SD card:** esp-bsp may expose **bsp_sdcard_mount(void)** (Kconfig mount point)
+while ESPD uses **espd_bsp_sdcard_mount(mount_point)** — a weak default forwards to
+**bsp_sdcard_mount(const char *)** from **bsp_io.h**. Managed boards override
+**espd_bsp_sdcard_mount** in **espd_bsp_shim** (expander setup, idempotent mount).
+Use **ESPD_BSP_IO_NO_SDCARD_DECL** when including both **bsp_io.h** and **esp-bsp.h**.
 
 ### Path B — in-tree BSP component (generic / custom hardware)
 
@@ -188,8 +188,9 @@ Boot log: **espd_board** optional inits; **espd_io** binds **espd/led** when
 ## Local storage (main.pd, config.txt)
 
 **espd_storage_init()** mounts SPIFFS at **/espd_pd** and probes paths. SD mounts
-via **espd_board_sdcard_mount()** when enabled. Boot order keeps codec init before
-SD when **config.txt** is on SPIFFS.
+once via **espd_storage_mount_sdcard()** (before **config.txt** is read), then
+codec init runs in **initdacs()**. Boot order: SPIFFS probe → SD mount → config
+load → audio → buttons/Pd bind.
 
 Without SD, **config.txt** and **main.pd** on SPIFFS are used automatically.
 See **main/espd_storage.c** and **main/espd.h**.

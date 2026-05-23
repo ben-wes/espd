@@ -2,10 +2,11 @@
  * ESPD ↔ esp-bsp adapter for Waveshare ESP32-S3-AUDIO (I/O only).
  *
  * Implements espd_integration bsp_io.h on top of esp-bsp (LED strip, iot_button).
- * Audio and SD card are wired in espd_audio_codec.c / espd_board.c.
+ * SD mount via espd_bsp_sdcard_mount(); audio via espd_bsp_audio_hw_init().
  */
 
 #include "bsp/esp-bsp.h"
+#include "espd_bsp_sdcard.h"
 
 #define ESPD_BSP_IO_NO_SDCARD_DECL
 #include "bsp/bsp_io.h"
@@ -13,6 +14,7 @@
 
 #include "esp_log.h"
 #include <stdbool.h>
+#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "iot_button.h"
@@ -209,10 +211,14 @@ void bsp_button_poll(void)
     /* iot_button delivers events via callbacks; poll is a no-op. */
 }
 
-esp_err_t espd_bsp_waveshare_sdcard_mount(void)
+esp_err_t espd_bsp_sdcard_mount(const char *mount_point)
 {
     if (bsp_sdcard_get_handle() != NULL)
         return ESP_OK;
+
+    if (mount_point && strcmp(mount_point, BSP_SD_MOUNT_POINT) != 0)
+        ESP_LOGW(TAG, "mount_point %s ignored (BSP uses %s)",
+            mount_point, BSP_SD_MOUNT_POINT);
 
     esp_io_expander_handle_t exp = bsp_io_expander_init();
 

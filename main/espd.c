@@ -1832,7 +1832,10 @@ static void initdacs( void)
     if (e != ESP_OK) {
         ESP_LOGE(TAG, "audio init failed: %s — no sound output", esp_err_to_name(e));
         s_audio = NULL;
+        return;
     }
+    memset(soundout, 0, sizeof(soundout));
+    memset(soundin, 0, sizeof(soundin));
 }
 #endif /* OBSOLETEAPI */
 
@@ -2023,10 +2026,8 @@ void app_main(void)
     espd_io_early_init();
     espd_storage_init();
 
-    /* If config.txt is SD-only, mount once before reading keys (idempotent later). */
 #ifdef PD_USE_SDCARD
-    if (!espd_storage_config_path())
-        espd_storage_mount_sdcard();
+    espd_storage_mount_sdcard();
 #endif
 
 #ifdef PD_USE_AOUT
@@ -2079,10 +2080,6 @@ void app_main(void)
 #endif
 
     initdacs();
-
-#ifdef PD_USE_SDCARD
-    espd_storage_mount_sdcard();
-#endif
 
     espd_io_board_init();
 #ifdef PD_USE_DIN0
@@ -2143,7 +2140,7 @@ void app_main(void)
     console_init();
 #endif
 
-    ESP_LOGI(TAG, "[ 2 ] now write some shit");
+    ESP_LOGI(TAG, "entering audio block loop");
 
     /* Audio loop priority: bump well above any non-critical CPU1 task.
      * IDF defaults: pthread workers / TinyUSB MSC ≈ 5, esp_timer 22 (CPU0),
