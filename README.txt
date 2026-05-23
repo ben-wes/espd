@@ -139,3 +139,10 @@ Target **esp32s3**, select the board in menuconfig, then build:
 The BSP links automatically from **sdkconfig** after menuconfig. On the next
 **idf.py build**, **components/bsp_waveshare_s3/sdkconfig.defaults** is merged
 for IDF tuning (PSRAM, stacks, etc.). See **components/bsp_waveshare_s3/README.txt**.
+
+Adding another board
+--------------------
+
+See **docs/ADDING_A_BOARD.txt** for the full BSP integration guide (Kconfig,
+CMake, **bsp_*** API, audio backends, capacitive touch, publishing out of tree).
+Short reference: **components/espd_integration/README.txt**.

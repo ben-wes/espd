@@ -910,6 +910,18 @@ static void pd_touch0_init(void)
         nchan = 0;
     if (nchan > ESPD_TOUCH_MAX_CHANNELS)
         nchan = ESPD_TOUCH_MAX_CHANNELS;
+#if defined(PD_USE_SDCARD) && defined(PD_USE_TOUCH0)
+    if (nchan == 0 && !s_touch_cfg_have_pins)
+#else
+    if (nchan == 0)
+#endif
+    {
+        for (i = ESPD_TOUCH_MAX_CHANNELS - 1; i >= 0; i--)
+            if (pd_touch_pins[i] >= 0) {
+                nchan = i + 1;
+                break;
+            }
+    }
     if (nchan == 0)
         return;
 

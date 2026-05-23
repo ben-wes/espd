@@ -242,13 +242,14 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
  *       only — smaller = more sensitive / more messages when the input moves.
  *   analog_report_every_n_blocks=1 — audio thread forwards at most every N
  *       blocks; keep 1 for lowest latency to Pd when the producer has updates.
- * Touch (when PD_USE_SDCARD && PD_USE_TOUCH0): touch / espd/touch starts only if
- *   touch_pins= lists at least one touch-capable GPIO. Missing file, no
- *   touch_pins key, or touch_pins= with an empty list → touch stays off.
- *   touch_pins=4,5,6      — GPIOs for espd/touch/0.. in order (max 8)
+ * Touch (when PD_USE_TOUCH0): espd/touch/N from ESP32 touch sensor GPIOs.
+ *   Enable in menuconfig (ESPD_PD_USE_TOUCH0). With SD card + config.txt:
+ *   touch_pins= lists touch-capable GPIOs (max 8). Empty list → touch off.
+ *   touch_pins=4,5,6      — GPIOs for espd/touch/0.. in order (ESP32-S3: 1–14)
  *   touch_pins=           — empty list: do not start touch
  *   touch_task_period_ms=5 — producer wake interval in ms (1..500)
  *   touch_report_every_n_blocks=1 — audio thread forwards at most every N blocks
+ *   Without config.txt, use menuconfig → Capacitive touch (espd/touch) defaults.
  */
 /* [pdcontrol] message "ip" → list of four float octets 0..255, or symbol "noip" when unavailable. */
 #define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"

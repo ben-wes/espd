@@ -256,6 +256,11 @@ Implemented today (audio + expander)
 - **UART console** (USB-Serial-JTAG disabled in defaults) because TinyUSB and
   JTAG share the internal USB PHY on ESP32-S3.
 
+Input: three physical buttons → **espd/din/0..2** (TCA9555, not capacitive
+touch). This kit has no on-board touch pads; for **espd/touch** wire external
+electrodes to free touch GPIOs (1–14) and enable **ESPD_PD_USE_TOUCH0** — see
+**docs/ADDING_A_BOARD.txt**.
+
 USB MSC / VBUS hotplug disc mode is still planned; see the sections above for
 design notes. Next step: TinyUSB MSC + FAT per
 **examples/peripherals/usb/device/tusb_msc**.

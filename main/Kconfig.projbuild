@@ -70,6 +70,14 @@ config ESPD_PD_USE_ANALOG0
     bool "Enable espd/ain analog inputs"
     default n
 
+config ESPD_PD_USE_TOUCH0
+    bool "Enable espd/touch capacitive inputs"
+    default n
+    help
+        Uses the ESP32 touch sensor on touch-capable GPIOs. Pin list from
+        /sdcard/config.txt (touch_pins=) or the defaults below. Not for I2C
+        display touch controllers — those need a BSP driver.
+
 config ESPD_PD_INCLUDEPATCH
     bool "Embed test patch at build time"
     default n
@@ -105,6 +113,68 @@ config ESPD_ANALOG_TASK_PERIOD_MS
     int "Analog input producer task period (ms)"
     default 5
     range 1 500
+
+menu "Capacitive touch (espd/touch)"
+    depends on ESPD_PD_USE_TOUCH0
+
+config ESPD_TOUCH_NUM_CHANNELS
+    int "Default channel count (when config.txt has no touch_pins=)"
+    default 0
+    range 0 8
+    help
+        0 = infer from the highest GPIO slot configured below.
+
+config ESPD_TOUCH_PIN_0
+    int "GPIO for espd/touch/0 (-1 = disabled)"
+    default -1
+    range -1 48
+
+config ESPD_TOUCH_PIN_1
+    int "GPIO for espd/touch/1"
+    default -1
+    range -1 48
+
+config ESPD_TOUCH_PIN_2
+    int "GPIO for espd/touch/2"
+    default -1
+    range -1 48
+
+config ESPD_TOUCH_PIN_3
+    int "GPIO for espd/touch/3"
+    default -1
+    range -1 48
+
+config ESPD_TOUCH_PIN_4
+    int "GPIO for espd/touch/4"
+    default -1
+    range -1 48
+
+config ESPD_TOUCH_PIN_5
+    int "GPIO for espd/touch/5"
+    default -1
+    range -1 48
+
+config ESPD_TOUCH_PIN_6
+    int "GPIO for espd/touch/6"
+    default -1
+    range -1 48
+
+config ESPD_TOUCH_PIN_7
+    int "GPIO for espd/touch/7"
+    default -1
+    range -1 48
+
+config ESPD_TOUCH_TASK_PERIOD_MS
+    int "Touch sampling task period (ms)"
+    default 5
+    range 1 500
+
+config ESPD_TOUCH_REPORT_EVERY_N_BLOCKS
+    int "Forward touch updates every N audio blocks"
+    default 1
+    range 1 64
+
+endmenu
 
 menu "Generic board I2S pins"
     depends on ESPD_BOARD_GENERIC

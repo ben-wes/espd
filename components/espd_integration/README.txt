@@ -1,5 +1,7 @@
 # Integrating a BSP with ESPD
 
+Short reference — full guide: **docs/ADDING_A_BOARD.txt**
+
 ESPD does not embed board-specific logic. Core firmware probes optional
 **bsp_*** symbols; a BSP package you add to the project provides the ones
 it supports.
@@ -39,6 +41,11 @@ No **espd_port.c** in the BSP.
 - **BSP codec** → **espd_audio_codec.c** (calls **bsp_audio_init()** etc.)
 
 Select **ESPD Configuration → Audio backend** in menuconfig.
+
+## Capacitive touch
+
+SoC touch sensor → **espd/touch/N** (not BSP). Enable **ESPD_PD_USE_TOUCH0** in
+menuconfig; set GPIOs in **config.txt** or Kconfig. See **docs/ADDING_A_BOARD.txt**.
 
 ## Moving BSP out of the ESPD tree
 
