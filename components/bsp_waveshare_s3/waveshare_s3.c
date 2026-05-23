@@ -10,6 +10,7 @@
 #include "esp_codec_dev_defaults.h"
 #include "esp_codec_dev_types.h"
 #include "esp_codec_dev_vol.h"
+#include "espd_runtime_config.h"
 #include "esp_log.h"
 #include "es7210_adc.h"
 #include "es8311_codec.h"
@@ -424,8 +425,8 @@ esp_err_t bsp_audio_init(void)
 
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     chan_cfg.auto_clear = true;
-    chan_cfg.dma_desc_num = 3;
-    chan_cfg.dma_frame_num = 64;
+    chan_cfg.dma_desc_num = (uint32_t)espd_audio_dma_desc_num();
+    chan_cfg.dma_frame_num = (uint32_t)espd_audio_dma_frame_num();
 
 #if CONFIG_BSP_WAVESHARE_ENABLE_MIC
     ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, &s_i2s_tx, &s_i2s_rx), TAG,

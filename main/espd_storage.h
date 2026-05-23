@@ -5,9 +5,13 @@
 #pragma once
 
 #include <stdbool.h>
+#include "esp_err.h"
 
-/** Mount SD (if enabled), then SPIFFS patch store; resolve config.txt / main.pd. */
+/** Mount SPIFFS patch store and resolve config.txt / main.pd (SD not mounted yet). */
 void espd_storage_init(void);
+
+/** Mount SD card (if enabled) and re-probe config.txt / main.pd paths. Idempotent. */
+esp_err_t espd_storage_mount_sdcard(void);
 
 /** Path to the first existing config.txt, or NULL (SD → SPIFFS → USB MSC). */
 const char *espd_storage_config_path(void);

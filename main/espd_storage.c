@@ -3,6 +3,7 @@
 #include "espd.h"
 #include "espd_io.h"
 
+#include "esp_err.h"
 #include "esp_log.h"
 #include "esp_spiffs.h"
 #include <sys/stat.h>
@@ -77,25 +78,19 @@ static const char *espd_storage_probe_main_pd(void)
     return NULL;
 }
 
+static void espd_storage_resolve_paths(void)
+{
+    s_config_path = espd_storage_probe_config();
+    s_main_pd_mount = espd_storage_probe_main_pd();
+}
+
 void espd_storage_init(void)
 {
     s_config_path = NULL;
     s_main_pd_mount = NULL;
 
-#ifdef PD_USE_SDCARD
-    {
-        esp_err_t e = espd_io_sdcard_mount();
-        if (e == ESP_OK)
-            ESP_LOGI(TAG, "SD card mounted at %s", ESPD_SDCARD_MOUNT);
-        else if (e != ESP_ERR_NOT_SUPPORTED)
-            ESP_LOGW(TAG, "SD card not mounted: %s", esp_err_to_name(e));
-    }
-#endif
-
     espd_storage_mount_spiffs();
-
-    s_config_path = espd_storage_probe_config();
-    s_main_pd_mount = espd_storage_probe_main_pd();
+    espd_storage_resolve_paths();
 
     if (s_config_path)
         ESP_LOGI(TAG, "using config.txt at %s", s_config_path);
@@ -106,6 +101,26 @@ void espd_storage_init(void)
         ESP_LOGI(TAG, "main.pd on %s", s_main_pd_mount);
     else
         ESP_LOGI(TAG, "no main.pd on local storage");
+}
+
+esp_err_t espd_storage_mount_sdcard(void)
+{
+#ifdef PD_USE_SDCARD
+    esp_err_t e = espd_io_sdcard_mount();
+    if (e == ESP_OK) {
+        ESP_LOGI(TAG, "SD card mounted at %s", ESPD_SDCARD_MOUNT);
+        espd_storage_resolve_paths();
+        if (s_config_path)
+            ESP_LOGI(TAG, "using config.txt at %s", s_config_path);
+        if (s_main_pd_mount)
+            ESP_LOGI(TAG, "main.pd on %s", s_main_pd_mount);
+    } else if (e != ESP_ERR_NOT_SUPPORTED) {
+        ESP_LOGW(TAG, "SD card not mounted: %s", esp_err_to_name(e));
+    }
+    return e;
+#else
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
 }
 
 const char *espd_storage_config_path(void)

@@ -7,7 +7,8 @@ Reference board in this repo: [Waveshare ESP32-S3-AUDIO](components/bsp_waveshar
 
 ## Features
 
-- Vanilla Pd objects compiled in (no FFT objects; `netsend`/`netreceive` included when WiFi is enabled)
+- Vanilla Pd objects compiled in, including **fft~** / **ifft~** / **rfft~** / **rifft~** (Ooura, single-precision via `FFTFLT=float`); FFT-heavy patches are CPU-intensive on ESP32
+- `netsend`/`netreceive` when WiFi is enabled
 - Audio via **dac~** / **adc~** (generic I2S or BSP codec path)
 - Board I/O: **espd/din**, **espd/led**, **espd/ain**, **espd/aout**, **espd/touch** (see [docs/ADDING_A_BOARD.txt](docs/ADDING_A_BOARD.txt))
 - WiFi for Pd net objects; optional legacy TCP/UDP patch transport

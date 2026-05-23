@@ -4,6 +4,7 @@
 
 #include "espd_audio.h"
 #include "espd_config.h"
+#include "espd_runtime_config.h"
 
 #include "driver/i2s_std.h"
 #include "esp_check.h"
@@ -38,6 +39,8 @@ esp_err_t espd_audio_init(espd_audio_t **out)
 
     i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0,
         I2S_ROLE_MASTER);
+    chan_cfg.dma_desc_num = (uint32_t)espd_audio_dma_desc_num();
+    chan_cfg.dma_frame_num = (uint32_t)espd_audio_dma_frame_num();
 #ifdef USEADC
     ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, &a->tx, &a->rx), TAG,
         "i2s_new_channel");

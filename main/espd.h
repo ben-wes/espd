@@ -251,6 +251,13 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
  *   touch_task_period_ms=5 — producer wake interval in ms (1..500)
  *   touch_report_every_n_blocks=1 — audio thread forwards at most every N blocks
  *   Without config.txt, use menuconfig → Capacitive touch (espd/touch) defaults.
+ * Audio I2S DMA (codec and generic I2S backends):
+ *   audio_dma_desc_num=3 — number of DMA buffers (2..16; IDF default 6)
+ *   audio_dma_frame_num=64 — frames per buffer (8..1024; IDF default 240)
+ *   Output latency ≈ desc_num * frame_num / sample_rate seconds.
+ *   Stock Waveshare firmware uses 3×64 (~4 ms). IDF defaults are 6×240 (~30 ms).
+ *   Pd block size is 64 samples; 64 frames/buffer matches one block (low latency).
+ *   Larger frame_num (e.g. 128 or 240) adds headroom for FFT-heavy patches.
  */
 /* [pdcontrol] message "ip" → list of four float octets 0..255, or symbol "noip" when unavailable. */
 #define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"

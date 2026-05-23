@@ -4,12 +4,20 @@ on:
   push:
     branches:
       - waveshare
+      - waveshare-bsp
       - feature/ci
     tags:
       - '**'
+  pull_request:
+    branches:
+      - waveshare
+      - waveshare-bsp
+      - main
+      - master
 
 jobs:
-  build:
+  build-waveshare:
+    name: Waveshare ESP32-S3-AUDIO (esp32s3)
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -23,14 +31,17 @@ jobs:
       - name: Apply required Pd patches
         run: ./scripts/apply-pd-patches.sh
 
-      - name: Build firmware
+      - name: Build Waveshare BSP firmware
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v6.0.1
           target: esp32s3
           command: >-
             idf.py set-target esp32s3 &&
-            printf '%s\n' 'CONFIG_ESPD_BOARD_WAVESHARE_S3=y' 'CONFIG_ESPD_BSP_COMPONENT_NAME="bsp_waveshare_s3"' >> sdkconfig &&
+            printf '%s\n'
+            'CONFIG_ESPD_BOARD_WAVESHARE_S3=y'
+            'CONFIG_ESPD_BSP_COMPONENT_NAME="bsp_waveshare_s3"'
+            >> sdkconfig &&
             idf.py build
 
       - name: Upload firmware as action artifact

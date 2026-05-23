@@ -123,11 +123,14 @@ void pdmain_init( void)
     {
         const char *dir = espd_storage_main_pd_mount_dir();
         if (dir) {
+            t_pd *loaded;
             espd_add_patch_dir_to_searchpath(dir);
             espd_print_pd_paths("pd");
-            glob_evalfile(0, gensym("main.pd"), gensym(dir));
+            loaded = glob_evalfile(0, gensym("main.pd"), gensym(dir));
             espd_main_pd_loaded_from_store = 1;
             espd_main_pd_loaded_dir = dir;
+            if (loaded && *loaded == canvas_class)
+                canvas_update_dsp();
         }
     }
 #ifdef PD_INCLUDEPATCH

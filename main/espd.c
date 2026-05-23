@@ -200,8 +200,8 @@ static void pd_aout_init(void)
 #include <sys/stat.h>
 #endif
 #include "espd_storage.h"
+#include "espd_runtime_config.h"
 
-#if defined(PD_USE_WIFI) || defined(PD_USE_ANALOG0) || defined(PD_USE_TOUCH0)
 static char *espd_cfg_trim(char *s)
 {
     char *e;
@@ -212,7 +212,64 @@ static char *espd_cfg_trim(char *s)
         *--e = '\0';
     return s;
 }
-#endif
+
+static void espd_audio_load_config(void)
+{
+    FILE *f;
+    char line[256];
+    const char *config_path = espd_storage_config_path();
+    int overridden = 0;
+
+    if (!config_path)
+        return;
+    f = fopen(config_path, "r");
+    if (!f)
+        return;
+    while (fgets(line, sizeof(line), f))
+    {
+        char *eq, *k, *v;
+        char *comment = strchr(line, '#');
+        if (comment)
+            *comment = '\0';
+        k = espd_cfg_trim(line);
+        if (*k == '\0')
+            continue;
+        eq = strchr(k, '=');
+        if (!eq)
+            continue;
+        *eq++ = '\0';
+        v = espd_cfg_trim(eq);
+        k = espd_cfg_trim(k);
+        if (!strcmp(k, "audio_dma_desc_num"))
+        {
+            int n = atoi(v);
+            if (n >= 2 && n <= 16)
+            {
+                espd_audio_set_dma_desc_num(n);
+                overridden = 1;
+            }
+        }
+        else if (!strcmp(k, "audio_dma_frame_num"))
+        {
+            int n = atoi(v);
+            if (n >= 8 && n <= 1024)
+            {
+                espd_audio_set_dma_frame_num(n);
+                overridden = 1;
+            }
+        }
+    }
+    fclose(f);
+    if (overridden)
+    {
+        int desc = espd_audio_dma_desc_num();
+        int frames = espd_audio_dma_frame_num();
+        ESP_LOGI(TAG, "audio: %s: dma %d x %d frames (~%.1f ms @ 48 kHz)",
+            config_path, desc, frames,
+            1000.f * (float)desc * (float)frames / 48000.f);
+    }
+}
+
 int espd_main_pd_loaded_from_store;
 const char *espd_main_pd_loaded_dir;
 #ifdef PD_USE_WIFI
@@ -1215,6 +1272,9 @@ void senddacs( void)
     int i, j;
     esp_err_t err;
 
+    if (!s_audio)
+        return;
+
     for (i = j = 0; i < BLKSIZE; i++, j += IOCHANS)
     {
         poodle[j] = espd_soundout_to_short(soundout[i]);
@@ -1330,8 +1390,10 @@ static void initdacs( void)
 static void initdacs( void)
 {
     esp_err_t e = espd_audio_init(&s_audio);
-    if (e != ESP_OK)
-        ESP_LOGE(TAG, "audio init failed: %s", esp_err_to_name(e));
+    if (e != ESP_OK) {
+        ESP_LOGE(TAG, "audio init failed: %s — no sound output", esp_err_to_name(e));
+        s_audio = NULL;
+    }
 }
 #endif /* OBSOLETEAPI */
 
@@ -1511,9 +1573,29 @@ void app_main(void)
 #ifdef PD_USE_TOUCH0
     espd_touch_load_config();
 #endif
+    espd_audio_load_config();
 #ifdef PD_USE_WIFI
     espd_wifi_try_load_config();
 #endif
+
+    /* Init codec/I2S before SD mount when config is on SPIFFS (restores pre-storage
+     * boot order). If config.txt lives on SD only, mount SD first so dma keys apply. */
+    if (!espd_storage_config_path()) {
+#ifdef PD_USE_SDCARD
+        espd_storage_mount_sdcard();
+        espd_audio_load_config();
+#ifdef PD_USE_ANALOG0
+        espd_analog_load_config();
+#endif
+#ifdef PD_USE_TOUCH0
+        espd_touch_load_config();
+#endif
+#ifdef PD_USE_WIFI
+        espd_wifi_try_load_config();
+#endif
+#endif
+    }
+
 #ifdef PD_USE_WIFI
     if (!espd_wifi_config_txt_allows_sta())
     {
@@ -1544,6 +1626,10 @@ void app_main(void)
 #endif
 
     initdacs();
+
+#ifdef PD_USE_SDCARD
+    espd_storage_mount_sdcard();
+#endif
 
     espd_io_board_init();
 
@@ -1653,21 +1739,18 @@ void espd_control_io_init(void)
 #ifdef PD_USE_SDCARD
 void sd_init( void)
 {
-    /* initialize SD card */
-    ESP_LOGI(TAG, "[ 1 ] Mount sdcard");
 #ifdef PD_LYRAT
-    /* LyraT path: mount via ADF board helper. */
-    esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
-    esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
-    audio_board_sdcard_init(set, SD_MODE_1_LINE);
-#else
+    ESP_LOGI(TAG, "[ 1 ] Mount sdcard");
     {
-        esp_err_t e = espd_io_sdcard_mount();
-        if (e != ESP_OK && e != ESP_ERR_NOT_SUPPORTED)
-            ESP_LOGW(TAG, "SD mount: %s", esp_err_to_name(e));
+        esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
+        esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
+        audio_board_sdcard_init(set, SD_MODE_1_LINE);
     }
-#endif
     ESP_LOGI(TAG, "[ 1b ] done starting network");
+#else
+    /* Idempotent; first call is before pdmain_init() in app_main. */
+    (void)espd_storage_mount_sdcard();
+#endif
 }
 #endif
 

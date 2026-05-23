@@ -14,5 +14,5 @@ idf_component_register(
         esp_codec_dev
         fatfs
         vfs
-    PRIV_REQUIRES espressif__led_strip
+    PRIV_REQUIRES espressif__led_strip espd_integration
 )
