@@ -1,5 +1,5 @@
 /*
- * Optional SPIFFS partition (label from board_profile / espd.h) holding main.pd.
+ * Optional SPIFFS partition (label from espd.h / Kconfig) holding main.pd.
  */
 
 #pragma once

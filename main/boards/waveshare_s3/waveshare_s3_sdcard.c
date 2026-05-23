@@ -5,8 +5,7 @@
 
 #include "boards/waveshare_s3/waveshare_s3_sdcard.h"
 
-#include "boards/waveshare_s3/waveshare_s3_audio.h"
-#include "boards/waveshare_s3/waveshare_s3_exio.h"
+#include "bsp/waveshare_s3.h"
 #include "espd.h"
 
 #include "driver/gpio.h"
@@ -39,13 +38,13 @@ esp_err_t espd_waveshare_s3_sdcard_mount(void)
     if (s_sd_mounted)
         return ESP_OK;
 
-    i2c_master_bus_handle_t bus = espd_waveshare_s3_i2c_bus();
+    i2c_master_bus_handle_t bus = bsp_i2c_get_handle();
     if (bus) {
-        esp_err_t e = espd_waveshare_exio_sd_cs_high(bus);
+        esp_err_t e = bsp_waveshare_io_expander_sd_cs_high();
         if (e != ESP_OK)
             ESP_LOGW(TAG, "EXIO3 SD CS: %s (continuing)", esp_err_to_name(e));
     } else {
-        esp_err_t e = espd_waveshare_exio_sd_cs_high_ephemeral();
+        esp_err_t e = bsp_waveshare_io_expander_sd_cs_high();
         if (e != ESP_OK)
             ESP_LOGW(TAG, "EXIO3 SD CS (ephemeral I2C): %s (continuing)", esp_err_to_name(e));
     }

@@ -1,3 +1,4 @@
-# Optional project-wide Kconfig defaults (all boards).
-# Board-specific fragments live under boards/*/sdkconfig.defaults and are
-# merged when ESPD_BOARD is set (see root CMakeLists.txt).
+# Default board and project-wide Kconfig defaults.
+# Waveshare-specific IDF tuning is in components/bsp_waveshare_s3/sdkconfig.defaults.
+
+CONFIG_ESPD_BOARD_WAVESHARE_S3=y

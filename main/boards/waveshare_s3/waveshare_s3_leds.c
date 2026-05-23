@@ -1,4 +1,4 @@
-#include "boards/waveshare_s3/board_profile.h"
+#include "boards/waveshare_s3/espd_board.h"
 #include "boards/waveshare_s3/waveshare_s3_leds.h"
 
 #include "esp_log.h"

@@ -63,8 +63,9 @@ off. "sdkconfig.bn085" enables PSRAM for WROVER-class ESP32; if your Arts board
 uses a WROOM-only module, turn off PSRAM in menuconfig before flashing.
 
 For the Waveshare ESP32-S3-AUDIO / AI Smart Speaker board, use ESP-IDF (not full
-ADF) with the Component Manager codec package: set the environment variable
-ESPD_BOARD=waveshare_s3 and follow boards/waveshare_s3/README.txt. That keeps
+ADF) with the Component Manager codec package: in menuconfig set **ESPD
+Configuration → Target board → Waveshare ESP32-S3-AUDIO** and follow
+boards/waveshare_s3/README.txt. That keeps
 LyraT / WROOM sdkconfig.* samples unchanged for other hardware.
 
 In addition to the sources youre looking at you'll need Pd source code. This is
@@ -129,7 +130,10 @@ idf.py -p /dev/ttyUSB0 flash
 Waveshare quick start (ESP32-S3-AUDIO)
 --------------------------------------
 
-For Waveshare-specific steps, including target/board setup and monitor notes,
-see:
+Target **esp32s3**, then **idf.py menuconfig → ESPD Configuration → Target board →
+Waveshare ESP32-S3-AUDIO** (default in **sdkconfig.defaults**). Board-specific
+IDF tuning lives in **components/bsp_waveshare_s3/sdkconfig.defaults**.
+
+For Waveshare-specific steps, including build, flash, and monitor notes, see:
 
 boards/waveshare_s3/README.txt

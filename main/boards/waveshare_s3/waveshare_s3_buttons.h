@@ -3,7 +3,7 @@
  * I/O expander (EXIO10/11/12 per schematic = port1 bits 2/3/4).
  *
  * The buttons are read over the shared I2C bus used by ES8311/TCA9555,
- * so espd_waveshare_s3_audio_init() must have run before init here.
+ * so espd_audio_init() / bsp_audio_init() must have run before init here.
  *
  * State is delivered to Pd as 0/1 floats on the symbols:
  *     [r espd/din/0]  (EXIO10 by default)

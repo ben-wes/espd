@@ -29,7 +29,6 @@ jobs:
           esp_idf_version: v6.0.1
           target: esp32s3
           command: >-
-            export ESPD_BOARD=waveshare_s3 &&
             idf.py set-target esp32s3 &&
             idf.py fullclean build
 

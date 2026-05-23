@@ -21,10 +21,13 @@ If you use **ESP-ADF**, its bundled IDF works too, for example:
 
 Then:
 
-  export ESPD_BOARD=waveshare_s3
   idf.py set-target esp32s3
+  idf.py menuconfig    # ESPD Configuration → Target board → Waveshare ESP32-S3-AUDIO
   idf.py fullclean
   idf.py build
+
+The default **sdkconfig.defaults** already selects the Waveshare board; you only
+need menuconfig when switching boards or tuning options.
 
 **idf.py build** alone is enough to verify the firmware compiles; you do not
 need to flash.
@@ -41,16 +44,15 @@ This project pins a specific Pd submodule commit for reproducible firmware
 builds.
 
 The top-level CMakeLists.txt merges **sdkconfig.defaults** and
-**boards/waveshare_s3/sdkconfig.defaults** when ESPD_BOARD=waveshare_s3 is set in
-the environment (not only on the first cmake run; delete **build/** and
-**sdkconfig** if Kconfig changes seem ignored). Other boards: unset ESPD_BOARD
-and keep using your existing **sdkconfig.lyrat** / **sdkconfig.wroom** workflow
-(copy one to **sdkconfig** as before).
+**components/bsp_waveshare_s3/sdkconfig.defaults** (delete **build/** and
+**sdkconfig** if Kconfig changes seem ignored). For a generic I2S board, set
+**ESPD Configuration → Target board → Generic I2S** in menuconfig and copy
+**sdkconfig.wroom** / **sdkconfig.lyrat** as needed for other legacy hardware.
 
 If **idf.py build** fails at the end with **app partition is too small**, your
 **sdkconfig** was probably created before this board picked **partitions_pd.csv**
 (**CONFIG_PARTITION_TABLE_CUSTOM**). Remove **sdkconfig** once and rebuild so
-defaults merge again (factory app slot is **2048K** in **partitions_pd.csv**).
+defaults merge again (factory app slot is **1536K** in **partitions_pd.csv**).
 
 This board fragment enables octal PSRAM (per the WROVER-class S3 module on the
 kit) and uses a 32 KB main task stack.
@@ -136,7 +138,8 @@ the firmware is talking on **UART**:
 Audio test
 ----------
 
-**main/boards/waveshare_s3/board_profile.h** enables **PD_INCLUDEPATCH**, so the
+**menuconfig** (**ESPD Configuration**) enables **PD_INCLUDEPATCH** on the Waveshare
+board by default, so the
 firmware runs the embedded patch from **main/testpatch.c** (dac~ + osc~ etc.)
 after boot **unless** a file **main.pd** exists on the SPIFFS patch store.
 
@@ -152,10 +155,10 @@ after boot **unless** a file **main.pd** exists on the SPIFFS patch store.
   **pdstore** region, or use **format_if_mount_failed** (enabled) on a fresh
   chip and flash a prebuilt SPIFFS binary at the **pdstore** offset from the
   partition table.
-- **ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK** in **board_profile.h** (default **1**)
+- **ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK** in menuconfig (default **on** for Waveshare)
   skips **wifi_init** / **net_init** / **net_hello** when **main.pd** was loaded
   from SPIFFS so the board does not join WiFi or wait for host-sent patches.
-  Set it to **0** in **board_profile.h** if you want WiFi + TCP/UDP patch
+  Set it to **off** in menuconfig if you want WiFi + TCP/UDP patch
   transport even with a local **main.pd**.
 
 SD card runtime WiFi config (optional)
@@ -181,7 +184,8 @@ If you need stock Pd behaviour for A/B tests, use the *~_aliased objects from
 Switching boards
 ----------------
 
-Unset ESPD_BOARD or set it to another value later defined in CMakeLists.txt.
+Switch boards in **idf.py menuconfig → ESPD Configuration → Target board**.
+For generic I2S, select **Generic I2S** and tune GPIO pins in the same menu.
 Remove **build/** and **sdkconfig** (or run **idf.py fullclean**) when changing
 target or board defaults so CMake does not reuse a stale merged sdkconfig.
 
@@ -203,10 +207,9 @@ Hardware (Waveshare ESP32-S3-AUDIO-Board)
 - The public pin tables **do not** name a **VBUS sense** GPIO. For **hotplug**
   without guessing, open the **official schematic** (linked from the wiki) and
   check whether **VBUS** (or a USB power-detect line from the Type-C front-end)
-  reaches the ESP32-S3 or the **TCA9554/TCA9555** I²C expander. If you find a net (e.g.
-  divider into a GPIO), use **ESPD_WAVESHARE_VBUS_BACKEND_GPIO** and
-  **ESPD_WAVESHARE_USB_VBUS_GPIO** in **board_profile.h** (or expander + I2C).
-  If you stack **UPS HAT (E)** on the ES8311 I2C bus, use **UPS_HAT_E** instead.
+  reaches the ESP32-S3 or the **TCA9554/TCA9555** I²C expander. Tune expander
+  levels under **menuconfig → Board Support Package (Waveshare S3)** if USB
+  routing or the speaker amp needs adjustment.
 - Espressif’s USB device guide (ESP32-S3) states that **self-powered** devices
   should monitor **VBUS** (comparator or resistor divider to 3.3 V-safe logic)
   and wire it to TinyUSB via **vbus_monitor_io** in **tinyusb_config_t**. That
@@ -218,89 +221,39 @@ are weaker: e.g. treat **USB bus reset / enumeration** (TinyUSB “mounted”) a
 “host present” and use **timeouts** when the cable is removed without VBUS
 (known edge cases on some IDF versions — prefer VBUS when possible).
 
-Software architecture (IDF)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Software architecture
+---------------------
 
-1. **Partitioning**  
-   Add a dedicated **FAT** region (flash + wear levelling, or a separate data
-   partition) for the “disc” contents (e.g. **main.pd**). Extend
-   **partitions_pd.csv** and Kconfig flash layout accordingly.
+Board selection and ESPD features are configured in **idf.py menuconfig → ESPD
+Configuration**. Hardware bring-up follows the esp-bsp pattern:
 
-2. **USB stack**  
-   Use the IDF **USB Device** stack (TinyUSB): MSC device pointing at the
-   block device behind that FAT volume. Reference tree:
-   **examples/peripherals/usb/device/tusb_msc** (SPI flash + MSC).
+- **components/bsp_waveshare_s3/** — I2C, TCA9555 I/O expander (USB mux, PA,
+  SD CS), I2S, ES8311 DAC, ES7210 mic. Public API: **bsp/waveshare_s3.h**.
+- **main/espd_audio_waveshare.c** — board-neutral Pd audio path (**dac~** /
+  **adc~**) calling the BSP codec layer.
+- **main/boards/waveshare_s3/** — WS2812 LEDs, TCA9555 buttons, SD mount (ESPD
+  glue; to be folded into a generic I/O registry in a later step).
+- **partitions_pd.csv** — factory app **1536K**, **pdstore** SPIFFS 512K,
+  **storage** FAT ~14M.
 
-3. **Mutual exclusion**  
-   While the host has the LUN mounted, the ESP must **not** use the same FAT
-   through **esp_vfs_fat** for writes (and usually not at all until the host
-   has released the volume). Typical flow:
-   - **Audio mode:** mount FAT internally, optional **main.pd**, run I2S + Pd;
-     **do not** expose MSC (or keep USB device off).
-   - **Transition to disc:** stop DSP / Pd, **unmount** FAT on the device,
-     deinit I2S if needed, start TinyUSB MSC only.
-   - **Transition to audio:** stop TinyUSB / MSC, wait until stack reports
-     disconnect, **remount** FAT, restart I2S + Pd.
+**components/bsp_waveshare_s3/sdkconfig.defaults** merges with the project
+defaults (octal PSRAM, ES8311/ES7210 codecs, performance profile). After
+changing Kconfig or partition layout, delete **sdkconfig** and **build/** once,
+then **idf.py build** (or **fullclean build**).
 
-4. **Where to branch in espd**  
-   Today **app_main** in **main/espd.c** calls **pdmain_init()** then
-   **initdacs()** then the main loop. A Waveshare-only path would wrap that in
-   a **state machine** (e.g. FreeRTOS task + queue): **DISC** vs **AUDIO**,
-   driven by VBUS / TinyUSB callbacks instead of a single linear boot.
+Implemented today (audio + expander)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-5. **Console / download**  
-   USB-Serial-JTAG and TinyUSB **share one PHY** on S3. MSC + CDC composite is
-   possible but must be planned so **menuconfig** (console on USB vs UART) and
-   TinyUSB descriptors stay consistent. Flashing may still use ROM USB
-   download in boot mode.
+- **bsp_waveshare_s3** — probes the I²C expander on **GPIO10/11** (addresses
+  **0x20–0x27**). **TCA9555** (16 GPIO): drives **EXIO6/EXIO7** for Type-C
+  **D+/D−** routing to **GPIO19/20** and **port1** bits for the **NS4150**
+  speaker enable. Tune via **menuconfig → Board Support Package (Waveshare S3)**:
+  **EXIO7 USB route level**, **EXIO6 camera select level**, **PA port1 mask**.
+- **bsp_audio_init()** — ES8311 playback and (when enabled) ES7210 capture at
+  48 kHz stereo; used by **espd_audio_init()** before the Pd main loop.
+- **UART console** (USB-Serial-JTAG disabled in defaults) because TinyUSB and
+  JTAG share the internal USB PHY on ESP32-S3.
 
-6. **Hotplug testing**  
-   After enabling **self_powered** and **vbus_monitor_io**, verify unplug
-   triggers the expected path on your IDF version (see Espressif TinyUSB / MSC
-   issues around **tud_umount_cb** and VBUS if problems appear).
-
-Implemented today (GPIO optional + boot TinyUSB probe)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-- **boards/waveshare_s3/sdkconfig.defaults** — **CONFIG_TINYUSB_CDC_ENABLED=y**
-  and **UART console** (USB-Serial-JTAG is disabled) because TinyUSB and JTAG
-  USB both use the same internal PHY on ESP32-S3.
-
-- **main/boards/waveshare_s3/waveshare_s3_exio.c** — probes the I²C expander on
-  **GPIO10/11** (addresses **0x20–0x27**, preferred **0x22** / **0x20** from
-  **board_profile.h**). **TCA9555** (16 GPIO): reads **CONFIG@0x06**; drives
-  **EXIO6/EXIO7** for Type-C **D+/D−** routing to **GPIO19/20** and **port1**
-  bits for the **NS4150** speaker enable (mask **ESPD_WAVESHARE_TCA9555_PA_PORT1_MASK**,
-  default **EXIO8+EXIO9**). **TCA9554** (8 GPIO): only regs **0x00–0x03** — the
-  same **EXIO6/7** USB mux is applied; **port1** does not exist, so the PA mask
-  is ignored and you need a **9555-class** board or a direct GPIO for the amp if
-  silence persists. USB route levels: **ESPD_WAVESHARE_EXIO7_USB_ROUTE_LEVEL**,
-  **ESPD_WAVESHARE_EXIO6_CAMERA_SEL_LEVEL** in **board_profile.h**.
-
-- **main/boards/waveshare_s3/waveshare_s3_usb_state.c** — optional VBUS monitoring:
-  - **ESPD_WAVESHARE_VBUS_BACKEND** in **board_profile.h**: **NONE** (default),
-    **GPIO** (set **ESPD_WAVESHARE_USB_VBUS_GPIO** ≥ 0), or **UPS_HAT_E** for
-    Waveshare **UPS HAT (E)** add-on (not described on the ESP32-S3-AUDIO-Board
-    wiki as onboard): same I2C bus as ES8311, slave **0x2D**,
-    read-only register **0x02**, **bit 5 == 1** ⇒ Type-C VBUS powered (per
-    Waveshare register wiki). Ephemeral I2C is used before audio init; after
-    **espd_waveshare_s3_audio_init** the shared bus registers a second device at
-    0x2D for polling.
-  - **Boot without GPIO/UPS VBUS:** if **ESPD_WAVESHARE_USB_BOOT_TINYUSB_PROBE**
-    is 1 (default in **board_profile.h**), firmware briefly installs TinyUSB
-    CDC and waits up to **ESPD_WAVESHARE_USB_BOOT_HOST_WAIT_MS** (default 500 ms)
-    for host enumeration (**tud_mounted**). If a host configures the device,
-    a placeholder “disc” loop runs until unplug; otherwise TinyUSB is torn
-    down and Pd starts with only that bounded delay.
-  When GPIO backend is used with a valid GPIO after schematic review:
-  - **Boot with VBUS present:** blocks in a **placeholder “disc” loop** until
-    unplugged, then continues with normal Pd + audio init. (MSC is still TODO.)
-  - **Hotplug while running audio:** debounced VBUS change calls **esp_restart()**
-    so the next boot re-evaluates VBUS (simple and safe before real MSC + FAT
-    teardown exists). On battery power, unplugging USB still runs the SoC so
-    this path can fire.
-
-Next step: either set **ESPD_WAVESHARE_VBUS_BACKEND** to **UPS_HAT_E** when
-the UPS module shares **GPIO10/11** I2C with ES8311, or find **VBUS → GPIO**
-from the S3-Audio schematic and use the **GPIO** backend, then replace the
-placeholder with TinyUSB MSC + FAT per **examples/peripherals/usb/device/tusb_msc**.
+USB MSC / VBUS hotplug disc mode is still planned; see the sections above for
+design notes. Next step: TinyUSB MSC + FAT per
+**examples/peripherals/usb/device/tusb_msc**.

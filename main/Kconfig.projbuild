@@ -1,0 +1,123 @@
+menu "ESPD Configuration"
+
+choice ESPD_BOARD
+    prompt "Target board"
+    default ESPD_BOARD_WAVESHARE_S3
+    help
+        Select the hardware board. Board-specific sdkconfig defaults and drivers
+        are applied automatically.
+
+config ESPD_BOARD_WAVESHARE_S3
+    bool "Waveshare ESP32-S3-AUDIO"
+    help
+        Waveshare AI Smart Speaker / ESP32-S3-AUDIO-Board (ES8311 DAC, ES7210 mic).
+
+config ESPD_BOARD_GENERIC
+    bool "Generic I2S (manual GPIO pins)"
+    help
+        Bare I2S pins without an external codec driver. Suitable for simple DAC/ADC
+        wiring or bring-up on custom hardware.
+
+endchoice
+
+config ESPD_IOCHANS
+    int "Audio I/O channels (dac~ / adc~)"
+    default 2
+    range 1 2
+
+config ESPD_USE_ADC
+    bool "Enable audio input (adc~)"
+    default y if ESPD_BOARD_WAVESHARE_S3
+    default n
+    help
+        When enabled, espd_audio reads from the board microphone / ADC path.
+
+config ESPD_PD_USE_WIFI
+    bool "Enable WiFi for Pd net objects"
+    default y
+
+config ESPD_PD_USE_CONSOLE
+    bool "Enable USB serial console for Pd messages"
+    default y if ESPD_BOARD_WAVESHARE_S3
+    default y
+
+config ESPD_PD_USE_SDCARD
+    bool "Enable SD card support"
+    default y if ESPD_BOARD_WAVESHARE_S3
+    default n
+
+config ESPD_PD_USE_ANALOG0
+    bool "Enable espd/ain analog inputs"
+    default y if ESPD_BOARD_WAVESHARE_S3
+    default n
+
+config ESPD_PD_INCLUDEPATCH
+    bool "Embed test patch at build time"
+    default y if ESPD_BOARD_WAVESHARE_S3
+    default n
+
+config ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
+    bool "Skip WiFi when main.pd is loaded from local storage"
+    default y if ESPD_BOARD_WAVESHARE_S3
+    default n
+
+config ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
+    bool "Run legacy espd TCP/UDP transport tasks"
+    default n if ESPD_BOARD_WAVESHARE_S3
+    default y
+
+config ESPD_AOUT_NUM_CHANNELS
+    int "PWM analog output channels (espd/aout/N)"
+    default 2 if ESPD_BOARD_WAVESHARE_S3
+    default 0
+    range 0 4
+
+config ESPD_AOUT_PIN_0
+    int "espd/aout/0 GPIO (-1 = disabled)"
+    default 8 if ESPD_AOUT_NUM_CHANNELS >= 1
+    default -1
+    range -1 48
+
+config ESPD_AOUT_PIN_1
+    int "espd/aout/1 GPIO"
+    default 9 if ESPD_AOUT_NUM_CHANNELS >= 2
+    default -1
+    range -1 48
+
+config ESPD_AOUT_PWM_FREQ_HZ
+    int "PWM frequency for espd/aout (Hz)"
+    default 19531 if ESPD_BOARD_WAVESHARE_S3
+    default 20000
+
+config ESPD_ANALOG_TASK_PERIOD_MS
+    int "Analog input producer task period (ms)"
+    default 1 if ESPD_BOARD_WAVESHARE_S3
+    default 5
+    range 1 500
+
+menu "Generic board I2S pins"
+    depends on ESPD_BOARD_GENERIC
+
+config ESPD_GENERIC_I2S_BCLK
+    int "I2S bit clock GPIO"
+    default 13
+    range 0 48
+
+config ESPD_GENERIC_I2S_WS
+    int "I2S word select GPIO"
+    default 33
+    range 0 48
+
+config ESPD_GENERIC_I2S_DOUT
+    int "I2S data out GPIO"
+    default 32
+    range 0 48
+
+config ESPD_GENERIC_I2S_DIN
+    int "I2S data in GPIO (-1 = unused)"
+    default 35
+    range -1 48
+
+endmenu
+
+endmenu

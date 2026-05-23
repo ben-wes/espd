@@ -1,6 +1,6 @@
-#include "boards/waveshare_s3/board_profile.h"
+#include "boards/waveshare_s3/espd_board.h"
 #include "boards/waveshare_s3/waveshare_s3_buttons.h"
-#include "boards/waveshare_s3/waveshare_s3_audio.h"
+#include "bsp/waveshare_s3.h"
 #include "espd.h"
 
 #include "driver/i2c_master.h"
@@ -25,7 +25,7 @@ static const char *TAG = "waveshare_buttons";
 /* TCA9555 register map (port1 holds EXIO8..15, so EXIO9/10/11 = bits 1/2/3). */
 #define TCA9555_REG_INPUT1 0x01
 
-/* Bits on port1 that the three buttons occupy. Safe to tweak in board_profile.h. */
+/* Bits on port1 that the three buttons occupy. See espd_board.h. */
 #ifndef ESPD_WAVESHARE_BUTTON0_PORT1_BIT
 #define ESPD_WAVESHARE_BUTTON0_PORT1_BIT 1  /* EXIO9 / P11 */
 #endif
@@ -64,7 +64,10 @@ static void espd_buttons_poll_task(void *arg);
 
 esp_err_t espd_waveshare_s3_buttons_init(void)
 {
-    i2c_master_bus_handle_t bus = espd_waveshare_s3_i2c_bus();
+    if (s_dev)
+        return ESP_OK;
+
+    i2c_master_bus_handle_t bus = bsp_i2c_get_handle();
     if (!bus) {
         ESP_LOGW(TAG, "shared I2C bus not ready; buttons disabled");
         return ESP_ERR_INVALID_STATE;

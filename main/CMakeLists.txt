@@ -98,29 +98,30 @@ set(MAIN_REQUIRES
     pthread
 )
 
-set(ESPD_BOARD "$ENV{ESPD_BOARD}")
-set(MAIN_BOARD_DEFS "")
-if(ESPD_BOARD)
-    set(BOARD_CMAKE "${CMAKE_CURRENT_LIST_DIR}/boards/${ESPD_BOARD}/board.cmake")
-    if(EXISTS "${BOARD_CMAKE}")
-        include("${BOARD_CMAKE}")
-    else()
-        message(FATAL_ERROR "Unsupported ESPD_BOARD='${ESPD_BOARD}': missing ${BOARD_CMAKE}")
-    endif()
-endif()
-
 idf_component_register(
     SRCS ${MAIN_SRCS}
     INCLUDE_DIRS "."
     REQUIRES ${MAIN_REQUIRES}
 )
 
+if(CONFIG_ESPD_BOARD_WAVESHARE_S3 STREQUAL "y")
+    target_sources(${COMPONENT_LIB} PRIVATE
+        "espd_audio_waveshare.c"
+        "boards/waveshare_s3/waveshare_s3_buttons.c"
+        "boards/waveshare_s3/waveshare_s3_leds.c"
+        "boards/waveshare_s3/waveshare_s3_sdcard.c")
+    idf_component_get_property(_bsp_lib bsp_waveshare_s3 COMPONENT_LIB)
+    target_link_libraries(${COMPONENT_LIB} PUBLIC ${_bsp_lib})
+    idf_component_get_property(_fatfs_lib fatfs COMPONENT_LIB)
+    idf_component_get_property(_sdmmc_lib esp_driver_sdmmc COMPONENT_LIB)
+    target_link_libraries(${COMPONENT_LIB} PUBLIC ${_fatfs_lib} ${_sdmmc_lib})
+elseif(CONFIG_ESPD_BOARD_GENERIC STREQUAL "y")
+    target_sources(${COMPONENT_LIB} PRIVATE "espd_audio_generic.c")
+endif()
+
 idf_component_get_property(_espd_main_lib ${COMPONENT_NAME} COMPONENT_LIB)
 # Ooura FFT in pd/src/d_fft_fftsg.c: default FFTFLT is double; use float IRAM.
 target_compile_definitions(${_espd_main_lib} PRIVATE "FFTFLT=float")
-if(MAIN_BOARD_DEFS)
-    target_compile_definitions(${_espd_main_lib} PRIVATE ${MAIN_BOARD_DEFS})
-endif()
 
 # Aggressive math optimization for DSP hot paths. -ffast-math allows the
 # compiler to reassociate, fold reciprocals, drop spurious double promotions

@@ -1,0 +1,28 @@
+menu "Board Support Package (Waveshare S3)"
+
+config BSP_WAVESHARE_ENABLE_MIC
+    bool "Enable ES7210 microphone capture"
+    default y if ESPD_USE_ADC
+    default n
+    help
+        When enabled, bsp_audio_init() also brings up the ES7210 ADC for adc~ input.
+
+config BSP_WAVESHARE_EXIO7_USB_ROUTE_LEVEL
+    int "EXIO7 USB route level (Type-C D+/D- to SoC USB)"
+    default 1
+    range 0 1
+
+config BSP_WAVESHARE_EXIO6_CAMERA_SEL_LEVEL
+    int "EXIO6 camera select level on USB switch"
+    default 0
+    range 0 1
+
+config BSP_WAVESHARE_PA_PORT1_MASK
+    hex "TCA9555 port1 PA enable bit mask (EXIO8..15)"
+    default 0x03
+
+config BSP_WAVESHARE_PA_PORT1_ACTIVE_HIGH
+    bool "PA port1 bits are active-high"
+    default y
+
+endmenu

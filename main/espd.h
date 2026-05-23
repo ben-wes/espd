@@ -1,24 +1,7 @@
 #ifndef ESPD_H
 #define ESPD_H
 
-#if defined(ESPD_BOARD_WAVESHARE_S3)
-#include "boards/waveshare_s3/board_profile.h"
-#else
-/* #define PD_USE_BLUETOOTH */  /* messages to Pd over bluetooth */
-#define PD_USE_WIFI             /* messages to/from Pd over wifi TCP */
-#define PD_USE_CONSOLE          /* messages to Pd over "console" (USB serial) */
-/* #define PD_INCLUDEPATCH */   /* load the patch defined in "testpatch.c" */
-/* #define PD_LYRAT */          /* using LyraT or LyraT mini board */
-#define USEADC                  /* enable audio input (output always enabled) */
-/* #define PD_USE_ANALOG0 */    /* send analog pin as "espd/ain/0 <raw>" */
-/* #define PD_USE_TOUCH0 */     /* send touch pin as "espd/touch/0 <raw>" */
-/* #define PD_USE_GYRO */       /* complex Arts board with BNO085 gyro */
-#define IOCHANS 2
-/* Keep legacy I2S API opt-in; ESP-IDF 6 defaults to the new channel API. */
-#if defined(PD_LYRAT)
-#define OBSOLETEAPI
-#endif
-#endif
+#include "espd_config.h"
 
 /* task priorities */
 #define  PRIORITY_WIFI 2
@@ -80,12 +63,12 @@ extern char espd_wifi_password[65];
 extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 disables */
 #endif
 
-#ifndef PIN_BIT_CLOCK       /* fallback pin locations for I2S audio I/O */
-#define PIN_BIT_CLOCK 13    /* bit clock */
-#define PIN_WORD_SELECT 33  /* word select */
-#define PIN_DATA_OUT 32     /* data out from ESP32 to DAC */
-#define PIN_DATA_IN 35      /* data in from ADC to ESP32 */
-#endif /* PIN_BIT_CLOCK */
+#ifndef PIN_BIT_CLOCK
+#define PIN_BIT_CLOCK 13
+#define PIN_WORD_SELECT 33
+#define PIN_DATA_OUT 32
+#define PIN_DATA_IN 35
+#endif
 
 #ifndef ESPD_ANALOG_NUM_CHANNELS
 #define ESPD_ANALOG_NUM_CHANNELS 1
