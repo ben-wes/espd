@@ -13,7 +13,7 @@ choice ESPD_BOARD
         help
             Waveshare AI Smart Speaker / ESP32-S3-AUDIO-Board (ES8311 DAC,
             ES7210 mic). Select in menuconfig; **ESPD_BSP_COMPONENT_NAME** links
-            the BSP automatically (see components/bsp_waveshare_s3/README.txt).
+            the BSP automatically (see components/bsp_waveshare_s3/README.md).
             On **esp32s3**, **sdkconfig.defaults.esp32s3** in the project root
             applies the full IDF tune (PSRAM oct 80 MHz, 240 MHz, CPU affinities).
 

@@ -1,5 +1,5 @@
 # Waveshare ESP32-S3-AUDIO-Board defaults (when this BSP board is selected).
-# See components/bsp_waveshare_s3/README.txt
+# See components/bsp_waveshare_s3/README.md
 # This repo also ships sdkconfig.defaults.esp32s3 (same tune for set-target esp32s3).
 
 # ESPD compile-time profile (also forced via Kconfig select when board is chosen).

@@ -1,6 +1,6 @@
 # Integrating a BSP with ESPD
 
-Short reference — full guide: **docs/ADDING_A_BOARD.txt**
+Short reference — full guide: **docs/ADDING_A_BOARD.md**
 
 ESPD does not embed board-specific logic. Core firmware probes optional
 **bsp_*** symbols; a BSP package you add to the project provides the ones
@@ -28,7 +28,7 @@ No **espd_port.c** in the BSP.
 
 1. Add the BSP component to **components/** (or a managed dependency).
 2. Select the board in menuconfig (**ESPD Configuration → Target board**), Save,
-   then build. See **Switching boards** in **docs/ADDING_A_BOARD.txt**.
+   then build. See **Switching boards** in **docs/ADDING_A_BOARD.md**.
 3. Override at configure time with **-DESPD_BSP_COMPONENT=...** if needed.
 4. Each BSP registers in **Kconfig**: board choice, **ESPD_BSP_COMPONENT_NAME**
    default, **select** profile, and **sdkconfig.defaults** under **components/<name>/**.
@@ -43,7 +43,7 @@ idf.py menuconfig build flash monitor
 
 Pick **Target board** → Save → exit; the chained **build** picks up **sdkconfig**,
 merges that BSP's **sdkconfig.defaults**, and links **CONFIG_ESPD_BSP_COMPONENT_NAME**.
-Full flow: **docs/ADDING_A_BOARD.txt** (*Switching boards*).
+Full flow: **docs/ADDING_A_BOARD.md** (*Switching boards*).
 
 ## Audio
 
@@ -55,7 +55,7 @@ Select **ESPD Configuration → Audio backend** in menuconfig.
 ## Capacitive touch
 
 SoC touch sensor → **espd/touch/N** (not BSP). Compile **ESPD_PD_USE_TOUCH0**;
-activate with **touch_pins=** in **config.txt**. See **docs/ADDING_A_BOARD.txt**.
+activate with **touch_pins=** in **config.txt**. See **docs/ADDING_A_BOARD.md**.
 
 ## Digital in / out (GPIO)
 

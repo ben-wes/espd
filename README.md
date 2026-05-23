@@ -3,14 +3,14 @@
 Pure Data (Pd) on Espressif ESP32 microcontrollers. Core firmware is **board-agnostic**;
 hardware is provided by optional **BSP components** selected in **menuconfig**.
 
-Reference board in this repo: [Waveshare ESP32-S3-AUDIO](components/bsp_waveshare_s3/README.txt) (ES8311 DAC, ES7210 mic, buttons, LED strip, SD card).
+Reference board in this repo: [Waveshare ESP32-S3-AUDIO](components/bsp_waveshare_s3/README.md) (ES8311 DAC, ES7210 mic, buttons, LED strip, SD card).
 
 ## Features
 
 - Vanilla Pd objects compiled in, including **fft~** / **ifft~** / **rfft~** / **rifft~** (Ooura, single-precision via `FFTFLT=float`); FFT-heavy patches are CPU-intensive on ESP32
 - `netsend`/`netreceive` when WiFi is enabled
 - Audio via **dac~** / **adc~** (generic I2S or BSP codec path)
-- Board I/O: **espd/din**, **espd/led**, **espd/ain**, **espd/aout**, **espd/touch** (see [docs/ADDING_A_BOARD.txt](docs/ADDING_A_BOARD.txt))
+- Board I/O: **espd/din**, **espd/led**, **espd/ain**, **espd/aout**, **espd/touch** (see [docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md))
 - WiFi for Pd net objects; optional legacy TCP/UDP patch transport
 - **main.pd** and **config.txt** from SD card or internal SPIFFS (SD tried first)
 
@@ -44,11 +44,11 @@ idf.py set-target esp32s3 menuconfig build flash monitor
 
 In menuconfig: **ESPD Configuration** → pick **Target board**, WiFi, SD, audio, etc. → **Save** → exit; the chained **build** uses the updated **sdkconfig**.
 
-**Switching boards:** [docs/ADDING_A_BOARD.txt](docs/ADDING_A_BOARD.txt) (*Switching boards*). Short version: `idf.py menuconfig build` — select board, Save, then build. If you delete **sdkconfig**, include **set-target** (e.g. `idf.py set-target esp32s3 menuconfig build` for Waveshare).
+**Switching boards:** [docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md) (*Switching boards*). Short version: `idf.py menuconfig build` — select board, Save, then build. If you delete **sdkconfig**, include **set-target** (e.g. `idf.py set-target esp32s3 menuconfig build` for Waveshare).
 
 **Generic I2S:** manual GPIO pins under **ESPD Configuration** (INMP441 + MAX98357A, etc.). SPH0645 mic is known **not** to work on ESP32. Legacy presets: `sdkconfig.wroom`, `sdkconfig.lyrat`, `sdkconfig.lyratmini`, `sdkconfig.bn085`.
 
-**Reference BSP:** [Waveshare ESP32-S3-AUDIO](components/bsp_waveshare_s3/README.txt) — board-specific hardware notes only; switching boards uses the same menuconfig flow as any BSP.
+**Reference BSP:** [Waveshare ESP32-S3-AUDIO](components/bsp_waveshare_s3/README.md) — board-specific hardware notes only; switching boards uses the same menuconfig flow as any BSP.
 
 **LyraT (legacy):** enable ADF in root `CMakeLists.txt`, use `sdkconfig.lyrat*`, export ADF’s IDF instead of standalone IDF.
 
@@ -65,7 +65,7 @@ Example patches: [test-patch/](test-patch/). **config.txt** keys: [main/espd.h](
 
 ## Adding another board
 
-[docs/ADDING_A_BOARD.txt](docs/ADDING_A_BOARD.txt) — full BSP guide. Short reference: [components/espd_integration/README.txt](components/espd_integration/README.txt).
+[docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md) — full BSP guide. Short reference: [components/espd_integration/README.md](components/espd_integration/README.md).
 
 ## WiFi and remote patches
 
@@ -82,7 +82,7 @@ Optional legacy host transport: board connects on port 4498; load patches with `
 main/                          Core ESPD (board-neutral)
 components/espd_integration/   bsp_* contract + weak stubs
 components/bsp_waveshare_s3/   Reference BSP (example)
-docs/ADDING_A_BOARD.txt        Integrating new hardware
+docs/ADDING_A_BOARD.md        Integrating new hardware
 pd/                            Pd submodule
 ```
 

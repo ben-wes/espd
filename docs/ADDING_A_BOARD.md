@@ -1,13 +1,11 @@
-Adding a board to ESPD
-======================
+# Adding a board to ESPD
 
 ESPD core firmware is board-neutral. Hardware lives in optional BSP components
 that you add to **components/** (or pull in via the ESP-IDF Component Manager).
 
 Reference implementation: **components/bsp_waveshare_s3/**.
 
-Overview
---------
+## Overview
 
 ```
   Pd patch  ──►  main/espd.c, espd_io.c     (board-agnostic)
@@ -24,8 +22,7 @@ Overview
 **main/** never names a specific board. **menuconfig** selects the BSP;
 **CONFIG_ESPD_BSP_COMPONENT_NAME** links it in **main/CMakeLists.txt**.
 
-Step 1 — Create the BSP component
----------------------------------
+## Step 1 — Create the BSP component
 
 Minimum layout:
 
@@ -58,8 +55,7 @@ that at boot.
 **Do not** add **espd_*** symbols or **espd_port.c** in the BSP — keep it
 upstreamable (esp-bsp style).
 
-Step 2 — Register in Kconfig
-------------------------------
+## Step 2 — Register in Kconfig
 
 In **components/bsp_myboard/Kconfig**:
 
@@ -95,8 +91,7 @@ Root **CMakeLists.txt** merges **sdkconfig.defaults** plus **one** board profile
 is set in **sdkconfig**. Never merge both profiles. BSP boards use Kconfig
 **select** (not **imply**) so the feature profile applies when switching boards.
 
-Switching boards
-----------------
+## Switching boards
 
 Configure first, then build. **idf.py** subcommands chain left to right.
 
@@ -174,8 +169,7 @@ switch, delete **sdkconfig** and run **idf.py menuconfig build** (select board,
 Save). Kconfig **select SPIRAM** on the board choice applies on save; stale
 **sdkconfig** keys are not updated by **sdkconfig.defaults** alone.
 
-Step 3 — Audio backend
-----------------------
+## Step 3 — Audio backend
 
 | Board type              | menuconfig backend              | ESPD file              |
 |-------------------------|----------------------------------|------------------------|
@@ -186,8 +180,7 @@ BSP codec path: implement **bsp_audio_init()**,
 **bsp_audio_codec_speaker_init()**, and optionally
 **bsp_audio_codec_microphone_init()** (see **bsp_waveshare_s3/waveshare_s3.c**).
 
-Step 4 — Build and verify
----------------------------
+## Step 4 — Build and verify
 
 ```
 idf.py set-target esp32s3 menuconfig build flash monitor
@@ -205,8 +198,7 @@ idf.py -D ESPD_BSP_COMPONENT=bsp_myboard build
 Boot log: **espd_board** reports optional inits; **espd_io** binds **espd/led**
 when **bsp_led_count() > 0**; **espd/din/N** fires when buttons call the handler.
 
-Pd I/O surface (core — not BSP-specific)
-----------------------------------------
+## Pd I/O surface (core — not BSP-specific)
 
 | Pd receiver      | Source                         | Enable in menuconfig        |
 |------------------|--------------------------------|-----------------------------|
@@ -218,8 +210,7 @@ Pd I/O surface (core — not BSP-specific)
 | **espd/dout/N**  | GPIO digital out               | **ESPD_PD_USE_DOUT0** + **dout_pins=** in config.txt |
 | **espd/touch/N** | ESP32 touch sensor GPIOs       | **ESPD_PD_USE_TOUCH0** + **touch_pins=** in config.txt |
 
-Local storage (main.pd, config.txt)
------------------------------------
+## Local storage (main.pd, config.txt)
 
 **espd_storage_init()** mounts SPIFFS at **/espd_pd** and probes paths. SD is
 mounted separately via **espd_storage_mount_sdcard()** (before reading SD-only
@@ -240,8 +231,7 @@ GPIOs are listed in **config.txt** (**ain_pins=**, **touch_pins=**, **aout_pins=
 ADC, touch, PWM, or extra GPIO digital I/O. BSP buttons still map to
 **espd/din/0..** without **din_pins=**.
 
-Capacitive touch (ESP32 touch sensor)
--------------------------------------
+## Capacitive touch (ESP32 touch sensor)
 
 ESPD reads the SoC's built-in capacitive touch peripheral (not I2C display
 controllers). Raw counts are sent to **espd/touch/0**, **espd/touch/1**, …
@@ -267,11 +257,10 @@ Test patch: **test-patch/touch-test.pd** (prints **espd/touch/0**).
 External I2C touch panels (FT6336, GT911, …) are not supported yet; add a
 **bsp_touch_*** API in **espd_integration** when you need one.
 
-Moving a BSP out of this repository
------------------------------------
+## Moving a BSP out of this repository
 
 1. Publish **bsp_myboard** as its own git repo or Component Manager package.
 2. In your project **idf_component.yml**, depend on it.
 3. Drop the copy under **components/** — menuconfig and linking work the same.
 
-See also **components/espd_integration/README.txt**.
+See also **components/espd_integration/README.md**.

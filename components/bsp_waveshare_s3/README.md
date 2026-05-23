@@ -1,27 +1,29 @@
-Waveshare ESP32-S3 AI Smart Speaker / ESP32-S3-AUDIO-Board
-==========================================================
+# Waveshare ESP32-S3 AI Smart Speaker / ESP32-S3-AUDIO-Board
 
 Official wiki (pins, ES8311, ES7210):
-https://www.waveshare.com/wiki/ESP32-S3-AUDIO-Board
+<https://www.waveshare.com/wiki/ESP32-S3-AUDIO-Board>
 
 This tree uses ESP-IDF + the Component Manager package **esp_codec_dev** for
 ES8311 (not the full Espressif ADF). I2C 10/11, I2S MCLK/BCLK/LRCK/DOUT/DIN
 12/13/14/16/15 match the wiki “SPEAKER” table.
 
-Build (from repo root)
-------------------------------------------------------------
+## Build (from repo root)
 
 Set up the toolchain the same way as in the top-level **README.md** (Espressif
 getting-started guide): point **IDF_PATH** (and optionally **IDF_TOOLS_PATH**)
 at your ESP-IDF tree, then source **export.sh** so **idf.py** is on **PATH**.
 If you use **ESP-ADF**, its bundled IDF works too, for example:
 
-  export ADF_PATH=/path/to/esp-adf
-  . "$ADF_PATH/esp-idf/export.sh"
+```bash
+export ADF_PATH=/path/to/esp-adf
+. "$ADF_PATH/esp-idf/export.sh"
+```
 
 Then (Waveshare — this repository's reference board):
 
-  idf.py set-target esp32s3 menuconfig build flash monitor
+```bash
+idf.py set-target esp32s3 menuconfig build flash monitor
+```
 
 **sdkconfig.defaults.esp32s3** at the repo root applies the full Waveshare tune
 (PSRAM oct 80 MHz, 240 MHz, 65536 main stack, CPU affinities) on **set-target
@@ -36,13 +38,14 @@ Generic I2S is the menuconfig default when no Waveshare board is selected.
 **idf.py build** alone is enough to verify the firmware compiles; you do not
 need to flash.
 
-Repository / submodule sync
----------------------------
+## Repository / submodule sync
 
 From a fresh clone, or after switching branches, update submodules to the
 commits pinned by the checked-out branch:
 
-  git submodule update --init --recursive
+```bash
+git submodule update --init --recursive
+```
 
 This project pins a specific Pd submodule commit for reproducible firmware
 builds.
@@ -64,8 +67,7 @@ kit) and uses a **65536** byte main task stack. Pd FFT patches require PSRAM;
 if boot logs **getbytes() failed** or **SPIRAM is off**, delete **sdkconfig**
 and reconfigure (see *Switching boards* below).
 
-Performance / memory profile
-----------------------------
+## Performance / memory profile
 
 Current defaults are tuned for real-time Pd use:
 
@@ -82,16 +84,16 @@ Watchdog rationale:
   false positives, while watchdog coverage remains active
 - keep it enabled unless you are explicitly running bring-up experiments
 
-Flash / monitor (pick your USB serial port)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+### Flash / monitor (pick your USB serial port)
 
 On macOS the port is usually **/dev/cu.usbmodem*** (use **cu.**, not **tty.**,
 for flashing). On Linux it is often **/dev/ttyACM0**.
 
-  idf.py -p /dev/cu.usbmodemXXXX flash monitor
+```bash
+idf.py -p /dev/cu.usbmodemXXXX flash monitor
+```
 
-Serial monitor: UART vs USB (why logs “stop” after boot)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+### Serial monitor: UART vs USB (why logs “stop” after boot)
 
 Merged **sdkconfig** defaults use **UART0** as the **primary** console (this
 target often binds UART0 to **GPIO43/44** — see the **cpu_start** line in the
@@ -118,11 +120,15 @@ the firmware is talking on **UART**:
    a command like **ls /dev/cu.wchusbserial*** errors if that pattern matches
    nothing; use one of these instead:
 
-     ls /dev/cu.* 2>/dev/null | grep -E 'usbmodem|wchusb|SLAB|usbserial'
+   ```bash
+   ls /dev/cu.* 2>/dev/null | grep -E 'usbmodem|wchusb|SLAB|usbserial'
+   ```
 
    or (zsh only, optional globs):
 
-     print -rl /dev/cu.usbmodem*(N) /dev/cu.wchusbserial*(N) /dev/cu.SLAB*(N)
+   ```bash
+   print -rl /dev/cu.usbmodem*(N) /dev/cu.wchusbserial*(N) /dev/cu.SLAB*(N)
+   ```
 
    If several **usbmodem** devices exist, pick the one tied to this board (a
    name like **usbmodem1234561** is often **not** the Espressif device).
@@ -142,16 +148,14 @@ the firmware is talking on **UART**:
    module’s **TX/RX/GND** (see wiki for test points or headers) and flash with
    **idf.py -p /dev/cu.usbserial-… flash** for that adapter.
 
-Audio test
-----------
+## Audio test
 
 **menuconfig** (**ESPD Configuration**) enables **PD_INCLUDEPATCH** on the Waveshare
 board by default, so the
 firmware runs the embedded patch from **main/testpatch.c** (dac~ + osc~ etc.)
 after boot **unless** a file **main.pd** exists on the SPIFFS patch store.
 
-**main.pd on SPIFFS (overrides embedded patch)**
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+### main.pd on SPIFFS (overrides embedded patch)
 
 - **partitions_pd.csv** adds a **512K** SPIFFS partition labeled **pdstore**,
   mounted at **`/espd_pd`** at boot (see **main/espd_storage.c**). SD card
@@ -170,17 +174,19 @@ after boot **unless** a file **main.pd** exists on the SPIFFS patch store.
   Set it to **off** in menuconfig if you want WiFi + TCP/UDP patch
   transport even with a local **main.pd**.
 
-SD card runtime WiFi config (optional)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+### SD card runtime WiFi config (optional)
 
 When **PD_USE_WIFI** and **PD_USE_SDCARD** are enabled, firmware reads
 **config.txt** (SD → SPIFFS) at boot. STA connects when **wifi_ssid** is
 non-empty:
 
-  wifi_ssid=YourNetwork
-  wifi_password=YourPassword
+```
+wifi_ssid=YourNetwork
+wifi_password=YourPassword
+```
 
 Optional **wifi_enable** (only needed for overrides):
+
 - **wifi_enable=0** — disable STA even if **wifi_ssid** is set
 - **wifi_enable=1** — force STA when **ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK**
   would otherwise skip WiFi
@@ -190,12 +196,11 @@ Ports are not configured in this file; use Pd **netsend** / **netreceive**.
 If you need stock Pd behaviour for A/B tests, use the *~_aliased objects from
 **main/espdsp_osc_override.c** (see comments there).
 
-Switching boards
-----------------
+## Switching boards
 
-Same flow as any BSP — see **docs/ADDING_A_BOARD.txt** (*Switching boards*):
+Same flow as any BSP — see **docs/ADDING_A_BOARD.md** (*Switching boards*):
 
-```
+```bash
 idf.py menuconfig build flash monitor
 ```
 
@@ -206,23 +211,21 @@ support). Runtime GPIOs still come from **config.txt** (**ain_pins=**, **aout_pi
 If the profile looks wrong after a switch, delete **sdkconfig** and reconfigure
 with **set-target** in the chain (this kit is **esp32s3**, not **esp32**):
 
-```
+```bash
 idf.py set-target esp32s3 fullclean menuconfig build flash monitor
 ```
 
 Pick **Target board** → Save. Without **set-target**, a fresh configure defaults
 to **esp32** and the build fails on S3-only components (**esp_tinyusb**, PSRAM, …).
 
-USB “disc” vs audio + Pd (hotplug, future work)
------------------------------------------------
+## USB “disc” vs audio + Pd (hotplug, future work)
 
 Goal: when USB is connected to a host, behave as a USB mass-storage volume
 (FAT on flash); when USB is unplugged, run audio + Pd. Prefer **no reset
 button** — that implies **reliable plug / unplug detection** and **clean
 teardown** of one stack before starting the other.
 
-Hardware (Waveshare ESP32-S3-AUDIO-Board)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+### Hardware (Waveshare ESP32-S3-AUDIO-Board)
 
 - The wiki lists a single **USB Type-C** for power and flashing (native S3
   D+/D−, not a separate UART bridge). There is also **battery** power — i.e.
@@ -238,15 +241,14 @@ Hardware (Waveshare ESP32-S3-AUDIO-Board)
   should monitor **VBUS** (comparator or resistor divider to 3.3 V-safe logic)
   and wire it to TinyUSB via **vbus_monitor_io** in **tinyusb_config_t**. That
   gives plug/unplug callbacks the stack expects. See:
-  https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-reference/peripherals/usb_device.html
+  <https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/api-reference/peripherals/usb_device.html>
 
 If there is **no** usable VBUS GPIO after schematic review, fallback options
 are weaker: e.g. treat **USB bus reset / enumeration** (TinyUSB “mounted”) as
 “host present” and use **timeouts** when the cable is removed without VBUS
 (known edge cases on some IDF versions — prefer VBUS when possible).
 
-Software architecture
----------------------
+## Software architecture
 
 **main/Kconfig.projbuild** is board-agnostic: **Generic I2S** is the default
 choice. The Waveshare option is registered by **components/bsp_waveshare_s3/Kconfig**
@@ -266,8 +268,7 @@ from this component merges on the next configure.
 
 After switching boards, delete **sdkconfig** and run **idf.py build** again.
 
-Implemented today (audio + expander)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+### Implemented today (audio + expander)
 
 - **bsp_waveshare_s3** — probes the I²C expander on **GPIO10/11** (addresses
   **0x20–0x27**). **TCA9555** (16 GPIO): drives **EXIO6/EXIO7** for Type-C
@@ -285,7 +286,7 @@ touch). Optional GPIO digital ins append after those indices (**din_pins=** in
 when three BSP buttons are present. Boot log prints the full map. This kit has
 no on-board touch pads; for **espd/touch** wire external electrodes to free
 touch GPIOs (1–14), enable **ESPD_PD_USE_TOUCH0**, and set **touch_pins=** in
-**config.txt** — see **docs/ADDING_A_BOARD.txt**.
+**config.txt** — see **docs/ADDING_A_BOARD.md**.
 
 USB MSC / VBUS hotplug disc mode is still planned; see the sections above for
 design notes. Next step: TinyUSB MSC + FAT per
