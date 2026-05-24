@@ -2,9 +2,10 @@
 
 Short reference — full guide: **docs/ADDING_A_BOARD.md**
 
-ESPD does not embed board-specific logic in **main/**. Hardware comes from
-**espd_board_*** plugin components (esp-bsp + shim) or in-tree **bsp_*** under
-**components/**. No board plugin ships with ESPD; users add their own.
+ESPD does not embed board-specific logic in **main/**. Standard esp-bsp kits
+use metadata-only **espd_board_*** plugins; shared audio/I/O glue sources live in
+**espd_integration** and compile in the board plugin when **ESPD_BOARD_ESP_BSP_GLUE**
+is selected. Path B (custom hardware) still uses per-board C sources.
 
 ## Naming convention
 
@@ -17,8 +18,8 @@ Headers in **include/bsp/**:
 
 | Header | Symbols | Notes |
 |--------|---------|-------|
-| **bsp_io.h** | LED, buttons, **bsp_sdcard_mount(mount_point)** | Board plugin implements; weak stubs otherwise |
-| **espd_bsp_audio.h** | **espd_bsp_audio_hw_init()**, **espd_bsp_audio_codec_*** | Board plugin implements hw init; codec I/O in **espd_integration** |
+| **bsp_io.h** | LED, buttons, **bsp_sdcard_mount(mount_point)** | Shared esp-bsp glue or board plugin |
+| **espd_bsp_audio.h** | **espd_bsp_audio_hw_init()**, **espd_bsp_audio_codec_*** | Shared esp-bsp glue + **espd_integration** codec I/O |
 
 **espd_board.c** calls inits at boot; **espd_io.c** binds **espd/led** when
 **bsp_led_count() > 0**.

@@ -1,0 +1,14 @@
+config ESPD_BOARD_WAVESHARE_S3
+    bool "Waveshare ESP32-S3-AUDIO"
+    depends on IDF_TARGET_ESP32S3
+    select ESPD_BOARD_ESP_BSP_GLUE
+    imply ESPD_USE_ADC
+    imply ESPD_PD_USE_SDCARD
+    imply ESPD_PD_USE_ANALOG0
+    imply ESPD_PD_INCLUDEPATCH
+    imply ESPD_PD_USE_AOUT
+    imply ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
+    help
+        Waveshare AI Smart Speaker / ESP32-S3-AUDIO Board (ES8311 DAC,
+        ES7210 mic). Fetches esp-bsp via Component Manager; profile
+        defaults in this component's sdkconfig.defaults.

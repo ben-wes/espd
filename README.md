@@ -86,7 +86,7 @@ Optional legacy host transport: board connects on port 4498; load patches with `
 main/                          Core ESPD (board-neutral)
 components/espd_integration/   bsp_* contract + weak stubs + codec glue
 components/espd_boards/        Registry (links enabled espd_board_* plugins)
-components/espd_board_<kit>/   User-supplied board plugins (none in tree)
+components/espd_board_waveshare_s3/  Example metadata-only plugin (ben-wes/esp-bsp)
 docs/ADDING_A_BOARD.md         Integrating new hardware
 pd/                            Pd submodule
 ```

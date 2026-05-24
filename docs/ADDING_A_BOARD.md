@@ -18,9 +18,12 @@ links enabled plugins. Unselected board plugins are **EXCLUDE_COMPONENTS** until
 chosen in menuconfig (so Component Manager does not fetch their git deps on a
 Generic build).
 
-A board plugin is fully self-contained: Kconfig entry, `idf_component.yml`,
-`sdkconfig.defaults`, shim sources, and `CMakeLists.txt` all live in
-`components/espd_board_<name>/`. **main/** never names a board.
+A board plugin is metadata-only for standard esp-bsp kits: Kconfig entry,
+`idf_component.yml`, `sdkconfig.defaults`, and an empty `CMakeLists.txt`.
+Shared audio/I/O glue lives in **espd_integration** and is compiled by
+**espd_boards** when a non-Generic board is selected. Optional
+**espd_board_io_config.h** overrides button mapping. Custom hardware (Path B)
+still uses per-board C sources.
 
 All deps — both the local `espd_integration` and any managed esp-bsp package —
 are declared in the plugin's `idf_component.yml` (the local one via `path:`).
@@ -39,11 +42,11 @@ quirk where a non-empty managed-`reqs` would otherwise replace the local CMake
                       │
          ┌────────────┴────────────────────────────┐
          ▼                                          ▼
-  espd_integration                    espd_board_* (one folder per kit)
-  (weak bsp_* stubs)                  Kconfig + idf_component.yml + shim
+  espd_integration                    espd_board_* (metadata per kit)
+  (weak stubs + codec glue)           Kconfig + idf_component.yml + profile
          │                                          │
-         │                                          ▼
-         │                               managed esp-bsp (Component Manager)
+         ▼                                          ▼
+  espd_board_* (metadata + shared glue SRCS)  managed esp-bsp (Component Manager)
          └──────────────────────────────────────────┘
 ```
 
@@ -60,8 +63,16 @@ For a kit `MYKIT`, create `components/espd_board_mykit/` with these files:
 | **Kconfig.board** | `choice ESPD_BOARD` entry (sourced via auto-generated `Kconfig.inc`) |
 | **idf_component.yml** | `path:` dep on `espd_integration` + git/registry dep on the BSP |
 | **sdkconfig.defaults** | ESPD profile (`ESPD_USE_ADC`, SD, PSRAM, stacks, …) |
-| **\<shim sources\>.c** | Implement `bsp_io.h` + `espd_bsp_audio_hw_init()` |
-| **CMakeLists.txt** | Register sources when `CONFIG_ESPD_BOARD_MYKIT` (no `REQUIRES`) |
+| **CMakeLists.txt** | Shared-glue boilerplate (see below) — no custom `.c` |
+| **espd_board_io_config.h** | *(optional)* button → `espd/din/N` map when BSP enum order differs |
+
+Shared glue (no per-board C):
+
+| File | Role |
+|------|------|
+| **espd_integration/espd_bsp_esp_bsp_audio.c** | `espd_bsp_audio_hw_init()` for all esp-bsp codec boards |
+| **espd_integration/espd_bsp_esp_bsp_io.c** | `bsp_io.h` + `espd_bsp_sdcard_mount()` (LED, buttons, SD) |
+| **Board plugin CMakeLists.txt** | Compiles glue when `ESPD_BOARD_ESP_BSP_GLUE` (BSP headers) |
 
 **main/espd_audio_codec.c** handles Pd audio policy (sample rate, volume, gain)
 via **espd_bsp_audio_***; `esp_codec_dev` glue is shared in
@@ -92,11 +103,15 @@ for a complete plugin (Waveshare ESP32-S3-AUDIO via `ben-wes/esp-bsp@waveshare-b
    config ESPD_BOARD_MYKIT
        bool "My audio kit"
        depends on IDF_TARGET_ESP32S3
+       select ESPD_BOARD_ESP_BSP_GLUE
        imply ESPD_USE_ADC
        imply ESPD_PD_USE_SDCARD
        help
          My audio kit (ES8311 codec, SD card, ...).
    ```
+
+   `select ESPD_BOARD_ESP_BSP_GLUE` enables the shared esp-bsp glue in
+   **espd_boards**. Omit for Path B custom boards that supply their own C.
 
 3. **idf_component.yml** — list both deps here: `espd_integration` via `path:`,
    and the esp-bsp package via `git:` (or registry name). Registry deps
@@ -115,38 +130,37 @@ for a complete plugin (Waveshare ESP32-S3-AUDIO via `ben-wes/esp-bsp@waveshare-b
        version: master
    ```
 
-4. **Shim sources** — implement **bsp_io.h** (LEDs, buttons, optional
-   `bsp_sdcard_mount()`) and **espd_bsp_audio_hw_init()** against your board's
-   `bsp/esp-bsp.h`. Codec open/read/write is shared in
-   `espd_integration/espd_bsp_codec_dev.c`.
-
-5. **CMakeLists.txt** — register sources guarded by
-   `if(CONFIG_ESPD_BOARD_MYKIT)`. No `REQUIRES` line — all deps come from
-   `idf_component.yml`:
+4. **CMakeLists.txt** — shared-glue boilerplate (same for every esp-bsp kit):
 
    ```cmake
-   if(CONFIG_ESPD_BOARD_MYKIT)
+   if(CONFIG_ESPD_BOARD_ESP_BSP_GLUE)
+       set(_espd_glue "${CMAKE_CURRENT_LIST_DIR}/../espd_integration")
        idf_component_register(
-           SRCS "mykit_io.c" "mykit_audio.c"
+           SRCS
+               "${_espd_glue}/espd_bsp_esp_bsp_audio.c"
+               "${_espd_glue}/espd_bsp_esp_bsp_io.c"
+           INCLUDE_DIRS "."
        )
    else()
        idf_component_register()
    endif()
    ```
 
-6. **sdkconfig.defaults** — ESPD feature flags + IDF options for that kit
+   Compiles in the board plugin so BSP headers from Component Manager are
+   visible. Add **espd_board_io_config.h** only if button order differs.
+
+5. **sdkconfig.defaults** — ESPD feature flags + IDF options for that kit
    (merged automatically when the folder name matches the Kconfig suffix).
 
-7. No edits to root **CMakeLists.txt** or **espd_boards** — discovery is
+6. No edits to root **CMakeLists.txt** or **espd_boards** — discovery is
    automatic.
 
-**Audio:** board plugin implements `espd_bsp_audio_hw_init()` only;
-`espd_bsp_audio_codec_*` is shared in `espd_integration`;
+**Audio:** shared `espd_bsp_esp_bsp_audio.c` implements `espd_bsp_audio_hw_init()`;
+`espd_bsp_audio_codec_*` is in `espd_integration/espd_bsp_codec_dev.c`;
 `main/espd_audio_codec.c` is Pd policy only.
 
-**SD card:** override `espd_bsp_sdcard_mount()` when esp-bsp needs expander
-setup. Use `ESPD_BSP_IO_NO_SDCARD_DECL` when including `bsp_io.h` and
-`esp-bsp.h` together.
+**I/O:** shared `espd_bsp_esp_bsp_io.c` implements `bsp_io.h` and
+`espd_bsp_sdcard_mount()` (expander SD detect via `BSP_SD_DET` when defined).
 
 ## Path B — in-tree hardware (no esp-bsp package)
 
