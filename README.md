@@ -4,8 +4,8 @@ Pure Data (Pd) on Espressif ESP32 microcontrollers. Core firmware is **board-agn
 hardware is provided by optional **BSP components** selected in **menuconfig**.
 
 Out of the box, only **Generic I2S** (manual GPIO pins, no codec driver) is
-shipped. To support a specific kit, drop an **espd_board_*** plugin into
-**components/** — see [docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md).
+shipped. Other kits: add a **boards/*.yaml** file (esp-bsp package + profile);
+see [docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md).
 
 ## Features
 
@@ -69,7 +69,7 @@ Example patches: [test-patch/](test-patch/). **config.txt** keys: [main/espd.h](
 
 [docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md) — full plugin layout and discovery rules. Short reference: [components/espd_integration/README.md](components/espd_integration/README.md).
 
-**Worked example:** [docs/BOARD_EXAMPLE_WAVESHARE_S3.md](docs/BOARD_EXAMPLE_WAVESHARE_S3.md) — Waveshare ESP32-S3-AUDIO via `ben-wes/esp-bsp@waveshare-bsp`.
+**Worked example:** [boards/waveshare_s3.yaml](boards/waveshare_s3.yaml) → [docs/BOARD_EXAMPLE_WAVESHARE_S3.md](docs/BOARD_EXAMPLE_WAVESHARE_S3.md).
 
 ## WiFi and remote patches
 
@@ -86,7 +86,8 @@ Optional legacy host transport: board connects on port 4498; load patches with `
 main/                          Core ESPD (board-neutral)
 components/espd_integration/   bsp_* contract + weak stubs + codec glue
 components/espd_boards/        Registry (links enabled espd_board_* plugins)
-components/espd_board_waveshare_s3/  Example metadata-only plugin (ben-wes/esp-bsp)
+components/espd_board_<kit>/   Generated from boards/*.yaml (do not edit)
+boards/                        Board YAML definitions (source of truth)
 docs/ADDING_A_BOARD.md         Integrating new hardware
 pd/                            Pd submodule
 ```

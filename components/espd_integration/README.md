@@ -2,10 +2,9 @@
 
 Short reference — full guide: **docs/ADDING_A_BOARD.md**
 
-ESPD does not embed board-specific logic in **main/**. Standard esp-bsp kits
-use metadata-only **espd_board_*** plugins; shared audio/I/O glue sources live in
-**espd_integration** and compile in the board plugin when **ESPD_BOARD_ESP_BSP_GLUE**
-is selected. Path B (custom hardware) still uses per-board C sources.
+ESPD does not embed board-specific logic in **main/**. Each kit is a
+**boards/*.yaml** file; CMake generates **espd_board_*** plugins that pull in
+an esp-bsp package and compile shared glue from **espd_integration**.
 
 ## Naming convention
 

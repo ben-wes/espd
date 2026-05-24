@@ -61,6 +61,28 @@ endfunction()
 
 _espd_collect_config_text(_espd_config_text)
 
+# Generate components/espd_board_* from boards/*.yaml before discovery.
+if(DEFINED PYTHON AND NOT "${PYTHON}" STREQUAL "")
+    set(_espd_python "${PYTHON}")
+else()
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set(_espd_python "${Python3_EXECUTABLE}")
+endif()
+execute_process(
+    COMMAND "${_espd_python}" "${CMAKE_SOURCE_DIR}/scripts/gen_board_plugins.py"
+            "${CMAKE_SOURCE_DIR}"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    RESULT_VARIABLE _espd_gen_boards_result
+    OUTPUT_VARIABLE _espd_gen_boards_out
+    ERROR_VARIABLE _espd_gen_boards_err
+)
+if(NOT _espd_gen_boards_result EQUAL 0)
+    message(FATAL_ERROR "gen_board_plugins.py failed: ${_espd_gen_boards_err}")
+endif()
+if(_espd_gen_boards_out)
+    message(STATUS "${_espd_gen_boards_out}")
+endif()
+
 # Auto-generate espd_boards/Kconfig.inc before Kconfig runs (board menu entries).
 file(GLOB _espd_board_kconfigs "${CMAKE_SOURCE_DIR}/components/espd_board_*/Kconfig.board")
 set(_kconfig_inc "# Auto-generated from root CMakeLists.txt — do not edit.\n")

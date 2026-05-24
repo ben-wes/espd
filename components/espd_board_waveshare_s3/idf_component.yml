@@ -1,3 +1,4 @@
+# Auto-generated from boards/waveshare_s3.yaml — do not edit.
 version: "0.1.0"
 description: Waveshare ESP32-S3-AUDIO board plugin for espd
 dependencies:

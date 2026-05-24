@@ -24,9 +24,9 @@ config ESPD_BOARD_ESP_BSP_GLUE
     bool
     default n
     help
-        Internal: compile shared esp-bsp audio/I/O glue in espd_boards
-        (espd_bsp_esp_bsp_*.c). esp-bsp board plugins select this; Path B
-        custom boards omit it and provide their own bsp_io / audio sources.
+        Internal: compile shared esp-bsp audio/I/O glue in the enabled
+        board plugin (espd_bsp_esp_bsp_*.c). Selected automatically for
+        boards defined in boards/*.yaml.
 
 menu "Audio (dac~ / adc~)"
 

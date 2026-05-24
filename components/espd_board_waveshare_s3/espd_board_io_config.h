@@ -1,9 +1,7 @@
 /*
- * Optional I/O overrides for espd_board_waveshare_s3.
+ * Auto-generated from boards/waveshare_s3.yaml — do not edit.
  *
- * Included by espd_integration/espd_bsp_esp_bsp_io.c when present in the
- * enabled board plugin's include path. Omit for boards where BSP button enum
- * order matches espd/din/0..N-1.
+ * Button map for espd_board_waveshare_s3.
  */
 #pragma once
 

@@ -1,5 +1,4 @@
-# Metadata-only board plugin — compiles shared esp-bsp glue from espd_integration
-# (must live here so Component Manager BSP headers are on the include path).
+# Auto-generated from boards/waveshare_s3.yaml — do not edit.
 
 if(CONFIG_ESPD_BOARD_ESP_BSP_GLUE)
     set(_espd_glue "${CMAKE_CURRENT_LIST_DIR}/../espd_integration")
