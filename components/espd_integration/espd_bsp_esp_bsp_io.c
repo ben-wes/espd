@@ -14,6 +14,7 @@
 
 #include "esp_log.h"
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -41,6 +42,17 @@ static led_strip_handle_t s_strip;
 static TaskHandle_t s_refresh_task;
 static volatile int s_led_dirty;
 static void (*s_button_handler)(int idx, int pressed);
+
+#define ESPD_BSP_DIN_QUEUE_LEN 16
+
+typedef struct {
+    uint8_t idx;
+    uint8_t pressed;
+} espd_bsp_din_event_t;
+
+static espd_bsp_din_event_t s_din_queue[ESPD_BSP_DIN_QUEUE_LEN];
+static volatile uint8_t s_din_qhead;
+static volatile uint8_t s_din_qtail;
 
 static void espd_bsp_button_event(void *button_handle, void *usr_data);
 
@@ -83,18 +95,38 @@ static void espd_bsp_button_register(button_handle_t btn, int map_idx)
 #endif
 }
 
+static int espd_bsp_din_queue_push(int idx, int pressed)
+{
+    uint8_t head = s_din_qhead;
+    uint8_t next = (uint8_t)((head + 1) % ESPD_BSP_DIN_QUEUE_LEN);
+
+    if (next == s_din_qtail)
+        return 0;
+    s_din_queue[head].idx = (uint8_t)idx;
+    s_din_queue[head].pressed = (uint8_t)(pressed ? 1 : 0);
+    s_din_qhead = next;
+    return 1;
+}
+
 static void espd_bsp_button_event(void *button_handle, void *usr_data)
 {
     int map_idx = (int)(intptr_t)usr_data;
     button_event_t event = iot_button_get_event(button_handle);
+    int pressed = -1;
 
-    if (!s_button_handler || map_idx < 0 || map_idx >= s_button_exposed_count)
+    if (map_idx < 0 || map_idx >= s_button_exposed_count)
         return;
 
     if (event == BUTTON_PRESS_DOWN)
-        s_button_handler(map_idx, 1);
+        pressed = 1;
     else if (event == BUTTON_PRESS_UP)
-        s_button_handler(map_idx, 0);
+        pressed = 0;
+    else
+        return;
+
+    if (!espd_bsp_din_queue_push(map_idx, pressed))
+        ESP_LOGW(TAG, "din queue full (dropped btn %d %s)", map_idx,
+            pressed ? "down" : "up");
 }
 
 int bsp_led_count(void)
@@ -235,7 +267,14 @@ void bsp_button_set_handler(void (*handler)(int idx, int pressed))
 
 void bsp_button_poll(void)
 {
-    /* iot_button delivers events via callbacks; poll is a no-op. */
+    /* iot_button runs callbacks on esp_timer (small stack). Drain queued
+     * presses here from the audio loop before touching Pd (clone resize etc). */
+    while (s_din_qtail != s_din_qhead) {
+        espd_bsp_din_event_t ev = s_din_queue[s_din_qtail];
+        s_din_qtail = (uint8_t)((s_din_qtail + 1) % ESPD_BSP_DIN_QUEUE_LEN);
+        if (s_button_handler)
+            s_button_handler(ev.idx, ev.pressed);
+    }
 }
 
 esp_err_t espd_bsp_sdcard_mount(const char *mount_point)
