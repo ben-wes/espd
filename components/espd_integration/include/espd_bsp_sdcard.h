@@ -1,6 +1,6 @@
 /*
  * Board SD mount hook. Weak default forwards to bsp_sdcard_mount(); managed
- * boards (espd_bsp_shim) provide a strong override when esp-bsp APIs differ.
+ * boards (espd_board_*) provide a strong override when esp-bsp APIs differ.
  */
 #pragma once
 

@@ -1,0 +1,2 @@
+# Board plugin registry (conditional REQUIRES). Board flags/menu entries are
+# generated in root CMakeLists.txt (Kconfig.flags.inc, Kconfig.inc).

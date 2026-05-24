@@ -9,7 +9,7 @@
 #include "esp_check.h"
 #include "esp_log.h"
 
-static const char *TAG = "espd_bsp_shim";
+static const char *TAG = "espd_board_waveshare";
 
 esp_err_t espd_bsp_audio_hw_init(const espd_bsp_audio_hw_params_t *params,
     espd_bsp_audio_hw_t *hw)
@@ -44,7 +44,7 @@ esp_err_t espd_bsp_audio_hw_init(const espd_bsp_audio_hw_params_t *params,
         },
     };
 
-    mclk_multiple = params->mclk_multiple ? params->mclk_multiple : 256;
+    mclk_multiple = params->mclk_multiple ? params->mclk_multiple : BSP_AUDIO_MCLK_MULTIPLE;
     std_cfg.clk_cfg.mclk_multiple = mclk_multiple;
 
     ESP_RETURN_ON_ERROR(bsp_audio_init(&std_cfg), TAG, "bsp_audio_init");

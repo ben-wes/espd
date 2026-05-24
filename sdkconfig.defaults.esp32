@@ -1,0 +1,7 @@
+# ESP32 (classic) — conservative defaults for typical 4 MB dev boards (~320 KB RAM).
+
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+
+# Pd on app_main; IDF default 3584 overflows on FFT-heavy patches. Same need as
+# S3, but internal RAM is much tighter here — avoid large static allocations.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536

@@ -20,7 +20,7 @@
 #include "iot_button.h"
 #include "led_strip.h"
 
-static const char *TAG = "espd_bsp_shim";
+static const char *TAG = "espd_board_waveshare";
 
 #define ESPD_WAVESHARE_BUTTON_COUNT 3
 

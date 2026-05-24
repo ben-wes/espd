@@ -1930,10 +1930,6 @@ void pdmain_print( const char *s)
     strncpy(y, s, 79);
     y[79]=0;
     strcat(y, ";");
-#ifdef PD_USE_BLUETOOTH
-    if (strlen(y) > 0)
-        pd_bt_writeback((unsigned char *)y, strlen(y));
-#endif
 #ifdef PD_USE_WIFI
     if (espd_wifi_net_enabled && wifi_ipaddr[0] != '\0') {
         if (espd_log_broadcast_port > 0)
@@ -2105,9 +2101,6 @@ void app_main(void)
     pd_touch0_init();
 #endif
 
-#ifdef PD_USE_BLUETOOTH
-    bt_init();
-#endif
 #ifdef PD_USE_SDCARD
     sd_init();
 #endif

@@ -2,7 +2,7 @@ menu "ESPD Configuration"
 
 choice ESPD_BOARD
     prompt "Target board"
-    default ESPD_BOARD_GENERIC if IDF_TARGET_ESP32
+    default ESPD_BOARD_GENERIC
     help
         Select the hardware board. Board-specific options are registered by BSP
         components (see menuconfig after selecting a board). Each board may select
@@ -13,8 +13,10 @@ config ESPD_BOARD_GENERIC
     imply ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     help
         Bare I2S pins without an external codec driver. Tune GPIOs under
-        "Generic board I2S pins" below. Additional boards are added via
-        espd_bsp_selector (Component Manager git deps on esp-bsp).
+        "Generic board I2S pins" below. BSP boards add a component under
+        components/espd_board_* (see docs/ADDING_A_BOARD.md).
+
+orsource "../components/espd_boards/Kconfig.inc"
 
 endchoice
 

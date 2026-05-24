@@ -1,13 +1,7 @@
-# Generic ESPD defaults (partition table, flash size). Board profile defaults
-# are merged separately in CMakeLists.txt (generic vs BSP), not from here.
+# Project-wide defaults (all targets). Board choice and profile defaults are
+# merged in CMakeLists.txt; target tuning in sdkconfig.defaults.<target>.
 
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_pd.csv"
 CONFIG_PARTITION_TABLE_FILENAME="partitions_pd.csv"
 CONFIG_PARTITION_TABLE_OFFSET=0x8000
-
-CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
-
-# Pd audio loop runs on the main task (app_main). IDF default 3584 overflows
-# quickly; FFT-heavy patches need much more.
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536

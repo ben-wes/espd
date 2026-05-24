@@ -1,7 +1,7 @@
 /*
  * Generic board bring-up: probe optional bsp_* peripherals and use what exists.
  *
- * Managed esp-bsp boards use espd_bsp_shim for I/O and SD card.
+ * Managed esp-bsp boards use espd_board_* components for I/O and SD card.
  */
 
 #include "espd_board.h"

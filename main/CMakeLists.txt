@@ -95,12 +95,11 @@ set(MAIN_REQUIRES
     esp_driver_i2c
     esp_driver_gpio
     esp_driver_uart
-    esp_codec_dev
     lwip
     pthread
+    sock_utils
     espd_integration
-    espd_bsp_shim
-    espd_bsp_selector
+    espd_boards
 )
 
 idf_component_register(

@@ -1,12 +1,6 @@
 # Generic I2S board profile (merged when CONFIG_ESPD_BOARD_GENERIC=y).
-# Minimal ESPD defaults; IDF target/flash/PSRAM come from the root sdkconfig.
+# ESPD feature flags only; flash/stack/PSRAM come from sdkconfig.defaults.<target>.
 
 CONFIG_ESPD_BOARD_GENERIC=y
-CONFIG_ESPD_USE_ADC=n
-CONFIG_ESPD_PD_USE_SDCARD=n
-CONFIG_ESPD_PD_USE_ANALOG0=n
-CONFIG_ESPD_PD_INCLUDEPATCH=n
-CONFIG_ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK=n
+CONFIG_ESPD_AUDIO_BACKEND_GENERIC_I2S=y
 CONFIG_ESPD_ENABLE_LEGACY_WIFI_TRANSPORT=y
-
-# Main stack: use root sdkconfig.defaults (65536 for Pd on app_main).

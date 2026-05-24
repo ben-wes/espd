@@ -1,5 +1,5 @@
 /*
- * Minimal ESPD I/O surface exposed to BSP espd_port.c integrations.
+ * Minimal ESPD I/O surface used by main/espd_io.c and board plugins.
  */
 #pragma once
 

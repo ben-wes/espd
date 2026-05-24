@@ -1,14 +1,15 @@
 /*
- * Board codec hardware init hook. Weak default returns NOT_SUPPORTED;
- * espd_bsp_shim provides a strong override for managed esp-bsp boards.
+ * Board codec hooks for the BSP audio backend.
  *
- * Opens I2S + codec devices only — esp_codec_dev_open() stays in main
- * (Pd sample rate, volume, gain).
+ * espd_board_* plugins implement espd_bsp_audio_hw_init() (kit-specific).
+ * espd_integration/espd_bsp_codec_dev.c implements codec I/O when BSP backend
+ * is selected; **espd_board_*** plugins must declare **espressif/esp_codec_dev** in
+ * **idf_component.yml** so Component Manager fetches it before this file compiles.
  */
 #pragma once
 
-#include "esp_codec_dev.h"
 #include "esp_err.h"
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct {
@@ -19,9 +20,22 @@ typedef struct {
 } espd_bsp_audio_hw_params_t;
 
 typedef struct {
-    esp_codec_dev_handle_t spk;
-    esp_codec_dev_handle_t mic;
+    void *spk;
+    void *mic;
 } espd_bsp_audio_hw_t;
+
+typedef struct {
+    int sample_rate_hz;
+    uint8_t channels;
+    uint8_t bits_per_sample;
+} espd_bsp_audio_codec_cfg_t;
 
 esp_err_t espd_bsp_audio_hw_init(const espd_bsp_audio_hw_params_t *params,
     espd_bsp_audio_hw_t *hw);
+
+esp_err_t espd_bsp_audio_codec_open(void *dev,
+    const espd_bsp_audio_codec_cfg_t *cfg);
+esp_err_t espd_bsp_audio_codec_write(void *dev, const void *data, size_t bytes);
+esp_err_t espd_bsp_audio_codec_read(void *dev, void *data, size_t bytes);
+esp_err_t espd_bsp_audio_codec_set_out_vol(void *dev, int vol_pct);
+esp_err_t espd_bsp_audio_codec_set_in_gain(void *dev, float gain_db);

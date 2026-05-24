@@ -43,12 +43,6 @@ void pd_sendmsg(char *buf, int bufsize);
 void pd_fromhost(char *data, size_t size);
 void espd_control_io_init(void);
 
-#ifdef PD_USE_BLUETOOTH
-void pd_bt_poll( void);
-void bt_init( void);
-void pd_bt_writeback(unsigned char *s, int length);
-#endif
-
 #ifdef PD_USE_WIFI
 void espd_netif_ensure_init(void); /* wifi.c - idempotent lwIP/event-loop init */
 void wifi_init(void);   /* wifi.c - manage 802.11 connection */
