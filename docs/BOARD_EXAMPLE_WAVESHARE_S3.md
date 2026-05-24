@@ -1,6 +1,10 @@
 # Worked example: Waveshare ESP32-S3-AUDIO
 
-One YAML file defines the whole board integration:
+End-user setup (features, buttons, config layers):
+**[GETTING_STARTED.md](GETTING_STARTED.md)**. This page is the Waveshare-specific
+build shortcut.
+
+One YAML file defines the board integration:
 
 **[boards/waveshare_s3.yaml](../boards/waveshare_s3.yaml)**
 
@@ -26,20 +30,23 @@ architecture change.
 . $HOME/.espressif/v6.0.1/esp-idf/export.sh
 
 idf.py set-target esp32s3
-echo CONFIG_ESPD_BOARD_WAVESHARE_S3=y >> sdkconfig.defaults.esp32s3
-idf.py menuconfig          # save — board appears under Target board
+idf.py menuconfig                # ESPD Configuration → Target board → Waveshare → Save
 idf.py build flash monitor
 ```
 
 First build downloads the BSP into **managed_components/** (network required).
 
-## Verifying the BSP fork
+## Buttons
 
-```bash
-grep -n 'I2S_STD_PHILIP[^S]'                     managed_components/waveshare_esp32_s3_audio/src/*.c
-grep -n 'bsp_audio_codec_bus_init'               managed_components/waveshare_esp32_s3_audio/src/*.c
-grep -n 'sample_rate.*22050\|sample_rate.*48000' managed_components/waveshare_esp32_s3_audio/src/*.c
-```
+Waveshare YAML maps physical keys to **`espd/din/0..2`** (numeric, not named):
+
+| `espd/din/N` | Hardware (via `io.buttons`) |
+|--------------|----------------------------|
+| 0 | Vol up |
+| 1 | Play |
+| 2 | Vol down |
+
+See [GETTING_STARTED.md — Buttons](GETTING_STARTED.md#buttons-bsp-kits).
 
 ## Sample rate
 

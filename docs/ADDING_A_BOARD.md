@@ -1,5 +1,8 @@
 # Adding a board to ESPD
 
+Integrator guide. End-user setup and full feature list:
+**[GETTING_STARTED.md](GETTING_STARTED.md)**.
+
 ESPD core firmware is board-neutral. Out of the box only **Generic I2S** is
 shipped (manual GPIO pins, no codec driver). Every other kit is an **esp-bsp**
 package plus a one-file YAML definition.
