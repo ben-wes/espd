@@ -19,6 +19,12 @@
 #include "lwip/sockets.h"
 #include "lwip/errno.h"
 
+extern int pd_setloadingabstraction(t_symbol *sym);
+
+int sys_trytoopenit(const char *dir, const char *name, const char *ext,
+    char *dirresult, char **nameresult, unsigned int size, int bin,
+    int okgui);
+
 void pd_init(void);
 void glob_open(t_pd *ignore, t_symbol *name, t_symbol *dir, t_floatarg f);
 
@@ -70,12 +76,22 @@ void trymem(int foo)
 #endif
 }
 
+static int espd_path_list_contains(t_namelist *nl, const char *dir)
+{
+    for (; nl; nl = nl->nl_next)
+        if (!strcmp(nl->nl_string, dir))
+            return 1;
+    return 0;
+}
+
 static void espd_add_patch_dir_to_searchpath(const char *dir)
 {
     if (!dir || !*dir)
         return;
-    STUFF->st_searchpath = namelist_append(STUFF->st_searchpath, dir, 0);
-    STUFF->st_temppath = namelist_append(STUFF->st_temppath, dir, 0);
+    if (!espd_path_list_contains(STUFF->st_searchpath, dir))
+        STUFF->st_searchpath = namelist_append(STUFF->st_searchpath, dir, 0);
+    if (!espd_path_list_contains(STUFF->st_temppath, dir))
+        STUFF->st_temppath = namelist_append(STUFF->st_temppath, dir, 0);
 }
 
 static void espd_print_pd_paths(const char *label)
@@ -96,6 +112,126 @@ static void espd_print_pd_paths(const char *label)
         used += (size_t)snprintf(msg + used, sizeof(msg) - used, " %s", nl->nl_string);
     used += (size_t)snprintf(msg + used, sizeof(msg) - used, "\n");
     pdmain_print(msg);
+}
+
+void canvas_popabstraction(t_canvas *x);
+
+static t_gobj *espd_abstraction_classes;
+
+static t_pd *espd_create_abstraction(t_symbol *s, int argc, t_atom *argv)
+{
+    const char *objectname;
+    char dirbuf[MAXPDSTRING], classslashclass[MAXPDSTRING], *nameptr;
+    t_glist *glist;
+    t_canvas *canvas;
+    t_pd *was;
+    int fd;
+
+    if (!s || !s->s_name || !*s->s_name)
+        return 0;
+    if (pd_setloadingabstraction(s))
+    {
+        pd_error(0, "%s: can't load abstraction within itself\n", s->s_name);
+        pd_this->pd_newest = 0;
+        return 0;
+    }
+    objectname = s->s_name;
+    glist = (t_glist *)canvas_getcurrent();
+    if (!glist)
+    {
+        pd_this->pd_newest = 0;
+        return 0;
+    }
+    canvas = (t_canvas *)glist_getcanvas(glist);
+    was = s__X.s_thing;
+    pd_snprintf(classslashclass, MAXPDSTRING, "%s/%s", objectname, objectname);
+    fd = canvas_open(canvas, objectname, ".pd", dirbuf, &nameptr, MAXPDSTRING, 0);
+    if (fd < 0)
+        fd = canvas_open(canvas, objectname, ".pat", dirbuf, &nameptr, MAXPDSTRING, 0);
+    if (fd < 0)
+        fd = canvas_open(canvas, classslashclass, ".pd", dirbuf, &nameptr, MAXPDSTRING, 0);
+    if (fd < 0)
+    {
+        pd_this->pd_newest = 0;
+        return 0;
+    }
+    close(fd);
+    espd_add_patch_dir_to_searchpath(dirbuf);
+    canvas_setargs(argc, argv);
+    binbuf_evalfile(gensym(nameptr), gensym(dirbuf));
+    if (s__X.s_thing && was != s__X.s_thing)
+        canvas_popabstraction((t_canvas *)(s__X.s_thing));
+    else
+        s__X.s_thing = was;
+    canvas_setargs(0, 0);
+    return pd_this->pd_newest;
+}
+
+static int espd_try_register_abstraction(const char *objectname, const char *path)
+{
+    t_class *c = 0;
+    char dirbuf[MAXPDSTRING], classslashclass[MAXPDSTRING], *nameptr;
+    int fd;
+
+    if (!objectname || !*objectname)
+        return 0;
+    if (zgetfn(&pd_objectmaker, gensym(objectname)))
+        return 1;
+    if (!path || !*path)
+        return 0;
+
+    pd_snprintf(classslashclass, MAXPDSTRING, "%s/%s", objectname, objectname);
+    if ((fd = sys_trytoopenit(path, objectname, ".pd",
+            dirbuf, &nameptr, MAXPDSTRING, 0, 0)) < 0 &&
+        (fd = sys_trytoopenit(path, objectname, ".pat",
+            dirbuf, &nameptr, MAXPDSTRING, 0, 0)) < 0 &&
+        (fd = sys_trytoopenit(path, classslashclass, ".pd",
+            dirbuf, &nameptr, MAXPDSTRING, 0, 0)) < 0)
+        return 0;
+    close(fd);
+    espd_add_patch_dir_to_searchpath(dirbuf);
+
+    class_set_extern_dir(gensym(dirbuf));
+    c = class_new(gensym(objectname), (t_newmethod)espd_create_abstraction,
+        0, 0, 0, A_GIMME, 0);
+    class_set_extern_dir(&s_);
+    if (!c)
+        return 0;
+
+    {
+        t_gobj *absclass = (t_gobj *)t_getbytes(sizeof(*absclass));
+        absclass->g_pd = c;
+        absclass->g_next = espd_abstraction_classes;
+        espd_abstraction_classes = absclass;
+    }
+    return 1;
+}
+
+typedef struct _espd_loadlib_data
+{
+    t_canvas *canvas;
+    const char *classname;
+    int ok;
+} t_espd_loadlib_data;
+
+static int espd_loadlib_iter(const char *path, t_espd_loadlib_data *data)
+{
+    if (data->ok)
+        return 0;
+    data->ok = espd_try_register_abstraction(data->classname, path);
+    return (data->ok == 0);
+}
+
+static void espd_preload_from_searchpaths(const char *classname, int *ok)
+{
+    t_namelist *nl;
+
+    if (*ok)
+        return;
+    for (nl = STUFF->st_temppath; nl && !*ok; nl = nl->nl_next)
+        *ok = espd_try_register_abstraction(classname, nl->nl_string);
+    for (nl = STUFF->st_searchpath; nl && !*ok; nl = nl->nl_next)
+        *ok = espd_try_register_abstraction(classname, nl->nl_string);
 }
 
 void pd_sendmsg(char *buf, int bufsize)
@@ -650,114 +786,27 @@ int sys_zoom_open = 1;
 int sys_zoomfontwidth(int fontsize, int zoom, int worstcase) { return (1);}
 int sys_zoomfontheight(int fontsize, int zoom, int worstcase) { return (1);}
 
-void canvas_popabstraction(t_canvas *x);
-
-static t_pd *espd_create_abstraction(t_symbol *s, int argc, t_atom *argv)
-{
-    const char *objectname;
-    char dirbuf[MAXPDSTRING], classslashclass[MAXPDSTRING], *nameptr;
-    t_glist *glist;
-    t_canvas *canvas;
-    t_pd *was;
-    t_pd *created = 0;
-    int fd;
-
-    if (!s || !s->s_name || !*s->s_name)
-        return 0;
-    objectname = s->s_name;
-    glist = (t_glist *)canvas_getcurrent();
-    if (!glist) {
-        return 0;
-    }
-    canvas = (t_canvas *)glist_getcanvas(glist);
-    was = s__X.s_thing;
-    pd_snprintf(classslashclass, MAXPDSTRING, "%s/%s", objectname, objectname);
-    fd = canvas_open(canvas, objectname, ".pd", dirbuf, &nameptr, MAXPDSTRING, 0);
-    if (fd < 0)
-        fd = canvas_open(canvas, objectname, ".pat", dirbuf, &nameptr, MAXPDSTRING, 0);
-    if (fd < 0)
-        fd = canvas_open(canvas, classslashclass, ".pd", dirbuf, &nameptr, MAXPDSTRING, 0);
-    if (fd < 0)
-    {
-        pd_this->pd_newest = 0;
-        return 0;
-    }
-    close(fd);
-    canvas_setargs(argc, argv);
-    binbuf_evalfile(gensym(nameptr), gensym(dirbuf));
-    if (s__X.s_thing && s__X.s_thing != was)
-        created = (t_pd *)s__X.s_thing;
-    else
-        created = 0;
-    if (created && *created == canvas_class)
-        canvas_popabstraction((t_canvas *)created);
-    s__X.s_thing = was;
-    canvas_setargs(0, 0);
-    pd_this->pd_newest = created;
-    return created;
-}
-
-static int espd_load_abstraction_class(t_canvas *canvas, const char *objectname)
-{
-    static t_gobj *abstraction_classes = 0;
-    t_class *c = 0;
-    char dirbuf[MAXPDSTRING], classslashclass[MAXPDSTRING], *nameptr;
-    int fd;
-
-    pd_snprintf(classslashclass, MAXPDSTRING, "%s/%s", objectname, objectname);
-    fd = canvas_open(canvas, objectname, ".pd", dirbuf, &nameptr, MAXPDSTRING, 0);
-    if (!strcmp(objectname, "sample.cl"))
-        post("loader dbg: sample.cl try '%s.pd' fd=%d", objectname, fd);
-    if (fd < 0)
-        fd = canvas_open(canvas, objectname, ".pat", dirbuf, &nameptr, MAXPDSTRING, 0);
-    if (!strcmp(objectname, "sample.cl"))
-        post("loader dbg: sample.cl try '%s.pat' fd=%d", objectname, fd);
-    if (fd < 0)
-        fd = canvas_open(canvas, classslashclass, ".pd", dirbuf, &nameptr, MAXPDSTRING, 0);
-    if (!strcmp(objectname, "sample.cl"))
-        post("loader dbg: sample.cl try '%s.pd' fd=%d", classslashclass, fd);
-    if (fd < 0)
-    {
-        if (!strcmp(objectname, "sample.cl"))
-            post("loader dbg: sample.cl unresolved (searchpath/temppath mismatch?)");
-        return 0;
-    }
-    close(fd);
-    if (!strcmp(objectname, "sample.cl"))
-        post("loader dbg: sample.cl resolved dir='%s' name='%s'", dirbuf, nameptr);
-
-    class_set_extern_dir(gensym(dirbuf));
-    c = class_new(gensym(objectname), (t_newmethod)espd_create_abstraction,
-        0, 0, 0, A_GIMME, 0);
-    class_set_extern_dir(&s_);
-    if (!c)
-        return 0;
-
-    /* Keep class references alive (mirrors upstream loader behavior). */
-    {
-        t_gobj *absclass = (t_gobj *)t_getbytes(sizeof(*absclass));
-        absclass->g_pd = c;
-        absclass->g_next = abstraction_classes;
-        abstraction_classes = absclass;
-    }
-    return 1;
-}
-
 int sys_load_lib(t_canvas *canvas, const char *classname)
 {
+    t_espd_loadlib_data data;
+    int dspstate;
+
     if (!classname || !*classname)
-    {
-        post("loader dbg: empty classname while loading abstraction");
         return 0;
-    }
     if (zgetfn(&pd_objectmaker, gensym(classname)))
         return 1;
-    {
-        int ok = espd_load_abstraction_class(canvas, classname);
-        if (!ok)
-            post("loader dbg: unresolved class '%s'", classname);
-        return ok;
-    }
+
+    data.canvas = canvas;
+    data.classname = classname;
+    data.ok = 0;
+
+    dspstate = canvas_suspend_dsp();
+    if (canvas)
+        canvas_path_iterate(canvas, (t_canvas_path_iterator)espd_loadlib_iter, &data);
+    if (!data.ok)
+        espd_preload_from_searchpaths(classname, &data.ok);
+    canvas_resume_dsp(dspstate);
+    return data.ok;
 }
 
 t_rtext *glist_textedfor(t_glist *gl)
