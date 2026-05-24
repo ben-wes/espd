@@ -5,6 +5,7 @@
 #include "../pd/src/g_canvas.h"
 #include "../pd/src/g_undo.h"
 #include "espd.h"
+#include "espd_runtime_config.h"
 #include "esp_attr.h"
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -332,7 +333,7 @@ void conf_init(void)
 /* ------- STUBS that do nothing ------------- */
 int sys_get_outchannels(void) {return(IOCHANS); }
 int sys_get_inchannels(void) {return(IOCHANS); }
-float sys_getsr( void) {return (48000);}
+float sys_getsr( void) { return ((float)espd_audio_sample_rate_hz()); }
 int sys_getblksize(void) { return (DEFDACBLKSIZE); }
 
 int pd_compatibilitylevel = 100;

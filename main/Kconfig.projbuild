@@ -27,6 +27,17 @@ config ESPD_IOCHANS
     default 2
     range 1 2
 
+config ESPD_AUDIO_SAMPLE_RATE
+    int "Default audio sample rate (Hz)"
+    default 48000
+    range 8000 192000
+    help
+        Sample rate requested from both the audio backend (I2S / codec) and Pd
+        (sys_getsr / dac~ / adc~). Common values: 16000, 22050, 32000, 44100,
+        48000, 96000. Override at boot with audio_sample_rate= in config.txt.
+        Some BSPs / codecs only support a fixed subset; mismatches surface as
+        a codec-open failure or pitched output.
+
 config ESPD_USE_ADC
     bool "Enable adc~ capture"
     default n

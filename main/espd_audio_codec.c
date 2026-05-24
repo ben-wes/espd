@@ -7,6 +7,7 @@
 #include "espd_audio.h"
 #include "espd_bsp_audio.h"
 #include "espd_config.h"
+#include "espd_runtime_config.h"
 
 #include "esp_check.h"
 #include "esp_log.h"
@@ -15,7 +16,6 @@
 
 static const char *TAG = "espd_audio";
 
-#define ESPD_BSP_AUDIO_RATE_HZ 48000
 #define ESPD_BSP_AUDIO_MCLK_MULTIPLE 256
 
 struct espd_audio {
@@ -50,7 +50,7 @@ esp_err_t espd_audio_init(espd_audio_t **out)
     if (!a)
         return ESP_ERR_NO_MEM;
 
-    a->sample_rate = ESPD_BSP_AUDIO_RATE_HZ;
+    a->sample_rate = espd_audio_sample_rate_hz();
     a->channels = IOCHANS;
     sample_cfg = espd_codec_cfg(a->sample_rate, a->channels);
 
@@ -127,7 +127,7 @@ esp_err_t espd_audio_read(espd_audio_t *audio, int16_t *pcm, size_t samples)
 
 int espd_audio_sample_rate(const espd_audio_t *audio)
 {
-    return audio ? audio->sample_rate : ESPD_BSP_AUDIO_RATE_HZ;
+    return audio ? audio->sample_rate : espd_audio_sample_rate_hz();
 }
 
 int espd_audio_channels(const espd_audio_t *audio)

@@ -277,7 +277,11 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
  *   has dout_pins= with at least one GPIO. Float >= 0.5 → high, else low. No
  *   background polling.
  *   dout_pins=8,9 — GPIOs for espd/dout/0.. in order (max 8)
- * Audio I2S DMA (codec and generic I2S backends):
+ * Audio (codec and generic I2S backends):
+ *   audio_sample_rate=48000 — Hz (8000..192000; default CONFIG_ESPD_AUDIO_SAMPLE_RATE).
+ *     Single source of truth: same value flows into both the audio backend
+ *     (I2S / codec) and Pd (sys_getsr). If the codec / BSP cannot deliver this
+ *     rate, audio init fails (better than a silent pitch shift).
  *   audio_dma_desc_num=3 — number of DMA buffers (2..16; IDF default 6)
  *   audio_dma_frame_num=64 — frames per buffer (8..1024; IDF default 240)
  *   Output latency ≈ desc_num * frame_num / sample_rate seconds.

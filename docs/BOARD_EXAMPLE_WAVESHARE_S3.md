@@ -205,13 +205,13 @@ function definition, the third should show 48000 as the default.
 
 ## Pd sample rate
 
-Pd's `sys_getsr()` returns 48000 (see [`main/pdmain.c`][pdmain]). ESPD's
-audio backends ask the codec/I²S for the same rate. The `ben-wes/esp-bsp`
-fork above respects the requested rate; if you swap in another fork or
-the upstream registry version, double-check the I²S default in
-`managed_components/waveshare_esp32_s3_audio/` and adjust accordingly.
+ESPD has a single source of truth for sample rate: `CONFIG_ESPD_AUDIO_SAMPLE_RATE`
+(menuconfig default, 48000 Hz) overridable at boot with `audio_sample_rate=` in
+**config.txt**. The same value flows into the codec / I²S and into Pd via
+`sys_getsr()`, so a wrong rate fails audio init explicitly instead of producing
+silent pitch shift.
 
-A future ESPD release will make sample rate configurable via `config.txt`
-(`audio_sample_rate=`) so the contract is explicit instead of implicit.
-
-[pdmain]: ../main/pdmain.c
+The `ben-wes/esp-bsp@waveshare-bsp` fork honours the requested rate. If you
+swap in another fork or the upstream registry version, double-check the I²S
+default in `managed_components/waveshare_esp32_s3_audio/` and pin
+`audio_sample_rate=` to whatever it actually delivers.

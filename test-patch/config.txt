@@ -12,5 +12,6 @@
 # din_pins=4,5           # extra espd/din after BSP buttons (requires PD_USE_DIN0)
 # din_active_low=1
 # dout_pins=8,9          # GPIO digital out espd/dout/0.. (requires PD_USE_DOUT0)
+# audio_sample_rate=48000  # Hz (8000..192000); default from Kconfig
 # audio_dma_desc_num=4
 # audio_dma_frame_num=128

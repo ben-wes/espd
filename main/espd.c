@@ -646,15 +646,33 @@ static void espd_audio_load_config(void)
                 overridden = 1;
             }
         }
+        else if (!strcmp(k, "audio_sample_rate"))
+        {
+            int n = atoi(v);
+            if (n >= ESPD_AUDIO_SAMPLE_RATE_MIN &&
+                n <= ESPD_AUDIO_SAMPLE_RATE_MAX)
+            {
+                espd_audio_set_sample_rate(n);
+                overridden = 1;
+            }
+            else
+            {
+                ESP_LOGW(TAG,
+                    "audio: %s: ignoring audio_sample_rate=%s (range %d..%d)",
+                    config_path, v, ESPD_AUDIO_SAMPLE_RATE_MIN,
+                    ESPD_AUDIO_SAMPLE_RATE_MAX);
+            }
+        }
     }
     fclose(f);
     if (overridden)
     {
         int desc = espd_audio_dma_desc_num();
         int frames = espd_audio_dma_frame_num();
-        ESP_LOGI(TAG, "audio: %s: dma %d x %d frames (~%.1f ms @ 48 kHz)",
-            config_path, desc, frames,
-            1000.f * (float)desc * (float)frames / 48000.f);
+        int hz = espd_audio_sample_rate_hz();
+        ESP_LOGI(TAG, "audio: %s: %d Hz, dma %d x %d frames (~%.1f ms)",
+            config_path, hz, desc, frames,
+            hz > 0 ? 1000.f * (float)desc * (float)frames / (float)hz : 0.f);
     }
 }
 
