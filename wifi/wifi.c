@@ -7,7 +7,7 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 #include "../main/espd.h"
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
 #include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -169,4 +169,4 @@ void wifi_init(void)
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
 }
-#endif  /* PD_USE_WIFI */
+#endif  /* ESPD_USE_WIFI */

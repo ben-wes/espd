@@ -20,7 +20,7 @@ static const char *TAG = "espd_audio";
 
 struct espd_audio {
     void *spk;
-#ifdef USEADC
+#ifdef ESPD_USE_ADC
     void *mic;
 #endif
     int sample_rate;
@@ -80,7 +80,7 @@ esp_err_t espd_audio_init(espd_audio_t **out)
             (void)espd_bsp_audio_codec_write(a->spk, silence, sizeof(silence));
     }
 
-#ifdef USEADC
+#ifdef ESPD_USE_ADC
     a->mic = hw.mic;
     if (a->mic) {
         if (espd_bsp_audio_codec_open(a->mic, &sample_cfg) != ESP_OK) {
@@ -114,7 +114,7 @@ esp_err_t espd_audio_read(espd_audio_t *audio, int16_t *pcm, size_t samples)
     if (!audio || !pcm || samples == 0)
         return ESP_ERR_INVALID_ARG;
 
-#ifndef USEADC
+#ifndef ESPD_USE_ADC
     return ESP_ERR_NOT_SUPPORTED;
 #else
     if (!audio->mic)

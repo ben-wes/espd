@@ -130,7 +130,7 @@ void espd_din_changed(int idx, int pressed)
 void espd_io_poll(void)
 {
     espd_board_poll();
-#ifdef PD_USE_DIN0
+#ifdef ESPD_USE_DIN
     espd_din_gpio_poll();
 #endif
 }

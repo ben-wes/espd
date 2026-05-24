@@ -9,7 +9,7 @@
 #X obj 176 197 osc~;
 #X obj 176 218 *~ 0.03;
 #X text 46 288 touch raw count -> mapped pitch;
-#X text 46 306 menuconfig: ESPD_PD_USE_TOUCH0 + touch_pins in config.txt;
+#X text 46 306 menuconfig: ESPD_USE_TOUCH + touch_pins in config.txt;
 #X obj 176 239 dac~;
 #X connect 0 0 1 0;
 #X connect 2 0 3 0;

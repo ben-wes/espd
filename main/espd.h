@@ -10,17 +10,17 @@
     the peer machine, and the send and receive ports.  This can be done
     using main/locale.h (copy from locale.h.example) or by defining
     CONFIG_ESP_WIFI_SSID, etc., in sdkconfig / compile flags. */
-#if defined(PD_USE_WIFI)
+#if defined(ESPD_USE_WIFI)
 #include "sdkconfig.h"
 #endif
 #if defined(CONFIG_LOCALE_FILE)
 #include CONFIG_LOCALE_FILE
 #else
-#if defined(PD_USE_WIFI) && !defined(CONFIG_ESP_WIFI_SSID)
+#if defined(ESPD_USE_WIFI) && !defined(CONFIG_ESP_WIFI_SSID)
 #include "locale.h"
 #endif
 #endif
-#if defined(PD_USE_WIFI)
+#if defined(ESPD_USE_WIFI)
 #ifndef CONFIG_ESP_WIFI_SSID
 #define CONFIG_ESP_WIFI_SSID "espd"
 #endif
@@ -43,7 +43,7 @@ void pd_sendmsg(char *buf, int bufsize);
 void pd_fromhost(char *data, size_t size);
 void espd_control_io_init(void);
 
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
 void espd_netif_ensure_init(void); /* wifi.c - idempotent lwIP/event-loop init */
 void wifi_init(void);   /* wifi.c - manage 802.11 connection */
 void net_init( void);   /* init */
@@ -64,56 +64,56 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #define PIN_DATA_IN 35
 #endif
 
-#ifndef ESPD_ANALOG_NUM_CHANNELS
-#define ESPD_ANALOG_NUM_CHANNELS 1
+#ifndef ESPD_AIN_NUM_CHANNELS
+#define ESPD_AIN_NUM_CHANNELS 1
 #endif
-#ifndef ESPD_ANALOG_PIN_0
-#define ESPD_ANALOG_PIN_0 (-1)
+#ifndef ESPD_AIN_PIN_0
+#define ESPD_AIN_PIN_0 (-1)
 #endif
-#ifndef ESPD_ANALOG_PIN_1
-#define ESPD_ANALOG_PIN_1 (-1)
+#ifndef ESPD_AIN_PIN_1
+#define ESPD_AIN_PIN_1 (-1)
 #endif
-#ifndef ESPD_ANALOG_PIN_2
-#define ESPD_ANALOG_PIN_2 (-1)
+#ifndef ESPD_AIN_PIN_2
+#define ESPD_AIN_PIN_2 (-1)
 #endif
-#ifndef ESPD_ANALOG_PIN_3
-#define ESPD_ANALOG_PIN_3 (-1)
+#ifndef ESPD_AIN_PIN_3
+#define ESPD_AIN_PIN_3 (-1)
 #endif
-#ifndef ESPD_ANALOG_PIN_4
-#define ESPD_ANALOG_PIN_4 (-1)
+#ifndef ESPD_AIN_PIN_4
+#define ESPD_AIN_PIN_4 (-1)
 #endif
-#ifndef ESPD_ANALOG_PIN_5
-#define ESPD_ANALOG_PIN_5 (-1)
+#ifndef ESPD_AIN_PIN_5
+#define ESPD_AIN_PIN_5 (-1)
 #endif
-#ifndef ESPD_ANALOG_PIN_6
-#define ESPD_ANALOG_PIN_6 (-1)
+#ifndef ESPD_AIN_PIN_6
+#define ESPD_AIN_PIN_6 (-1)
 #endif
-#ifndef ESPD_ANALOG_PIN_7
-#define ESPD_ANALOG_PIN_7 (-1)
+#ifndef ESPD_AIN_PIN_7
+#define ESPD_AIN_PIN_7 (-1)
 #endif
-#ifndef ESPD_ANALOG_DEADBAND
-#define ESPD_ANALOG_DEADBAND 32
+#ifndef ESPD_AIN_DEADBAND
+#define ESPD_AIN_DEADBAND 32
 #endif
 /* Consumer-side throttle applied when draining the ADC producer queue on the
  * audio thread. 1 = forward every changed sample; N>1 = every N audio blocks.
  * With the producer task doing the actual reads, this is now a secondary knob;
- * ESPD_ANALOG_TASK_PERIOD_MS is the primary rate limiter. */
-#ifndef ESPD_ANALOG_REPORT_EVERY_N_BLOCKS
-#define ESPD_ANALOG_REPORT_EVERY_N_BLOCKS 1
+ * ESPD_AIN_TASK_PERIOD_MS is the primary rate limiter. */
+#ifndef ESPD_AIN_REPORT_EVERY_N_BLOCKS
+#define ESPD_AIN_REPORT_EVERY_N_BLOCKS 1
 #endif
 /* Dedicated ADC-sampling task: pinned to the core opposite Pd's audio loop so
  * adc_oneshot_read() blocking time never eats the audio block budget.
  * Shorter period = more conversion attempts per second (more temporal data);
- * which raw changes become Pd messages is still governed by ESPD_ANALOG_DEADBAND
+ * which raw changes become Pd messages is still governed by ESPD_AIN_DEADBAND
  * (noise gate), not by the period. */
-#ifndef ESPD_ANALOG_TASK_PERIOD_MS
-#define ESPD_ANALOG_TASK_PERIOD_MS 5
+#ifndef ESPD_AIN_TASK_PERIOD_MS
+#define ESPD_AIN_TASK_PERIOD_MS 5
 #endif
-#ifndef ESPD_ANALOG_TASK_PRIO
-#define ESPD_ANALOG_TASK_PRIO 2
+#ifndef ESPD_AIN_TASK_PRIO
+#define ESPD_AIN_TASK_PRIO 2
 #endif
-#ifndef ESPD_ANALOG_TASK_CORE
-#define ESPD_ANALOG_TASK_CORE 0
+#ifndef ESPD_AIN_TASK_CORE
+#define ESPD_AIN_TASK_CORE 0
 #endif
 #ifndef ESPD_TOUCH_NUM_CHANNELS
 #define ESPD_TOUCH_NUM_CHANNELS 1
@@ -205,8 +205,8 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #ifndef ESPD_PATCH_SPIFFS_PARTITION_LABEL
 #define ESPD_PATCH_SPIFFS_PARTITION_LABEL "pdstore"
 #endif
-#ifndef ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
-#define ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK 0
+#ifndef ESPD_WIFI_STA_WITH_LOCAL_MAIN_PD
+#define ESPD_WIFI_STA_WITH_LOCAL_MAIN_PD 0
 #endif
 /* 1 = start legacy espd TCP/UDP transport tasks; 0 = WiFi only for Pd objects. */
 #ifndef ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
@@ -232,17 +232,17 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #endif
 /* config.txt optional keys (key=value, # comment). Search order: SD card,
  * then SPIFFS at ESPD_PATCH_STORE_MOUNT, then USB MSC (if enabled).
- * WiFi (when PD_USE_WIFI): STA starts when config.txt has a non-empty wifi_ssid=
+ * WiFi (when ESPD_USE_WIFI): STA starts when config.txt has a non-empty wifi_ssid=
  *   (wifi_password optional). wifi_enable=0 disables STA even if wifi_ssid is set;
- *   wifi_enable=1 forces STA when ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK would
- *   otherwise skip WiFi. Missing config.txt → with PD_USE_SDCARD, STA stays off;
- *   otherwise Kconfig/locale defaults apply.
+ *   wifi_enable=1 forces STA when local main.pd would otherwise skip WiFi
+ *   (ESPD_WIFI_STA_WITH_LOCAL_MAIN_PD off). Missing config.txt → with
+ *   ESPD_USE_SDCARD, STA stays off; otherwise Kconfig/locale defaults apply.
  *   log_broadcast_port=9001
  *     >0 enables UDP broadcast of Pd print/error output to this port
  *     (when WiFi/net is active); 0 or missing keeps default log routing.
  *   wifi_ssid=myap
  *   wifi_password=secret
- * Analog (when PD_USE_ANALOG0 compiled in): espd/ain starts only if config.txt
+ * Analog (when ESPD_USE_AIN compiled in): espd/ain starts only if config.txt
  *   has ain_pins= with at least one ADC1-capable GPIO. No config.txt, no
  *   ain_pins key, empty list, or ain_enable=0 → no ADC task / no polling.
  *   ain_pins=3,4,5,6,7 — GPIOs for espd/ain/0.. in order (max 8, ADC1 pins)
@@ -253,19 +253,19 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
  *       only — smaller = more sensitive / more messages when the input moves.
  *   ain_report_every_n_blocks=1 — audio thread forwards at most every N
  *       blocks; keep 1 for lowest latency to Pd when the producer has updates.
- * Touch (when PD_USE_TOUCH0 compiled in): espd/touch starts only if config.txt
+ * Touch (when ESPD_USE_TOUCH compiled in): espd/touch starts only if config.txt
  *   has touch_pins= with at least one touch-capable GPIO. No config.txt, no
  *   touch_pins key, or empty list → no touch task / no polling.
  *   touch_pins=4,5,6      — GPIOs for espd/touch/0.. in order (ESP32-S3: 1–14)
  *   touch_pins=            — empty list: touch off
  *   touch_task_period_ms=5 — producer wake interval in ms (1..500)
  *   touch_report_every_n_blocks=1 — audio thread forwards at most every N blocks
- * PWM out (when PD_USE_AOUT compiled in): espd/aout starts only if config.txt
+ * PWM out (when ESPD_USE_AOUT compiled in): espd/aout starts only if config.txt
  *   has aout_pins= with at least one GPIO. No aout_pins key or empty list →
  *   no LEDC setup (patch floats are ignored). No background polling.
  *   aout_pins=8,9 — GPIOs for espd/aout/0.. in order (max 4)
  *   aout_pwm_freq_hz=20000 — LEDC frequency (optional; default 20000)
- * Digital in (when PD_USE_DIN0 compiled in): GPIO channels append after BSP
+ * Digital in (when ESPD_USE_DIN compiled in): GPIO channels append after BSP
  *   buttons. espd/din/0..(N-1) are board digital ins (e.g. via an I2C IO
  *   expander on a BSP kit); din_pins= adds espd/din/N.. at indices
  *   bsp_button_count()+i. Boot log lists
@@ -273,7 +273,7 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
  *   din_pins=4,5 — GPIOs for extra espd/din channels (max 8)
  *   din_active_low=1 — treat low level as pressed (default 1)
  *   din_task_period_ms=5 — GPIO poll interval in ms (1..500)
- * Digital out (when PD_USE_DOUT0 compiled in): espd/dout starts only if config.txt
+ * Digital out (when ESPD_USE_DOUT compiled in): espd/dout starts only if config.txt
  *   has dout_pins= with at least one GPIO. Float >= 0.5 → high, else low. No
  *   background polling.
  *   dout_pins=8,9 — GPIOs for espd/dout/0.. in order (max 8)
@@ -298,7 +298,7 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 extern int espd_main_pd_loaded_from_store;
 /** If a local main.pd was opened, which directory it was loaded from (e.g. /sdcard or /espd_pd). */
 extern const char *espd_main_pd_loaded_dir;
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
 extern int espd_wifi_net_enabled;
 /** True after net_init() has finished (TCP patch link up). Safe gate for net_send*. */
 int espd_net_send_ready(void);

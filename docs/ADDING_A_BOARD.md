@@ -38,7 +38,8 @@ idf.py menuconfig build flash monitor
 `id` must be lowercase `[a-z][a-z0-9_]*`. Root **CMakeLists.txt** runs
 **scripts/gen_board_plugins.py** before Kconfig and component discovery.
 
-Generated plugin files (**do not edit by hand**):
+Generated plugin files (**do not edit by hand**; created on `idf.py` configure,
+not committed — see `.gitignore`):
 
 | File | Role |
 |------|------|
@@ -98,7 +99,7 @@ bsp:                               # required — esp-bsp Component Manager dep
 features:                          # optional — live menuconfig hints
   imply:
     - ESPD_USE_ADC
-    - ESPD_PD_USE_SDCARD
+    - ESPD_USE_SDCARD
 
 io:                                # optional — omit if BSP button order is fine
   buttons: [VOLUP, PLAY, VOLDOWN]  # → BSP_BUTTON_* for espd/din/0..N
@@ -106,7 +107,7 @@ io:                                # optional — omit if BSP button order is fi
 profile:                           # sdkconfig.defaults sections
   ESPD features:
     ESPD_USE_ADC: y
-    ESPD_PD_USE_SDCARD: y
+    ESPD_USE_SDCARD: y
   Board hardware:
     ESPTOOLPY_FLASHSIZE_16MB: y
     SPIRAM: y
@@ -146,12 +147,12 @@ Activate IDF v6.0.1 per [README.md](../README.md).
 | Pd receiver | Source | Enable |
 |-------------|--------|--------|
 | **dac~** / **adc~** | Audio backend | **ESPD_USE_ADC** for input |
-| **espd/din/N** | **bsp_button_*** + optional **din_pins=** | BSP automatic; **ESPD_PD_USE_DIN0** + **din_pins=** for extra GPIO |
+| **espd/din/N** | **bsp_button_*** + optional **din_pins=** | BSP automatic; **ESPD_USE_DIN** + **din_pins=** for extra GPIO |
 | **espd/led**, **espd/led/N** | **bsp_led_*** | Automatic if BSP has LEDs |
-| **espd/ain/N** | ADC1 GPIOs | **ESPD_PD_USE_ANALOG0** + **ain_pins=** |
-| **espd/aout/N** | LEDC PWM | **ESPD_PD_USE_AOUT** + **aout_pins=** |
-| **espd/dout/N** | GPIO out | **ESPD_PD_USE_DOUT0** + **dout_pins=** |
-| **espd/touch/N** | Touch sensor | **ESPD_PD_USE_TOUCH0** + **touch_pins=** |
+| **espd/ain/N** | ADC1 GPIOs | **ESPD_USE_AIN** + **ain_pins=** |
+| **espd/aout/N** | LEDC PWM | **ESPD_USE_AOUT** + **aout_pins=** |
+| **espd/dout/N** | GPIO out | **ESPD_USE_DOUT** + **dout_pins=** |
+| **espd/touch/N** | Touch sensor | **ESPD_USE_TOUCH** + **touch_pins=** |
 
 ## Local storage (main.pd, config.txt)
 

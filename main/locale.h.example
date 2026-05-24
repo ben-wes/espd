@@ -1,6 +1,6 @@
 /*
  * Copy to main/locale.h (see .gitignore) and edit for your network.
- * espd.h includes this when PD_USE_WIFI is set and sdkconfig does not
+ * espd.h includes this when ESPD_USE_WIFI is set and sdkconfig does not
  * define CONFIG_ESP_WIFI_SSID.
  *
  * Flow: ESP joins your AP (SSID/password), gets an IP, then opens a TCP

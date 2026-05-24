@@ -49,7 +49,7 @@ canvas 0 50 450 300 12;\n\
 #X connect 3 0 2 0;\n\
 ";
 #endif
-#ifdef PD_INCLUDEPATCH
+#ifdef ESPD_INCLUDEPATCH
 #include "testpatch.c"
 #endif
 
@@ -134,7 +134,7 @@ void pdmain_init( void)
                 canvas_update_dsp();
         }
     }
-#ifdef PD_INCLUDEPATCH
+#ifdef ESPD_INCLUDEPATCH
     if (!espd_main_pd_loaded_from_store) {
         t_binbuf *b = binbuf_new();
         glob_setfilename(0, gensym("main-patch"), gensym("."));

@@ -6,3 +6,6 @@ main/locale.h
 sdkconfig
 sdkconfig.old
 .cache
+# Generated from boards/*.yaml (scripts/gen_board_plugins.py on CMake configure)
+components/espd_board_*/
+components/espd_boards/Kconfig.inc

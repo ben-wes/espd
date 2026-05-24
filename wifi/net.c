@@ -1,5 +1,5 @@
 #include "../main/espd.h"
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
 #include "freertos/FreeRTOS.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -265,4 +265,4 @@ void net_alive( void)
         net_sendtcp(buf, strlen(buf)); 
     }
 }
-#endif  /* PD_USE_WIFI */
+#endif  /* ESPD_USE_WIFI */

@@ -72,7 +72,7 @@ static void espd_pdcontrol_bang(t_espd_pdcontrol *x)
     espd_pdcontrol_output_dir(x);
 }
 
-#if defined(PD_USE_WIFI)
+#if defined(ESPD_USE_WIFI)
 static void espd_pdcontrol_ip(t_espd_pdcontrol *x)
 {
     int a, b, c, d, n;

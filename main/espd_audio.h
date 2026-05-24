@@ -9,7 +9,7 @@
 
 typedef struct espd_audio espd_audio_t;
 
-/** Initialize playback (and capture when USEADC is enabled). */
+/** Initialize playback (and capture when ESPD_USE_ADC is enabled). */
 esp_err_t espd_audio_init(espd_audio_t **out);
 
 /** Write interleaved int16 PCM (frames * channels samples). */

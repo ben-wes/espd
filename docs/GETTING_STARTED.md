@@ -102,7 +102,7 @@ Switching boards: change **Target board** in menuconfig → Save → `idf.py bui
 
 Copy examples from [test-patch/](../test-patch/). Without `main.pd`, an embedded
 test patch runs if **Embed fallback test patch** is enabled in menuconfig
-(`ESPD_PD_INCLUDEPATCH` — on by default for Waveshare YAML profile).
+(`ESPD_INCLUDEPATCH` — on by default for Waveshare YAML profile).
 
 ## Feature reference
 
@@ -164,7 +164,7 @@ Visible in `idf.py menuconfig`. Rebuild after changes.
 | **Enable SD card** | off (Generic) | `/sdcard` mount |
 | **Embed fallback test patch** | off (Generic) | Built-in patch if no main.pd |
 | **Enable WiFi** | on | Pd net objects |
-| **Skip STA when main.pd on disk** | off | Saves power when patch is local |
+| **Join WiFi when main.pd on disk** | off | Generic profile enables; board kits skip STA by default |
 | **Legacy espd TCP/UDP transport** | on (Generic) | Port 4498 host transport |
 | **USB serial console** | on | Pd print to UART |
 | **Compile espd/ain** | off | ADC GPIO inputs |
@@ -184,7 +184,7 @@ Loaded from SD or SPIFFS at boot. Does **not** appear in menuconfig.
 | Key | Purpose |
 |-----|---------|
 | **wifi_ssid=**, **wifi_password=** | Join AP (STA starts when ssid is set) |
-| **wifi_enable=** | `0` force off; `1` force on (overrides skip-WiFi-on-local-pd) |
+| **wifi_enable=** | `0` force off; `1` force on (overrides local-main.pd WiFi skip) |
 | **log_broadcast_port=** | UDP broadcast of Pd print/errors |
 | **audio_sample_rate=** | Hz (8000–192000) |
 | **audio_dma_desc_num=**, **audio_dma_frame_num=** | I²S latency tuning |

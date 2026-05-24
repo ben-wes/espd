@@ -74,11 +74,11 @@ endmenu
 
 menu "Storage & patches"
 
-config ESPD_PD_USE_SDCARD
+config ESPD_USE_SDCARD
     bool "Enable SD card"
     default n
 
-config ESPD_PD_INCLUDEPATCH
+config ESPD_INCLUDEPATCH
     bool "Embed fallback test patch at build time"
     default n
     help
@@ -88,22 +88,23 @@ endmenu
 
 menu "WiFi & network"
 
-config ESPD_PD_USE_WIFI
+config ESPD_USE_WIFI
     bool "Enable WiFi (Pd netsend / netreceive)"
     default y
 
-config ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK
-    bool "Skip STA when main.pd is on local storage"
-    depends on ESPD_PD_USE_WIFI
+config ESPD_WIFI_STA_WITH_LOCAL_MAIN_PD
+    bool "Join WiFi when main.pd is on local storage"
+    depends on ESPD_USE_WIFI
     default n
     help
-        When enabled, do not join an AP at boot if main.pd was loaded from SD
-        or SPIFFS, even when wifi_ssid= is set in config.txt. Use wifi_enable=1
-        in config.txt to override. When disabled, config.txt alone controls STA.
+        When enabled, join an AP at boot even if main.pd was loaded from SD
+        or SPIFFS (when wifi_ssid= is set in config.txt). When disabled (default
+        for board kits), local main.pd skips STA to save power. Use wifi_enable=1
+        in config.txt to force STA anyway. Generic I2S profile enables this.
 
 config ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     bool "Legacy espd TCP/UDP transport (port 4498)"
-    depends on ESPD_PD_USE_WIFI
+    depends on ESPD_USE_WIFI
     default y if ESPD_BOARD_GENERIC
     default n
     help
@@ -112,11 +113,11 @@ config ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
 
 endmenu
 
-config ESPD_PD_USE_CONSOLE
+config ESPD_USE_CONSOLE
     bool "USB serial console for Pd messages"
     default y
 
-config ESPD_PD_USE_ANALOG0
+config ESPD_USE_AIN
     bool "Compile espd/ain support (ADC GPIO inputs)"
     default n
     help
@@ -126,7 +127,7 @@ config ESPD_PD_USE_ANALOG0
         as WiFi STA waiting for wifi_ssid=). Optional tuning in config.txt:
         ain_task_period_ms, ain_deadband, ain_report_every_n_blocks.
 
-config ESPD_PD_USE_TOUCH0
+config ESPD_USE_TOUCH
     bool "Compile espd/touch support (capacitive GPIO inputs)"
     default n
     help
@@ -136,7 +137,7 @@ config ESPD_PD_USE_TOUCH0
         as ain_pins= and wifi_ssid=). Optional tuning in config.txt:
         touch_task_period_ms, touch_report_every_n_blocks.
 
-config ESPD_PD_USE_AOUT
+config ESPD_USE_AOUT
     bool "Compile espd/aout support (PWM GPIO outputs)"
     default n
     help
@@ -146,7 +147,7 @@ config ESPD_PD_USE_AOUT
         patch sends floats (no background polling). Optional in config.txt:
         aout_pwm_freq_hz=20000.
 
-config ESPD_PD_USE_DIN0
+config ESPD_USE_DIN
     bool "Compile espd/din GPIO support (extra digital inputs)"
     default n
     help
@@ -155,7 +156,7 @@ config ESPD_PD_USE_DIN0
         at higher indices. No din_pins= key → no GPIO polling (BSP din still
         works). Optional: din_active_low, din_task_period_ms.
 
-config ESPD_PD_USE_DOUT0
+config ESPD_USE_DOUT
     bool "Compile espd/dout support (GPIO digital outputs)"
     default n
     help

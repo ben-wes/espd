@@ -44,13 +44,13 @@
 #include "tinyusb_msc.h"
 #include "tinyusb_default_config.h"
 #endif
-#if defined(PD_USE_ANALOG0) || defined(PD_USE_TOUCH0)
+#if defined(ESPD_USE_AIN) || defined(ESPD_USE_TOUCH)
 #include <stdatomic.h>
 #endif
-#ifdef PD_USE_ANALOG0
+#ifdef ESPD_USE_AIN
 #include "esp_adc/adc_oneshot.h"
 #endif
-#ifdef PD_USE_TOUCH0
+#ifdef ESPD_USE_TOUCH
 #include "driver/touch_sensor.h"
 #endif
 static const char *TAG = "ESPD";
@@ -60,15 +60,15 @@ static wl_handle_t wl_handle = WL_INVALID_HANDLE;
 static tinyusb_msc_storage_handle_t msc_handle = NULL;
 #endif
 
-#if defined(PD_USE_AOUT)
+#if defined(ESPD_USE_AOUT)
 #include "driver/ledc.h"
 #endif
-#ifdef PD_USE_CONSOLE
+#ifdef ESPD_USE_CONSOLE
 #include "driver/uart.h"
 #include "esp_console.h"
 #endif
 
-#ifdef PD_USE_AOUT
+#ifdef ESPD_USE_AOUT
 #define ESPD_AOUT_MAX_CHANNELS 4
 #define ESPD_AOUT_PWM_RES LEDC_TIMER_12_BIT
 #define ESPD_AOUT_PWM_MAX_DUTY ((1u << 12) - 1u)
@@ -80,18 +80,18 @@ typedef struct _espd_aout_receiver
 } t_espd_aout_receiver;
 
 static t_class *espd_aout_receiver_class;
-static int pd_aout_pins[ESPD_AOUT_MAX_CHANNELS];
-static int pd_aout_active[ESPD_AOUT_MAX_CHANNELS];
-static t_espd_aout_receiver pd_aout_receivers[ESPD_AOUT_MAX_CHANNELS];
+static int espd_aout_pins[ESPD_AOUT_MAX_CHANNELS];
+static int espd_aout_active[ESPD_AOUT_MAX_CHANNELS];
+static t_espd_aout_receiver espd_aout_receivers[ESPD_AOUT_MAX_CHANNELS];
 static int s_aout_cfg_have_pins;
 static int s_aout_cfg_n;
 static int s_aout_cfg_pins[ESPD_AOUT_MAX_CHANNELS];
-static int pd_aout_pwm_freq_hz = ESPD_AOUT_PWM_FREQ_HZ;
+static int espd_aout_pwm_freq_hz = ESPD_AOUT_PWM_FREQ_HZ;
 
-static void pd_aout_set_value(int idx, t_float f)
+static void espd_aout_set_value(int idx, t_float f)
 {
     uint32_t duty;
-    if (idx < 0 || idx >= ESPD_AOUT_MAX_CHANNELS || !pd_aout_active[idx])
+    if (idx < 0 || idx >= ESPD_AOUT_MAX_CHANNELS || !espd_aout_active[idx])
         return;
     if (f < 0.f)
         f = 0.f;
@@ -104,16 +104,16 @@ static void pd_aout_set_value(int idx, t_float f)
 
 static void espd_aout_receiver_float(t_espd_aout_receiver *x, t_floatarg f)
 {
-    pd_aout_set_value(x->idx, (t_float)f);
+    espd_aout_set_value(x->idx, (t_float)f);
 }
 
-static void pd_aout_init(void)
+static void espd_aout_init(void)
 {
     ledc_timer_config_t timer_cfg = {
         .speed_mode = LEDC_LOW_SPEED_MODE,
         .duty_resolution = ESPD_AOUT_PWM_RES,
         .timer_num = LEDC_TIMER_0,
-        .freq_hz = pd_aout_pwm_freq_hz,
+        .freq_hz = espd_aout_pwm_freq_hz,
         .clk_cfg = LEDC_AUTO_CLK,
     };
     int i;
@@ -126,12 +126,12 @@ static void pd_aout_init(void)
     if (nchan > ESPD_AOUT_MAX_CHANNELS)
         nchan = ESPD_AOUT_MAX_CHANNELS;
     for (i = 0; i < nchan; i++)
-        pd_aout_pins[i] = s_aout_cfg_pins[i];
+        espd_aout_pins[i] = s_aout_cfg_pins[i];
     for (i = nchan; i < ESPD_AOUT_MAX_CHANNELS; i++)
-        pd_aout_pins[i] = -1;
+        espd_aout_pins[i] = -1;
 
     for (i = 0; i < ESPD_AOUT_MAX_CHANNELS; i++)
-        pd_aout_active[i] = 0;
+        espd_aout_active[i] = 0;
 
     if (ledc_timer_config(&timer_cfg) != ESP_OK)
     {
@@ -139,16 +139,16 @@ static void pd_aout_init(void)
         if (ledc_timer_config(&timer_cfg) != ESP_OK)
         {
             ESP_LOGE(TAG, "aout: LEDC timer init failed (freq=%d then %d)",
-                     pd_aout_pwm_freq_hz, ESPD_AOUT_PWM_FALLBACK_FREQ_HZ);
+                     espd_aout_pwm_freq_hz, ESPD_AOUT_PWM_FALLBACK_FREQ_HZ);
             return;
         }
         ESP_LOGW(TAG, "aout: %d Hz unavailable at %d-bit PWM; using %d Hz",
-                 pd_aout_pwm_freq_hz, 12, ESPD_AOUT_PWM_FALLBACK_FREQ_HZ);
+                 espd_aout_pwm_freq_hz, 12, ESPD_AOUT_PWM_FALLBACK_FREQ_HZ);
     }
 
     for (i = 0; i < nchan; i++)
     {
-        int pin = pd_aout_pins[i];
+        int pin = espd_aout_pins[i];
         if (pin < 0)
             continue;
         ledc_channel_config_t ch_cfg = {
@@ -165,7 +165,7 @@ static void pd_aout_init(void)
             ESP_LOGW(TAG, "aout%d setup failed on GPIO%d", i, pin);
             continue;
         }
-        pd_aout_active[i] = 1;
+        espd_aout_active[i] = 1;
         enabled++;
         ESP_LOGI(TAG, "analog aout%d enabled on GPIO%d", i, pin);
     }
@@ -186,17 +186,17 @@ static void pd_aout_init(void)
     for (i = 0; i < nchan; i++)
     {
         char name[16];
-        if (!pd_aout_active[i])
+        if (!espd_aout_active[i])
             continue;
-        pd_aout_receivers[i].x_pd = espd_aout_receiver_class;
-        pd_aout_receivers[i].idx = i;
+        espd_aout_receivers[i].x_pd = espd_aout_receiver_class;
+        espd_aout_receivers[i].idx = i;
         snprintf(name, sizeof(name), "espd/aout/%d", i);
-        pd_bind((t_pd *)&pd_aout_receivers[i], gensym(name));
+        pd_bind((t_pd *)&espd_aout_receivers[i], gensym(name));
     }
 }
 #endif
 
-#ifdef PD_USE_DOUT0
+#ifdef ESPD_USE_DOUT
 #define ESPD_DOUT_MAX_CHANNELS 8
 
 typedef struct _espd_dout_receiver
@@ -206,23 +206,23 @@ typedef struct _espd_dout_receiver
 } t_espd_dout_receiver;
 
 static t_class *espd_dout_receiver_class;
-static int pd_dout_pins[ESPD_DOUT_MAX_CHANNELS];
-static int pd_dout_active[ESPD_DOUT_MAX_CHANNELS];
-static t_espd_dout_receiver pd_dout_receivers[ESPD_DOUT_MAX_CHANNELS];
+static int espd_dout_pins[ESPD_DOUT_MAX_CHANNELS];
+static int espd_dout_active[ESPD_DOUT_MAX_CHANNELS];
+static t_espd_dout_receiver espd_dout_receivers[ESPD_DOUT_MAX_CHANNELS];
 static int s_dout_cfg_have_pins;
 static int s_dout_cfg_n;
 static int s_dout_cfg_pins[ESPD_DOUT_MAX_CHANNELS];
 
-static void pd_dout_set_value(int idx, t_float f)
+static void espd_dout_set_value(int idx, t_float f)
 {
-    if (idx < 0 || idx >= ESPD_DOUT_MAX_CHANNELS || !pd_dout_active[idx])
+    if (idx < 0 || idx >= ESPD_DOUT_MAX_CHANNELS || !espd_dout_active[idx])
         return;
-    gpio_set_level(pd_dout_pins[idx], (f >= 0.5f) ? 1 : 0);
+    gpio_set_level(espd_dout_pins[idx], (f >= 0.5f) ? 1 : 0);
 }
 
 static void espd_dout_receiver_float(t_espd_dout_receiver *x, t_floatarg f)
 {
-    pd_dout_set_value(x->idx, (t_float)f);
+    espd_dout_set_value(x->idx, (t_float)f);
 }
 
 static void espd_dout_load_config(void)
@@ -293,7 +293,7 @@ static void espd_dout_load_config(void)
             config_path, s_dout_cfg_n, s_dout_cfg_n - 1);
 }
 
-static void pd_dout_init(void)
+static void espd_dout_init(void)
 {
     int i;
     int nchan;
@@ -306,7 +306,7 @@ static void pd_dout_init(void)
         nchan = ESPD_DOUT_MAX_CHANNELS;
 
     for (i = 0; i < ESPD_DOUT_MAX_CHANNELS; i++)
-        pd_dout_active[i] = 0;
+        espd_dout_active[i] = 0;
 
     for (i = 0; i < nchan; i++)
     {
@@ -324,8 +324,8 @@ static void pd_dout_init(void)
             continue;
         }
         gpio_set_level(pin, 0);
-        pd_dout_pins[i] = pin;
-        pd_dout_active[i] = 1;
+        espd_dout_pins[i] = pin;
+        espd_dout_active[i] = 1;
         enabled++;
         ESP_LOGI(TAG, "espd/dout/%d  GPIO%d", i, pin);
     }
@@ -342,37 +342,37 @@ static void pd_dout_init(void)
     for (i = 0; i < nchan; i++)
     {
         char name[16];
-        if (!pd_dout_active[i])
+        if (!espd_dout_active[i])
             continue;
-        pd_dout_receivers[i].x_pd = espd_dout_receiver_class;
-        pd_dout_receivers[i].idx = i;
+        espd_dout_receivers[i].x_pd = espd_dout_receiver_class;
+        espd_dout_receivers[i].idx = i;
         snprintf(name, sizeof(name), "espd/dout/%d", i);
-        pd_bind((t_pd *)&pd_dout_receivers[i], gensym(name));
+        pd_bind((t_pd *)&espd_dout_receivers[i], gensym(name));
     }
 }
-#endif /* PD_USE_DOUT0 */
+#endif /* ESPD_USE_DOUT */
 
-#ifdef PD_USE_DIN0
+#ifdef ESPD_USE_DIN
 #define ESPD_DIN_GPIO_MAX_CHANNELS 8
 
 static int s_din_gpio_cfg_have_pins;
 static int s_din_gpio_cfg_n;
 static int s_din_gpio_cfg_pins[ESPD_DIN_GPIO_MAX_CHANNELS];
-static int pd_din_gpio_active_low = 1;
-static int pd_din_gpio_task_period_ms = ESPD_DIN_GPIO_TASK_PERIOD_MS;
+static int espd_din_gpio_active_low = 1;
+static int espd_din_gpio_task_period_ms = ESPD_DIN_GPIO_TASK_PERIOD_MS;
 
-static int pd_din_gpio_pins[ESPD_DIN_GPIO_MAX_CHANNELS];
-static int pd_din_gpio_active[ESPD_DIN_GPIO_MAX_CHANNELS];
-static int pd_din_gpio_last_raw[ESPD_DIN_GPIO_MAX_CHANNELS];
-static int pd_din_gpio_last_stable[ESPD_DIN_GPIO_MAX_CHANNELS];
-static int pd_din_gpio_last_reported[ESPD_DIN_GPIO_MAX_CHANNELS];
-static volatile int pd_din_gpio_dirty;
-static TaskHandle_t pd_din_gpio_task;
+static int espd_din_gpio_pins[ESPD_DIN_GPIO_MAX_CHANNELS];
+static int espd_din_gpio_active[ESPD_DIN_GPIO_MAX_CHANNELS];
+static int espd_din_gpio_last_raw[ESPD_DIN_GPIO_MAX_CHANNELS];
+static int espd_din_gpio_last_stable[ESPD_DIN_GPIO_MAX_CHANNELS];
+static int espd_din_gpio_last_reported[ESPD_DIN_GPIO_MAX_CHANNELS];
+static volatile int espd_din_gpio_dirty;
+static TaskHandle_t espd_din_gpio_task;
 
-static int pd_din_gpio_read_level(int pin)
+static int espd_din_gpio_read_level(int pin)
 {
     int level = gpio_get_level(pin);
-    if (pd_din_gpio_active_low)
+    if (espd_din_gpio_active_low)
         return level ? 0 : 1;
     return level ? 1 : 0;
 }
@@ -385,8 +385,8 @@ static void espd_din_load_config(void)
 
     s_din_gpio_cfg_have_pins = 0;
     s_din_gpio_cfg_n = 0;
-    pd_din_gpio_active_low = ESPD_DIN_GPIO_ACTIVE_LOW;
-    pd_din_gpio_task_period_ms = ESPD_DIN_GPIO_TASK_PERIOD_MS;
+    espd_din_gpio_active_low = ESPD_DIN_GPIO_ACTIVE_LOW;
+    espd_din_gpio_task_period_ms = ESPD_DIN_GPIO_TASK_PERIOD_MS;
     if (!config_path)
     {
         ESP_LOGI(TAG, "din: no config.txt — no GPIO din (set din_pins= to add)");
@@ -438,13 +438,13 @@ static void espd_din_load_config(void)
         }
         else if (!strcmp(k, "din_active_low"))
         {
-            pd_din_gpio_active_low = (atoi(v) != 0);
+            espd_din_gpio_active_low = (atoi(v) != 0);
         }
         else if (!strcmp(k, "din_task_period_ms"))
         {
             int t = atoi(v);
             if (t >= 1 && t <= 500)
-                pd_din_gpio_task_period_ms = t;
+                espd_din_gpio_task_period_ms = t;
         }
     }
     fclose(f);
@@ -459,34 +459,34 @@ static void espd_din_load_config(void)
         ESP_LOGI(TAG, "din: %s: din_pins= empty — no GPIO din", config_path);
 }
 
-static void pd_din_gpio_task_fn(void *arg)
+static void espd_din_gpio_task_fn(void *arg)
 {
     TickType_t next = xTaskGetTickCount();
     (void)arg;
     for (;;)
     {
         int i;
-        TickType_t period = pdMS_TO_TICKS(pd_din_gpio_task_period_ms);
+        TickType_t period = pdMS_TO_TICKS(espd_din_gpio_task_period_ms);
         if (period < 1)
             period = 1;
         vTaskDelayUntil(&next, period);
         for (i = 0; i < s_din_gpio_cfg_n; i++)
         {
             int raw;
-            if (!pd_din_gpio_active[i])
+            if (!espd_din_gpio_active[i])
                 continue;
-            raw = pd_din_gpio_read_level(pd_din_gpio_pins[i]);
-            if (raw == pd_din_gpio_last_raw[i] && raw != pd_din_gpio_last_stable[i])
+            raw = espd_din_gpio_read_level(espd_din_gpio_pins[i]);
+            if (raw == espd_din_gpio_last_raw[i] && raw != espd_din_gpio_last_stable[i])
             {
-                pd_din_gpio_last_stable[i] = raw;
-                pd_din_gpio_dirty = 1;
+                espd_din_gpio_last_stable[i] = raw;
+                espd_din_gpio_dirty = 1;
             }
-            pd_din_gpio_last_raw[i] = raw;
+            espd_din_gpio_last_raw[i] = raw;
         }
     }
 }
 
-static void pd_din_gpio_init(void)
+static void espd_din_gpio_init(void)
 {
     int i;
     int enabled = 0;
@@ -496,10 +496,10 @@ static void pd_din_gpio_init(void)
 
     for (i = 0; i < ESPD_DIN_GPIO_MAX_CHANNELS; i++)
     {
-        pd_din_gpio_active[i] = 0;
-        pd_din_gpio_last_raw[i] = -1;
-        pd_din_gpio_last_stable[i] = -1;
-        pd_din_gpio_last_reported[i] = -1;
+        espd_din_gpio_active[i] = 0;
+        espd_din_gpio_last_raw[i] = -1;
+        espd_din_gpio_last_stable[i] = -1;
+        espd_din_gpio_last_reported[i] = -1;
     }
 
     for (i = 0; i < s_din_gpio_cfg_n; i++)
@@ -508,8 +508,8 @@ static void pd_din_gpio_init(void)
         gpio_config_t io = {
             .pin_bit_mask = (1ULL << (unsigned)pin),
             .mode = GPIO_MODE_INPUT,
-            .pull_up_en = pd_din_gpio_active_low ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
-            .pull_down_en = pd_din_gpio_active_low ? GPIO_PULLDOWN_DISABLE : GPIO_PULLDOWN_ENABLE,
+            .pull_up_en = espd_din_gpio_active_low ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE,
+            .pull_down_en = espd_din_gpio_active_low ? GPIO_PULLDOWN_DISABLE : GPIO_PULLDOWN_ENABLE,
             .intr_type = GPIO_INTR_DISABLE,
         };
         if (gpio_config(&io) != ESP_OK)
@@ -517,22 +517,22 @@ static void pd_din_gpio_init(void)
             ESP_LOGW(TAG, "din GPIO%d setup failed", pin);
             continue;
         }
-        pd_din_gpio_pins[i] = pin;
-        pd_din_gpio_active[i] = 1;
+        espd_din_gpio_pins[i] = pin;
+        espd_din_gpio_active[i] = 1;
         enabled++;
     }
     if (!enabled)
         return;
 
-    if (!pd_din_gpio_task)
+    if (!espd_din_gpio_task)
     {
-        BaseType_t ok = xTaskCreatePinnedToCore(pd_din_gpio_task_fn,
-            "pd_din", 3072, NULL, ESPD_DIN_GPIO_TASK_PRIO,
-            &pd_din_gpio_task, ESPD_DIN_GPIO_TASK_CORE);
+        BaseType_t ok = xTaskCreatePinnedToCore(espd_din_gpio_task_fn,
+            "espd_din", 3072, NULL, ESPD_DIN_GPIO_TASK_PRIO,
+            &espd_din_gpio_task, ESPD_DIN_GPIO_TASK_CORE);
         if (ok != pdPASS)
         {
-            ESP_LOGW(TAG, "failed to create pd_din task");
-            pd_din_gpio_task = NULL;
+            ESP_LOGW(TAG, "failed to create espd_din task");
+            espd_din_gpio_task = NULL;
         }
     }
 }
@@ -542,21 +542,21 @@ void espd_din_gpio_poll(void)
     int i;
     int base = bsp_button_count();
 
-    if (!pd_din_gpio_dirty)
+    if (!espd_din_gpio_dirty)
         return;
-    pd_din_gpio_dirty = 0;
+    espd_din_gpio_dirty = 0;
     for (i = 0; i < s_din_gpio_cfg_n; i++)
     {
-        if (!pd_din_gpio_active[i])
+        if (!espd_din_gpio_active[i])
             continue;
-        if (pd_din_gpio_last_stable[i] != pd_din_gpio_last_reported[i])
+        if (espd_din_gpio_last_stable[i] != espd_din_gpio_last_reported[i])
         {
-            pd_din_gpio_last_reported[i] = pd_din_gpio_last_stable[i];
-            espd_din_changed(base + i, pd_din_gpio_last_stable[i]);
+            espd_din_gpio_last_reported[i] = espd_din_gpio_last_stable[i];
+            espd_din_changed(base + i, espd_din_gpio_last_stable[i]);
         }
     }
 }
-#endif /* PD_USE_DIN0 */
+#endif /* ESPD_USE_DIN */
 
 void espd_din_log_map(void)
 {
@@ -565,24 +565,24 @@ void espd_din_log_map(void)
 
     for (i = 0; i < bsp_n; i++)
         ESP_LOGI(TAG, "espd/din/%d  board (BSP digital in)", i);
-#ifdef PD_USE_DIN0
+#ifdef ESPD_USE_DIN
     for (i = 0; i < s_din_gpio_cfg_n; i++)
     {
-        if (!pd_din_gpio_active[i])
+        if (!espd_din_gpio_active[i])
             continue;
         ESP_LOGI(TAG, "espd/din/%d  GPIO%d (din_pins[%d], active-%s)",
-            bsp_n + i, pd_din_gpio_pins[i], i,
-            pd_din_gpio_active_low ? "low" : "high");
+            bsp_n + i, espd_din_gpio_pins[i], i,
+            espd_din_gpio_active_low ? "low" : "high");
     }
 #endif
 }
 
-#if defined(PD_USE_SDCARD) || defined(PD_USE_USB_MSC) || defined(PD_USE_WIFI) || \
-    defined(PD_USE_ANALOG0) || defined(PD_USE_TOUCH0) || defined(PD_USE_AOUT) || \
-    defined(PD_USE_DIN0) || defined(PD_USE_DOUT0)
+#if defined(ESPD_USE_SDCARD) || defined(PD_USE_USB_MSC) || defined(ESPD_USE_WIFI) || \
+    defined(ESPD_USE_AIN) || defined(ESPD_USE_TOUCH) || defined(ESPD_USE_AOUT) || \
+    defined(ESPD_USE_DIN) || defined(ESPD_USE_DOUT)
 #include <stdio.h>
 #endif
-#if defined(PD_USE_SDCARD) || defined(PD_USE_USB_MSC)
+#if defined(ESPD_USE_SDCARD) || defined(PD_USE_USB_MSC)
 #include <dirent.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -676,7 +676,7 @@ static void espd_audio_load_config(void)
     }
 }
 
-#ifdef PD_USE_AOUT
+#ifdef ESPD_USE_AOUT
 static void espd_aout_load_config(void)
 {
     FILE *f;
@@ -685,7 +685,7 @@ static void espd_aout_load_config(void)
 
     s_aout_cfg_have_pins = 0;
     s_aout_cfg_n = 0;
-    pd_aout_pwm_freq_hz = ESPD_AOUT_PWM_FREQ_HZ;
+    espd_aout_pwm_freq_hz = ESPD_AOUT_PWM_FREQ_HZ;
     if (!config_path)
     {
         ESP_LOGI(TAG, "aout: no config.txt — PWM off (set aout_pins= to enable)");
@@ -739,7 +739,7 @@ static void espd_aout_load_config(void)
         {
             int hz = atoi(v);
             if (hz >= 100 && hz <= 40000000)
-                pd_aout_pwm_freq_hz = hz;
+                espd_aout_pwm_freq_hz = hz;
         }
     }
     fclose(f);
@@ -749,13 +749,13 @@ static void espd_aout_load_config(void)
         ESP_LOGI(TAG, "aout: %s: aout_pins= empty — PWM off", config_path);
     else
         ESP_LOGI(TAG, "aout: %s: %d channel(s) from aout_pins @ %d Hz",
-            config_path, s_aout_cfg_n, pd_aout_pwm_freq_hz);
+            config_path, s_aout_cfg_n, espd_aout_pwm_freq_hz);
 }
 #endif
 
 int espd_main_pd_loaded_from_store;
 const char *espd_main_pd_loaded_dir;
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
 int espd_wifi_net_enabled = 1;
 static int espd_wifi_started;
 char espd_wifi_ssid[33];
@@ -776,7 +776,7 @@ static int s_wifi_credentials_in_config_txt;
 static int espd_wifi_config_txt_allows_sta(void)
 {
     if (!espd_storage_config_path()) {
-#ifdef PD_USE_SDCARD
+#ifdef ESPD_USE_SDCARD
         return 0;
 #else
         return 1;
@@ -800,7 +800,7 @@ static void espd_wifi_try_load_config(void)
         espd_wifi_ssid[0] = '\0';
         espd_wifi_password[0] = '\0';
         espd_wifi_force_enable = 0;
-#ifdef PD_USE_SDCARD
+#ifdef ESPD_USE_SDCARD
         ESP_LOGI(TAG, "wifi: no config.txt on SD or %s",
             ESPD_PATCH_STORE_MOUNT);
 #endif
@@ -877,28 +877,28 @@ static void espd_wifi_try_load_config(void)
         s_wifi_credentials_in_config_txt, espd_wifi_force_enable,
         espd_log_broadcast_port);
 }
-#endif /* PD_USE_WIFI */
+#endif /* ESPD_USE_WIFI */
 
-#ifdef PD_USE_ANALOG0
+#ifdef ESPD_USE_AIN
 /* Run-time tuning (defaults from espd.h; config.txt may override with SD build). */
-static int pd_ain_task_period_ms = ESPD_ANALOG_TASK_PERIOD_MS;
-static int pd_ain_deadband = ESPD_ANALOG_DEADBAND;
-static int pd_ain_report_every_n_blocks = ESPD_ANALOG_REPORT_EVERY_N_BLOCKS;
+static int espd_ain_task_period_ms = ESPD_AIN_TASK_PERIOD_MS;
+static int espd_ain_deadband = ESPD_AIN_DEADBAND;
+static int espd_ain_report_every_n_blocks = ESPD_AIN_REPORT_EVERY_N_BLOCKS;
 #endif
-#ifdef PD_USE_TOUCH0
+#ifdef ESPD_USE_TOUCH
 /* Run-time tuning (defaults from espd.h; config.txt may override with SD build). */
-static int pd_touch_task_period_ms = ESPD_TOUCH_TASK_PERIOD_MS;
-static int pd_touch_report_every_n_blocks = ESPD_TOUCH_REPORT_EVERY_N_BLOCKS;
+static int espd_touch_task_period_ms = ESPD_TOUCH_TASK_PERIOD_MS;
+static int espd_touch_report_every_n_blocks = ESPD_TOUCH_REPORT_EVERY_N_BLOCKS;
 #endif
 
-#if defined(PD_USE_ANALOG0)
-/* Parsed from config.txt (SD or SPIFFS) before pd_analog0_init. */
+#if defined(ESPD_USE_AIN)
+/* Parsed from config.txt (SD or SPIFFS) before espd_ain_init. */
 static int s_analog_cfg_disable;
 static int s_analog_cfg_have_pins;
 static int s_analog_cfg_n;
 static int s_analog_cfg_pins[8];
 
-static void espd_analog_load_config(void)
+static void espd_ain_load_config(void)
 {
     FILE *f;
     char line[256];
@@ -966,19 +966,19 @@ static void espd_analog_load_config(void)
         {
             int t = atoi(v);
             if (t >= 1 && t <= 500)
-                pd_ain_task_period_ms = t;
+                espd_ain_task_period_ms = t;
         }
         else if (!strcmp(k, "ain_deadband"))
         {
             int d = atoi(v);
             if (d >= 1 && d <= 2047)
-                pd_ain_deadband = d;
+                espd_ain_deadband = d;
         }
         else if (!strcmp(k, "ain_report_every_n_blocks"))
         {
             int r = atoi(v);
             if (r >= 1 && r <= 64)
-                pd_ain_report_every_n_blocks = r;
+                espd_ain_report_every_n_blocks = r;
         }
     }
     fclose(f);
@@ -994,8 +994,8 @@ static void espd_analog_load_config(void)
 }
 #endif
 
-#if defined(PD_USE_TOUCH0)
-/* Parsed from config.txt (SD or SPIFFS) before pd_touch0_init. */
+#if defined(ESPD_USE_TOUCH)
+/* Parsed from config.txt (SD or SPIFFS) before espd_touch_init. */
 static int s_touch_cfg_have_pins;
 static int s_touch_cfg_n;
 static int s_touch_cfg_pins[8];
@@ -1063,13 +1063,13 @@ static void espd_touch_load_config(void)
         {
             int t = atoi(v);
             if (t >= 1 && t <= 500)
-                pd_touch_task_period_ms = t;
+                espd_touch_task_period_ms = t;
         }
         else if (!strcmp(k, "touch_report_every_n_blocks"))
         {
             int r = atoi(v);
             if (r >= 1 && r <= 64)
-                pd_touch_report_every_n_blocks = r;
+                espd_touch_report_every_n_blocks = r;
         }
     }
     fclose(f);
@@ -1082,26 +1082,26 @@ static void espd_touch_load_config(void)
 }
 #endif
 
-#ifdef PD_USE_ANALOG0
-static adc_oneshot_unit_handle_t pd_adc_handle;
-#define ESPD_ANALOG_MAX_CHANNELS 8
-static int pd_adc_pins[ESPD_ANALOG_MAX_CHANNELS] = {
-    ESPD_ANALOG_PIN_0, ESPD_ANALOG_PIN_1, ESPD_ANALOG_PIN_2, ESPD_ANALOG_PIN_3,
-    ESPD_ANALOG_PIN_4, ESPD_ANALOG_PIN_5, ESPD_ANALOG_PIN_6, ESPD_ANALOG_PIN_7
+#ifdef ESPD_USE_AIN
+static adc_oneshot_unit_handle_t espd_ain_adc_handle;
+#define ESPD_AIN_MAX_CHANNELS 8
+static int espd_ain_adc_pins[ESPD_AIN_MAX_CHANNELS] = {
+    ESPD_AIN_PIN_0, ESPD_AIN_PIN_1, ESPD_AIN_PIN_2, ESPD_AIN_PIN_3,
+    ESPD_AIN_PIN_4, ESPD_AIN_PIN_5, ESPD_AIN_PIN_6, ESPD_AIN_PIN_7
 };
-static adc_channel_t pd_adc_channels[ESPD_ANALOG_MAX_CHANNELS];
-static int pd_adc_active[ESPD_ANALOG_MAX_CHANNELS];
+static adc_channel_t espd_ain_adc_channels[ESPD_AIN_MAX_CHANNELS];
+static int espd_ain_adc_active[ESPD_AIN_MAX_CHANNELS];
 /* Producer-side deadband reference (written only by the ADC task). */
-static int pd_adc_last[ESPD_ANALOG_MAX_CHANNELS];
-/* Producer -> consumer: task writes `pd_adc_latest[i]` then ORs bit i in
- * `pd_adc_dirty` (release). Audio thread exchanges dirty (acquire), forwards
+static int espd_ain_adc_last[ESPD_AIN_MAX_CHANNELS];
+/* Producer -> consumer: task writes `espd_ain_adc_latest[i]` then ORs bit i in
+ * `espd_ain_adc_dirty` (release). Audio thread exchanges dirty (acquire), forwards
  * only set channels — one atomic when idle vs eight per-channel seq checks. */
-static _Atomic int pd_adc_latest[ESPD_ANALOG_MAX_CHANNELS];
-static _Atomic uint32_t pd_adc_dirty;
-static TaskHandle_t pd_adc_task;
-static unsigned pd_analog_block_counter;
+static _Atomic int espd_ain_adc_latest[ESPD_AIN_MAX_CHANNELS];
+static _Atomic uint32_t espd_ain_adc_dirty;
+static TaskHandle_t espd_ain_adc_task;
+static unsigned espd_ain_block_counter;
 
-static void pd_send_ain_value(int idx, int raw)
+static void espd_ain_send(int idx, int raw)
 {
     char name[16];
     t_symbol *sym;
@@ -1149,44 +1149,44 @@ static int pd_pin_to_adc1_channel(int pin, adc_channel_t *channel)
 
 /* Producer: dedicated task. Reads channels each wake, deadband filter, ORs
  * dirty bits for changed channels. Never calls into Pd. */
-static void pd_adc_task_fn(void *arg)
+static void espd_ain_adc_task_fn(void *arg)
 {
     (void)arg;
     TickType_t next = xTaskGetTickCount();
     for (;;)
     {
         int i;
-        TickType_t period = pdMS_TO_TICKS(pd_ain_task_period_ms);
+        TickType_t period = pdMS_TO_TICKS(espd_ain_task_period_ms);
         if (period < 1)
             period = 1;
         vTaskDelayUntil(&next, period);
-        if (!pd_adc_handle)
+        if (!espd_ain_adc_handle)
             continue;
         uint32_t dirty_mask = 0;
-        for (i = 0; i < ESPD_ANALOG_MAX_CHANNELS; i++)
+        for (i = 0; i < ESPD_AIN_MAX_CHANNELS; i++)
         {
             int raw;
-            int db = pd_ain_deadband;
-            if (!pd_adc_active[i])
+            int db = espd_ain_deadband;
+            if (!espd_ain_adc_active[i])
                 continue;
-            if (adc_oneshot_read(pd_adc_handle, pd_adc_channels[i], &raw)
+            if (adc_oneshot_read(espd_ain_adc_handle, espd_ain_adc_channels[i], &raw)
                     != ESP_OK)
                 continue;
-            if (raw < pd_adc_last[i] - db || raw > pd_adc_last[i] + db)
+            if (raw < espd_ain_adc_last[i] - db || raw > espd_ain_adc_last[i] + db)
             {
-                pd_adc_last[i] = raw;
-                atomic_store_explicit(&pd_adc_latest[i], raw,
+                espd_ain_adc_last[i] = raw;
+                atomic_store_explicit(&espd_ain_adc_latest[i], raw,
                     memory_order_relaxed);
                 dirty_mask |= (1u << (unsigned)i);
             }
         }
         if (dirty_mask)
-            atomic_fetch_or_explicit(&pd_adc_dirty, dirty_mask,
+            atomic_fetch_or_explicit(&espd_ain_adc_dirty, dirty_mask,
                 memory_order_release);
     }
 }
 
-static void pd_analog0_init(void)
+static void espd_ain_init(void)
 {
     adc_oneshot_unit_init_cfg_t unit_cfg = {
         .unit_id = ADC_UNIT_1,
@@ -1199,38 +1199,38 @@ static void pd_analog0_init(void)
     int i;
     int enabled = 0;
     int nchan;
-#if defined(PD_USE_ANALOG0)
+#if defined(ESPD_USE_AIN)
     if (s_analog_cfg_disable)
         return;
     if (!s_analog_cfg_have_pins || s_analog_cfg_n <= 0)
         return;
     nchan = s_analog_cfg_n;
-    if (nchan > ESPD_ANALOG_MAX_CHANNELS)
-        nchan = ESPD_ANALOG_MAX_CHANNELS;
+    if (nchan > ESPD_AIN_MAX_CHANNELS)
+        nchan = ESPD_AIN_MAX_CHANNELS;
     for (i = 0; i < nchan; i++)
-        pd_adc_pins[i] = s_analog_cfg_pins[i];
-    for (i = nchan; i < ESPD_ANALOG_MAX_CHANNELS; i++)
-        pd_adc_pins[i] = -1;
+        espd_ain_adc_pins[i] = s_analog_cfg_pins[i];
+    for (i = nchan; i < ESPD_AIN_MAX_CHANNELS; i++)
+        espd_ain_adc_pins[i] = -1;
 #else
     return;
 #endif
-    esp_err_t err = adc_oneshot_new_unit(&unit_cfg, &pd_adc_handle);
+    esp_err_t err = adc_oneshot_new_unit(&unit_cfg, &espd_ain_adc_handle);
     if (err != ESP_OK)
     {
         ESP_LOGE(TAG, "adc_oneshot_new_unit failed: %d", (int)err);
         return;
     }
 
-    for (i = 0; i < ESPD_ANALOG_MAX_CHANNELS; i++)
+    for (i = 0; i < ESPD_AIN_MAX_CHANNELS; i++)
     {
-        pd_adc_active[i] = 0;
-        pd_adc_last[i] = -100000;
-        atomic_store_explicit(&pd_adc_latest[i], 0, memory_order_relaxed);
+        espd_ain_adc_active[i] = 0;
+        espd_ain_adc_last[i] = -100000;
+        atomic_store_explicit(&espd_ain_adc_latest[i], 0, memory_order_relaxed);
     }
 
     for (i = 0; i < nchan; i++)
     {
-        int pin = pd_adc_pins[i];
+        int pin = espd_ain_adc_pins[i];
         adc_channel_t ch;
         if (pin < 0)
             continue;
@@ -1239,14 +1239,14 @@ static void pd_analog0_init(void)
             ESP_LOGW(TAG, "analog ain%d ignored: GPIO%d is not ADC1-capable", i, pin);
             continue;
         }
-        err = adc_oneshot_config_channel(pd_adc_handle, ch, &chan_cfg);
+        err = adc_oneshot_config_channel(espd_ain_adc_handle, ch, &chan_cfg);
         if (err != ESP_OK)
         {
             ESP_LOGW(TAG, "analog ain%d setup failed on GPIO%d: %d", i, pin, (int)err);
             continue;
         }
-        pd_adc_channels[i] = ch;
-        pd_adc_active[i] = 1;
+        espd_ain_adc_channels[i] = ch;
+        espd_ain_adc_active[i] = 1;
         enabled++;
         ESP_LOGI(TAG, "analog ain%d enabled on GPIO%d", i, pin);
     }
@@ -1256,92 +1256,92 @@ static void pd_analog0_init(void)
         return;
     }
 
-    atomic_store_explicit(&pd_adc_dirty, 0u, memory_order_relaxed);
+    atomic_store_explicit(&espd_ain_adc_dirty, 0u, memory_order_relaxed);
 
     /* Spawn the producer task on the opposite core from Pd audio (core 1), so
      * adc_oneshot_read() blocking never steals time from senddacs(). */
-    if (!pd_adc_task) {
-        BaseType_t ok = xTaskCreatePinnedToCore(pd_adc_task_fn,
-            "pd_adc", 3072, NULL, ESPD_ANALOG_TASK_PRIO,
-            &pd_adc_task, ESPD_ANALOG_TASK_CORE);
+    if (!espd_ain_adc_task) {
+        BaseType_t ok = xTaskCreatePinnedToCore(espd_ain_adc_task_fn,
+            "espd_ain_adc", 3072, NULL, ESPD_AIN_TASK_PRIO,
+            &espd_ain_adc_task, ESPD_AIN_TASK_CORE);
         if (ok != pdPASS) {
-            ESP_LOGW(TAG, "failed to create pd_adc task; falling back to audio-thread polling");
-            pd_adc_task = NULL;
+            ESP_LOGW(TAG, "failed to create espd_ain_adc task; falling back to audio-thread polling");
+            espd_ain_adc_task = NULL;
         } else {
-            ESP_LOGI(TAG, "pd_adc task: core=%d prio=%d period=%d ms deadband=%d report_every=%d %d ch",
-                (int)ESPD_ANALOG_TASK_CORE, (int)ESPD_ANALOG_TASK_PRIO,
-                pd_ain_task_period_ms, pd_ain_deadband,
-                pd_ain_report_every_n_blocks, enabled);
+            ESP_LOGI(TAG, "espd_ain_adc task: core=%d prio=%d period=%d ms deadband=%d report_every=%d %d ch",
+                (int)ESPD_AIN_TASK_CORE, (int)ESPD_AIN_TASK_PRIO,
+                espd_ain_task_period_ms, espd_ain_deadband,
+                espd_ain_report_every_n_blocks, enabled);
         }
     }
 }
 
 /* Consumer: audio thread. One atomic exchange on the dirty mask; forwards
- * only channels that changed. ADC reads run on pd_adc_task. */
-static void pd_pollanalog0(void)
+ * only channels that changed. ADC reads run on espd_ain_adc_task. */
+static void espd_ain_poll(void)
 {
     int i;
-    int report_every = pd_ain_report_every_n_blocks;
-    if (!pd_adc_handle)
+    int report_every = espd_ain_report_every_n_blocks;
+    if (!espd_ain_adc_handle)
         return;
     if (report_every < 1)
         report_every = 1;
-    if (++pd_analog_block_counter < (unsigned)report_every)
+    if (++espd_ain_block_counter < (unsigned)report_every)
         return;
-    pd_analog_block_counter = 0;
+    espd_ain_block_counter = 0;
 
     /* Fallback: if the producer task failed to start, poll inline so ain
      * channels still work (same behavior as before). */
-    if (!pd_adc_task)
+    if (!espd_ain_adc_task)
     {
-        int db = pd_ain_deadband;
-        for (i = 0; i < ESPD_ANALOG_MAX_CHANNELS; i++)
+        int db = espd_ain_deadband;
+        for (i = 0; i < ESPD_AIN_MAX_CHANNELS; i++)
         {
             int raw;
-            if (!pd_adc_active[i])
+            if (!espd_ain_adc_active[i])
                 continue;
-            if (adc_oneshot_read(pd_adc_handle, pd_adc_channels[i], &raw)
+            if (adc_oneshot_read(espd_ain_adc_handle, espd_ain_adc_channels[i], &raw)
                     != ESP_OK)
                 continue;
-            if (raw < pd_adc_last[i] - db || raw > pd_adc_last[i] + db)
+            if (raw < espd_ain_adc_last[i] - db || raw > espd_ain_adc_last[i] + db)
             {
-                pd_adc_last[i] = raw;
-                pd_send_ain_value(i, raw);
+                espd_ain_adc_last[i] = raw;
+                espd_ain_send(i, raw);
             }
         }
         return;
     }
 
     {
-        uint32_t dirty = atomic_exchange_explicit(&pd_adc_dirty, 0,
+        uint32_t dirty = atomic_exchange_explicit(&espd_ain_adc_dirty, 0,
             memory_order_acquire);
         if (!dirty)
             return;
-        for (i = 0; i < ESPD_ANALOG_MAX_CHANNELS; i++)
+        for (i = 0; i < ESPD_AIN_MAX_CHANNELS; i++)
         {
             int raw;
             if (!(dirty & (1u << (unsigned)i)))
                 continue;
-            raw = atomic_load_explicit(&pd_adc_latest[i], memory_order_relaxed);
-            pd_send_ain_value(i, raw);
+            raw = atomic_load_explicit(&espd_ain_adc_latest[i], memory_order_relaxed);
+            espd_ain_send(i, raw);
         }
     }
 }
 #endif
 
-#ifdef PD_USE_TOUCH0
+#ifdef ESPD_USE_TOUCH
 #define ESPD_TOUCH_MAX_CHANNELS 8
-static touch_pad_t pd_touch_channels[ESPD_TOUCH_MAX_CHANNELS];
-static int pd_touch_pins[ESPD_TOUCH_MAX_CHANNELS];
-static int pd_touch_active[ESPD_TOUCH_MAX_CHANNELS];
-static uint32_t pd_touch_last[ESPD_TOUCH_MAX_CHANNELS];
-static _Atomic uint32_t pd_touch_latest[ESPD_TOUCH_MAX_CHANNELS];
-static _Atomic uint32_t pd_touch_dirty;
-static TaskHandle_t pd_touch_task;
-static unsigned pd_touch_block_counter;
-static int pd_touch_inited;
+static touch_pad_t espd_touch_channels[ESPD_TOUCH_MAX_CHANNELS];
+static int espd_touch_pins[ESPD_TOUCH_MAX_CHANNELS];
+static int espd_touch_active[ESPD_TOUCH_MAX_CHANNELS];
+static uint32_t espd_touch_last[ESPD_TOUCH_MAX_CHANNELS];
+static _Atomic uint32_t espd_touch_latest[ESPD_TOUCH_MAX_CHANNELS];
+static _Atomic uint32_t espd_touch_dirty;
+static TaskHandle_t espd_touch_task;
+static unsigned espd_touch_block_counter;
+static int espd_touch_inited;
 
-static void pd_send_touch_value(int idx, uint32_t raw)
+static void espd_touch_send(int idx, uint32_t raw)
 {
     char name[20];
     t_symbol *sym;
@@ -1397,56 +1397,56 @@ static int pd_pin_to_touch_channel(int pin, touch_pad_t *channel)
 }
 
 /* Producer: dedicated task. Reads channels each wake and marks changed values. */
-static void pd_touch_task_fn(void *arg)
+static void espd_touch_task_fn(void *arg)
 {
     (void)arg;
     TickType_t next = xTaskGetTickCount();
     for (;;)
     {
         int i;
-        TickType_t period = pdMS_TO_TICKS(pd_touch_task_period_ms);
+        TickType_t period = pdMS_TO_TICKS(espd_touch_task_period_ms);
         if (period < 1)
             period = 1;
         vTaskDelayUntil(&next, period);
-        if (!pd_touch_inited)
+        if (!espd_touch_inited)
             continue;
         {
             uint32_t dirty_mask = 0;
             for (i = 0; i < ESPD_TOUCH_MAX_CHANNELS; i++)
             {
                 uint32_t raw = 0;
-                if (!pd_touch_active[i])
+                if (!espd_touch_active[i])
                     continue;
-                if (touch_pad_read_raw_data(pd_touch_channels[i], &raw) != ESP_OK)
+                if (touch_pad_read_raw_data(espd_touch_channels[i], &raw) != ESP_OK)
                     continue;
-                if (raw != pd_touch_last[i])
+                if (raw != espd_touch_last[i])
                 {
-                    pd_touch_last[i] = raw;
-                    atomic_store_explicit(&pd_touch_latest[i], raw, memory_order_relaxed);
+                    espd_touch_last[i] = raw;
+                    atomic_store_explicit(&espd_touch_latest[i], raw, memory_order_relaxed);
                     dirty_mask |= (1u << (unsigned)i);
                 }
             }
             if (dirty_mask)
-                atomic_fetch_or_explicit(&pd_touch_dirty, dirty_mask, memory_order_release);
+                atomic_fetch_or_explicit(&espd_touch_dirty, dirty_mask, memory_order_release);
         }
     }
 }
 
-static void pd_touch0_init(void)
+static void espd_touch_init(void)
 {
     int i;
     int nchan;
     int enabled = 0;
-#if defined(PD_USE_TOUCH0)
+#if defined(ESPD_USE_TOUCH)
     if (!s_touch_cfg_have_pins || s_touch_cfg_n <= 0)
         return;
     nchan = s_touch_cfg_n;
     if (nchan > ESPD_TOUCH_MAX_CHANNELS)
         nchan = ESPD_TOUCH_MAX_CHANNELS;
     for (i = 0; i < nchan; i++)
-        pd_touch_pins[i] = s_touch_cfg_pins[i];
+        espd_touch_pins[i] = s_touch_cfg_pins[i];
     for (i = nchan; i < ESPD_TOUCH_MAX_CHANNELS; i++)
-        pd_touch_pins[i] = -1;
+        espd_touch_pins[i] = -1;
 #else
     return;
 #endif
@@ -1461,14 +1461,14 @@ static void pd_touch0_init(void)
 
     for (i = 0; i < ESPD_TOUCH_MAX_CHANNELS; i++)
     {
-        pd_touch_active[i] = 0;
-        pd_touch_last[i] = UINT32_MAX;
-        atomic_store_explicit(&pd_touch_latest[i], 0, memory_order_relaxed);
+        espd_touch_active[i] = 0;
+        espd_touch_last[i] = UINT32_MAX;
+        atomic_store_explicit(&espd_touch_latest[i], 0, memory_order_relaxed);
     }
 
     for (i = 0; i < nchan; i++)
     {
-        int pin = pd_touch_pins[i];
+        int pin = espd_touch_pins[i];
         touch_pad_t ch;
         if (pin < 0)
             continue;
@@ -1482,8 +1482,8 @@ static void pd_touch0_init(void)
             ESP_LOGW(TAG, "touch in%d setup failed on GPIO%d", i, pin);
             continue;
         }
-        pd_touch_channels[i] = ch;
-        pd_touch_active[i] = 1;
+        espd_touch_channels[i] = ch;
+        espd_touch_active[i] = 1;
         enabled++;
         ESP_LOGI(TAG, "touch in%d enabled on GPIO%d", i, pin);
     }
@@ -1496,56 +1496,56 @@ static void pd_touch0_init(void)
     if (touch_pad_fsm_start() != ESP_OK)
         ESP_LOGW(TAG, "touch: fsm start failed");
 
-    pd_touch_inited = 1;
-    atomic_store_explicit(&pd_touch_dirty, 0u, memory_order_relaxed);
-    if (!pd_touch_task) {
-        BaseType_t ok = xTaskCreatePinnedToCore(pd_touch_task_fn,
-            "pd_touch", 3072, NULL, ESPD_TOUCH_TASK_PRIO,
-            &pd_touch_task, ESPD_TOUCH_TASK_CORE);
+    espd_touch_inited = 1;
+    atomic_store_explicit(&espd_touch_dirty, 0u, memory_order_relaxed);
+    if (!espd_touch_task) {
+        BaseType_t ok = xTaskCreatePinnedToCore(espd_touch_task_fn,
+            "espd_touch", 3072, NULL, ESPD_TOUCH_TASK_PRIO,
+            &espd_touch_task, ESPD_TOUCH_TASK_CORE);
         if (ok != pdPASS) {
-            ESP_LOGW(TAG, "failed to create pd_touch task; falling back to audio-thread polling");
-            pd_touch_task = NULL;
+            ESP_LOGW(TAG, "failed to create espd_touch task; falling back to audio-thread polling");
+            espd_touch_task = NULL;
         } else {
-            ESP_LOGI(TAG, "pd_touch task: core=%d prio=%d period=%d ms report_every=%d %d ch",
+            ESP_LOGI(TAG, "espd_touch task: core=%d prio=%d period=%d ms report_every=%d %d ch",
                 (int)ESPD_TOUCH_TASK_CORE, (int)ESPD_TOUCH_TASK_PRIO,
-                pd_touch_task_period_ms, pd_touch_report_every_n_blocks, enabled);
+                espd_touch_task_period_ms, espd_touch_report_every_n_blocks, enabled);
         }
     }
 }
 
 /* Consumer: audio thread. One atomic exchange on the dirty mask. */
-static void pd_polltouch0(void)
+static void espd_touch_poll(void)
 {
     int i;
-    int report_every = pd_touch_report_every_n_blocks;
-    if (!pd_touch_inited)
+    int report_every = espd_touch_report_every_n_blocks;
+    if (!espd_touch_inited)
         return;
     if (report_every < 1)
         report_every = 1;
-    if (++pd_touch_block_counter < (unsigned)report_every)
+    if (++espd_touch_block_counter < (unsigned)report_every)
         return;
-    pd_touch_block_counter = 0;
+    espd_touch_block_counter = 0;
 
-    if (!pd_touch_task)
+    if (!espd_touch_task)
     {
         for (i = 0; i < ESPD_TOUCH_MAX_CHANNELS; i++)
         {
             uint32_t raw = 0;
-            if (!pd_touch_active[i])
+            if (!espd_touch_active[i])
                 continue;
-            if (touch_pad_read_raw_data(pd_touch_channels[i], &raw) != ESP_OK)
+            if (touch_pad_read_raw_data(espd_touch_channels[i], &raw) != ESP_OK)
                 continue;
-            if (raw != pd_touch_last[i])
+            if (raw != espd_touch_last[i])
             {
-                pd_touch_last[i] = raw;
-                pd_send_touch_value(i, raw);
+                espd_touch_last[i] = raw;
+                espd_touch_send(i, raw);
             }
         }
         return;
     }
 
     {
-        uint32_t dirty = atomic_exchange_explicit(&pd_touch_dirty, 0,
+        uint32_t dirty = atomic_exchange_explicit(&espd_touch_dirty, 0,
             memory_order_acquire);
         if (!dirty)
             return;
@@ -1554,8 +1554,8 @@ static void pd_polltouch0(void)
             uint32_t raw;
             if (!(dirty & (1u << (unsigned)i)))
                 continue;
-            raw = atomic_load_explicit(&pd_touch_latest[i], memory_order_relaxed);
-            pd_send_touch_value(i, raw);
+            raw = atomic_load_explicit(&espd_touch_latest[i], memory_order_relaxed);
+            espd_touch_send(i, raw);
         }
     }
 }
@@ -1756,7 +1756,7 @@ void senddacs( void)
         ESP_LOGE(TAG, "audio write failed: %s", esp_err_to_name(err));
 #endif
 
-#ifdef USEADC
+#ifdef ESPD_USE_ADC
 #ifdef OBSOLETEAPI
     {
         size_t transferred;
@@ -1778,7 +1778,7 @@ void senddacs( void)
         soundin[i + BLKSIZE] = espd_soundin_from_i16(poodle[j + 1]);
     #endif
     }
-#endif /* USEADC */
+#endif /* ESPD_USE_ADC */
 }
 
 #ifdef OBSOLETEAPI
@@ -1792,7 +1792,7 @@ static void initdacs( void)
     i2s_config_t i2s_config =
     {
         .mode = (I2S_MODE_MASTER | I2S_MODE_TX
-#ifdef USEADC
+#ifdef ESPD_USE_ADC
             | I2S_MODE_RX
 #endif
             ),
@@ -1896,7 +1896,7 @@ void pd_fromhost(char *data, size_t size)
     xSemaphoreGive(pd_bt_mutex);
 }
 
-#ifdef PD_USE_CONSOLE
+#ifdef ESPD_USE_CONSOLE
 static QueueHandle_t uart_queue;
 static void console_init( void)
 {
@@ -1911,7 +1911,7 @@ static void console_init( void)
 void pd_pollhost( void)
 {
     int lastchar;
-#ifdef PD_USE_CONSOLE
+#ifdef ESPD_USE_CONSOLE
     /* Host->Pd UART input disabled (see console_init comment above). */
 #endif
     if (!pd_bt_mutex)
@@ -1939,7 +1939,7 @@ void pdmain_print( const char *s)
 {
     char y[81];
     int broadcast_only = 0;
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
     if (espd_log_broadcast_port > 0 && espd_wifi_net_enabled && wifi_ipaddr[0] != '\0')
         broadcast_only = 1;
 #endif
@@ -1948,7 +1948,7 @@ void pdmain_print( const char *s)
     strncpy(y, s, 79);
     y[79]=0;
     strcat(y, ";");
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
     if (espd_wifi_net_enabled && wifi_ipaddr[0] != '\0') {
         if (espd_log_broadcast_port > 0)
             net_sendudp(y, strlen(y), espd_log_broadcast_port);
@@ -1998,7 +1998,7 @@ void app_main(void)
     heap_caps_malloc_extmem_enable(16384);
 
     espd_nvs_flash_init();
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
     espd_wifi_config_defaults();
 #endif
 
@@ -2032,31 +2032,31 @@ void app_main(void)
     espd_board_early_init();
     espd_storage_init();
 
-#ifdef PD_USE_SDCARD
+#ifdef ESPD_USE_SDCARD
     espd_storage_mount_sdcard();
 #endif
 
-#ifdef PD_USE_AOUT
+#ifdef ESPD_USE_AOUT
     espd_aout_load_config();
 #endif
-#ifdef PD_USE_DOUT0
+#ifdef ESPD_USE_DOUT
     espd_dout_load_config();
 #endif
-#ifdef PD_USE_DIN0
+#ifdef ESPD_USE_DIN
     espd_din_load_config();
 #endif
-#ifdef PD_USE_ANALOG0
-    espd_analog_load_config();
+#ifdef ESPD_USE_AIN
+    espd_ain_load_config();
 #endif
-#ifdef PD_USE_TOUCH0
+#ifdef ESPD_USE_TOUCH
     espd_touch_load_config();
 #endif
     espd_audio_load_config();
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
     espd_wifi_try_load_config();
 #endif
 
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
     if (!espd_wifi_config_txt_allows_sta())
     {
         espd_wifi_net_enabled = 0;
@@ -2064,12 +2064,12 @@ void app_main(void)
     }
 #endif
 
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
 #if !ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     if (espd_wifi_net_enabled)
     {
-        if (espd_storage_local_main_pd_present() && ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK &&
-            !espd_wifi_force_enable) {
+        if (espd_storage_local_main_pd_present() &&
+            !ESPD_WIFI_STA_WITH_LOCAL_MAIN_PD && !espd_wifi_force_enable) {
             espd_wifi_net_enabled = 0;
             printf("wifi: skipped (main.pd on local storage; set wifi_ssid= or"
                    " wifi_enable=1 in config.txt to force STA)\n");
@@ -2088,12 +2088,12 @@ void app_main(void)
     initdacs();
 
     espd_board_init();
-#ifdef PD_USE_DIN0
-    pd_din_gpio_init();
+#ifdef ESPD_USE_DIN
+    espd_din_gpio_init();
 #endif
     espd_io_log_din_map();
 
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
     /* Bring up lwIP + default event loop unconditionally before Pd loads the
      * patch. If the patch contains [netreceive]/[netsend] but Wi-Fi has been
      * skipped (e.g. wifi_enable=0 or no AP), socket() would otherwise call
@@ -2103,22 +2103,22 @@ void app_main(void)
 #endif
     pdmain_init();
 
-#ifdef PD_USE_ANALOG0
-    pd_analog0_init();
+#ifdef ESPD_USE_AIN
+    espd_ain_init();
 #endif
-#ifdef PD_USE_TOUCH0
-    pd_touch0_init();
+#ifdef ESPD_USE_TOUCH
+    espd_touch_init();
 #endif
 
-#ifdef PD_USE_SDCARD
+#ifdef ESPD_USE_SDCARD
     sd_init();
 #endif
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
     if (!espd_wifi_net_enabled)
     {
         ESP_LOGI(TAG, "wifi: STA off — not starting network or legacy patch transport");
     }
-    else if (espd_main_pd_loaded_from_store && ESPD_SKIP_WIFI_WHEN_MAIN_PD_ON_DISK &&
+    else if (espd_main_pd_loaded_from_store && !ESPD_WIFI_STA_WITH_LOCAL_MAIN_PD &&
         !espd_wifi_force_enable) {
         espd_wifi_net_enabled = 0;
         ESP_LOGI(TAG,
@@ -2139,7 +2139,7 @@ void app_main(void)
 #endif
     }
 #endif
-#ifdef PD_USE_CONSOLE
+#ifdef ESPD_USE_CONSOLE
     console_init();
 #endif
 
@@ -2165,16 +2165,16 @@ void app_main(void)
     {
         uint64_t t0 = (uint64_t)esp_timer_get_time();
         pd_pollhost();
-#ifdef PD_USE_ANALOG0
-        pd_pollanalog0();
+#ifdef ESPD_USE_AIN
+        espd_ain_poll();
 #endif
-#ifdef PD_USE_TOUCH0
-        pd_polltouch0();
+#ifdef ESPD_USE_TOUCH
+        espd_touch_poll();
 #endif
         espd_io_poll();
 
         pdmain_tick();
-#ifdef PD_USE_WIFI
+#ifdef ESPD_USE_WIFI
 #if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
         if (espd_wifi_net_enabled)
             net_alive();
@@ -2187,16 +2187,16 @@ void app_main(void)
 
 void espd_control_io_init(void)
 {
-#ifdef PD_USE_AOUT
-    pd_aout_init();
+#ifdef ESPD_USE_AOUT
+    espd_aout_init();
 #endif
-#ifdef PD_USE_DOUT0
-    pd_dout_init();
+#ifdef ESPD_USE_DOUT
+    espd_dout_init();
 #endif
     espd_io_bind();
 }
 
-#ifdef PD_USE_SDCARD
+#ifdef ESPD_USE_SDCARD
 void sd_init( void)
 {
 #ifdef PD_LYRAT

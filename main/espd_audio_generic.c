@@ -16,7 +16,7 @@ static const char *TAG = "espd_audio";
 
 struct espd_audio {
     i2s_chan_handle_t tx;
-#ifdef USEADC
+#ifdef ESPD_USE_ADC
     i2s_chan_handle_t rx;
 #endif
     int sample_rate;
@@ -41,7 +41,7 @@ esp_err_t espd_audio_init(espd_audio_t **out)
         I2S_ROLE_MASTER);
     chan_cfg.dma_desc_num = (uint32_t)espd_audio_dma_desc_num();
     chan_cfg.dma_frame_num = (uint32_t)espd_audio_dma_frame_num();
-#ifdef USEADC
+#ifdef ESPD_USE_ADC
     ESP_RETURN_ON_ERROR(i2s_new_channel(&chan_cfg, &a->tx, &a->rx), TAG,
         "i2s_new_channel");
 #else
@@ -66,7 +66,7 @@ esp_err_t espd_audio_init(espd_audio_t **out)
     ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(a->tx, &std_cfg), TAG,
         "i2s tx init");
     ESP_RETURN_ON_ERROR(i2s_channel_enable(a->tx), TAG, "i2s tx enable");
-#ifdef USEADC
+#ifdef ESPD_USE_ADC
     if (a->rx) {
         ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(a->rx, &std_cfg), TAG,
             "i2s rx init");
@@ -101,7 +101,7 @@ esp_err_t espd_audio_read(espd_audio_t *audio, int16_t *pcm, size_t samples)
     if (!audio || !pcm || samples == 0)
         return ESP_ERR_INVALID_ARG;
 
-#ifndef USEADC
+#ifndef ESPD_USE_ADC
     return ESP_ERR_NOT_SUPPORTED;
 #else
     if (!audio->rx)

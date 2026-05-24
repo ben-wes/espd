@@ -9,7 +9,7 @@
 #X obj 156 187 osc~;
 #X obj 156 208 *~ 0.03;
 #X text 46 288 pot low -> ~110 Hz;
-#X text 46 306 expects firmware PD_USE_ANALOG0 and espd/ain/0 messages;
+#X text 46 306 expects firmware ESPD_USE_AIN and espd/ain/0 messages;
 #X obj 156 229 dac~;
 #X connect 0 0 1 0;
 #X connect 2 0 3 0;

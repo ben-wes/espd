@@ -50,7 +50,7 @@ static void espd_storage_mount_spiffs(void)
 
 static const char *espd_storage_probe_config(void)
 {
-#ifdef PD_USE_SDCARD
+#ifdef ESPD_USE_SDCARD
     if (espd_storage_file_exists(ESPD_SDCARD_CONFIG_PATH))
         return ESPD_SDCARD_CONFIG_PATH;
 #endif
@@ -65,7 +65,7 @@ static const char *espd_storage_probe_config(void)
 
 static const char *espd_storage_probe_main_pd(void)
 {
-#ifdef PD_USE_SDCARD
+#ifdef ESPD_USE_SDCARD
     if (espd_storage_file_exists(ESPD_SDCARD_MAIN_PD_PATH))
         return ESPD_SDCARD_MOUNT;
 #endif
@@ -105,7 +105,7 @@ void espd_storage_init(void)
 
 esp_err_t espd_storage_mount_sdcard(void)
 {
-#ifdef PD_USE_SDCARD
+#ifdef ESPD_USE_SDCARD
     esp_err_t e = espd_io_sdcard_mount();
     if (e == ESP_OK) {
         ESP_LOGI(TAG, "SD card mounted at %s", ESPD_SDCARD_MOUNT);
@@ -155,7 +155,7 @@ bool espd_patch_store_main_pd_exists(void)
 
 bool espd_sdcard_main_pd_exists(void)
 {
-#ifdef PD_USE_SDCARD
+#ifdef ESPD_USE_SDCARD
     return espd_storage_file_exists(ESPD_SDCARD_MAIN_PD_PATH);
 #else
     return false;
