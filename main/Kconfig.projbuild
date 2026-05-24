@@ -118,14 +118,14 @@ config ESPD_USE_CONSOLE
     default y
 
 config ESPD_USE_AIN
-    bool "Compile espd/ain support (ADC GPIO inputs)"
+    bool "Compile espd/ain support (GPIO analog inputs)"
     default n
     help
-        Links ADC / espd/ain code into the firmware. Sampling starts only when
-        config.txt lists GPIOs: ain_pins=3,4 (SD or SPIFFS). No ain_pins=
-        key, empty list, or ain_enable=0 → no ADC task, no polling (same idea
-        as WiFi STA waiting for wifi_ssid=). Optional tuning in config.txt:
-        ain_task_period_ms, ain_deadband, ain_report_every_n_blocks.
+        Links espd/ain code into the firmware. Sampling starts only when
+        config.txt lists GPIOs: ain_pins=3,4 (SD or SPIFFS). No config.txt,
+        no ain_pins= key, or empty ain_pins= → espd/ain stays off (same idea
+        as wifi_ssid= gating WiFi). Optional tuning: ain_task_period_ms,
+        ain_deadband, ain_report_every_n_blocks.
 
 config ESPD_USE_TOUCH
     bool "Compile espd/touch support (capacitive GPIO inputs)"

@@ -893,7 +893,6 @@ static int espd_touch_report_every_n_blocks = ESPD_TOUCH_REPORT_EVERY_N_BLOCKS;
 
 #if defined(ESPD_USE_AIN)
 /* Parsed from config.txt (SD or SPIFFS) before espd_ain_init. */
-static int s_analog_cfg_disable;
 static int s_analog_cfg_have_pins;
 static int s_analog_cfg_n;
 static int s_analog_cfg_pins[8];
@@ -904,7 +903,6 @@ static void espd_ain_load_config(void)
     char line[256];
     const char *config_path = espd_storage_config_path();
 
-    s_analog_cfg_disable = 0;
     s_analog_cfg_have_pins = 0;
     s_analog_cfg_n = 0;
     if (!config_path)
@@ -933,11 +931,7 @@ static void espd_ain_load_config(void)
         *eq++ = '\0';
         v = espd_cfg_trim(eq);
         k = espd_cfg_trim(k);
-        if (!strcmp(k, "ain_enable"))
-        {
-            s_analog_cfg_disable = (atoi(v) == 0);
-        }
-        else if (!strcmp(k, "ain_pins"))
+        if (!strcmp(k, "ain_pins"))
         {
             int n = 0;
             s_analog_cfg_have_pins = 1;
@@ -982,9 +976,7 @@ static void espd_ain_load_config(void)
         }
     }
     fclose(f);
-    if (s_analog_cfg_disable)
-        ESP_LOGI(TAG, "ain: %s: ain_enable=0 — ADC off", config_path);
-    else if (!s_analog_cfg_have_pins)
+    if (!s_analog_cfg_have_pins)
         ESP_LOGI(TAG, "ain: %s: no ain_pins= — ADC off", config_path);
     else if (s_analog_cfg_n == 0)
         ESP_LOGI(TAG, "ain: %s: ain_pins= empty — ADC off", config_path);
@@ -1200,8 +1192,6 @@ static void espd_ain_init(void)
     int enabled = 0;
     int nchan;
 #if defined(ESPD_USE_AIN)
-    if (s_analog_cfg_disable)
-        return;
     if (!s_analog_cfg_have_pins || s_analog_cfg_n <= 0)
         return;
     nchan = s_analog_cfg_n;
@@ -1236,7 +1226,7 @@ static void espd_ain_init(void)
             continue;
         if (!pd_pin_to_adc1_channel(pin, &ch))
         {
-            ESP_LOGW(TAG, "analog ain%d ignored: GPIO%d is not ADC1-capable", i, pin);
+            ESP_LOGW(TAG, "espd/ain/%d: GPIO%d is not a valid analog-input pin", i, pin);
             continue;
         }
         err = adc_oneshot_config_channel(espd_ain_adc_handle, ch, &chan_cfg);

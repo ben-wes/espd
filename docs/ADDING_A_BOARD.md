@@ -149,17 +149,18 @@ Activate IDF v6.0.1 per [README.md](../README.md).
 | **dac~** / **adc~** | Audio backend | **ESPD_USE_ADC** for input |
 | **espd/din/N** | **bsp_button_*** + optional **din_pins=** | BSP automatic; **ESPD_USE_DIN** + **din_pins=** for extra GPIO |
 | **espd/led**, **espd/led/N** | **bsp_led_*** | Automatic if BSP has LEDs |
-| **espd/ain/N** | ADC1 GPIOs | **ESPD_USE_AIN** + **ain_pins=** |
+| **espd/ain/N** | GPIO analog in (pots, sensors) | **ESPD_USE_AIN** + **ain_pins=** |
 | **espd/aout/N** | LEDC PWM | **ESPD_USE_AOUT** + **aout_pins=** |
 | **espd/dout/N** | GPIO out | **ESPD_USE_DOUT** + **dout_pins=** |
 | **espd/touch/N** | Touch sensor | **ESPD_USE_TOUCH** + **touch_pins=** |
 
 ## Local storage (main.pd, config.txt)
 
-**espd_storage_init()** mounts SPIFFS at **/espd_pd** and probes paths. SD
-mounts once via **espd_storage_mount_sdcard()** (before **config.txt** is
-read), then codec init runs in **initdacs()**.
+**[espd_storage_init()](../main/espd_storage.c)** mounts SPIFFS at **/espd_pd**
+and probes paths. SD mounts once via
+**[espd_storage_mount_sdcard()](../main/espd_storage.c)** (before **config.txt**
+is read), then codec init runs in **[initdacs()](../main/espd.c)**.
 
-See **main/espd_storage.c** and **main/espd.h**.
-
-See **components/espd_integration/README.md** for the **bsp_io.h** contract.
+See [main/espd_storage.c](../main/espd_storage.c), [main/espd.h](../main/espd.h),
+and [components/espd_integration/README.md](../components/espd_integration/README.md)
+for the **bsp_io.h** contract.

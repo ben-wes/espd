@@ -242,11 +242,12 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
  *     (when WiFi/net is active); 0 or missing keeps default log routing.
  *   wifi_ssid=myap
  *   wifi_password=secret
- * Analog (when ESPD_USE_AIN compiled in): espd/ain starts only if config.txt
- *   has ain_pins= with at least one ADC1-capable GPIO. No config.txt, no
- *   ain_pins key, empty list, or ain_enable=0 → no ADC task / no polling.
- *   ain_pins=3,4,5,6,7 — GPIOs for espd/ain/0.. in order (max 8, ADC1 pins)
+ * Analog in (when ESPD_USE_AIN compiled in): espd/ain starts only if config.txt
+ *   has ain_pins= with at least one GPIO. Off when there is no config.txt,
+ *   no ain_pins= key, or ain_pins= is empty.
+ *   ain_pins=3,4,5,6,7 — GPIOs for espd/ain/0.. in order (max 8)
  *   ain_pins=      — empty list: analog off
+ *   (Implementation uses ESP32 ADC unit 1; not the same as adc~ audio input.)
  *   ain_task_period_ms=1 — producer wake interval in ms (1..500); lower =
  *       more samples in time (more ADC-task CPU). Does not loosen filtering.
  *   ain_deadband=N — raw delta to treat as a new value (1..2047); noise gate

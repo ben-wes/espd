@@ -101,8 +101,8 @@ Switching boards: change **Target board** in menuconfig → Save → `idf.py bui
 | `config.txt` | same | Runtime tuning (WiFi, GPIO I/O, audio DMA) |
 
 Copy examples from [test-patch/](../test-patch/). Without `main.pd`, an embedded
-test patch runs if **Embed fallback test patch** is enabled in menuconfig
-(`ESPD_INCLUDEPATCH` — on by default for Waveshare YAML profile).
+test patch runs only if **Embed fallback test patch** is enabled in menuconfig
+(`ESPD_INCLUDEPATCH` — off by default).
 
 ## Feature reference
 
@@ -117,6 +117,9 @@ Sample rate: default **48000 Hz** (`ESPD_AUDIO_SAMPLE_RATE` in menuconfig).
 Override at boot with `audio_sample_rate=` in `config.txt`. Same value drives
 `dac~`/`adc~` and the hardware codec/I²S.
 
+**`adc~`** is audio (mic/line). **`espd/ain/N`** is separate — raw GPIO
+analog levels (pots, sensors) via `ain_pins=` in config.txt.
+
 ### Pd board I/O receivers
 
 Bind with `[r espd/…]` (or send floats to outputs). Indices are **numeric**, not
@@ -126,7 +129,7 @@ named after hardware labels.
 |----------|---------|--------|
 | **espd/din/N** | float `0` / `1` (release / press) | BSP buttons → `espd/din/0..` automatically; extra GPIO via `din_pins=` |
 | **espd/led**, **espd/led/N** | list `r g b` (0–255) | Automatic when BSP has LEDs |
-| **espd/ain/N** | float (ADC raw-ish) | menuconfig **espd/ain** + `ain_pins=` in config.txt |
+| **espd/ain/N** | float (raw level) | menuconfig **espd/ain** + `ain_pins=` in config.txt |
 | **espd/aout/N** | float 0..1 (PWM) | menuconfig **espd/aout** + `aout_pins=` |
 | **espd/dout/N** | float ≥0.5 → high | menuconfig **espd/dout** + `dout_pins=` |
 | **espd/touch/N** | float | menuconfig **espd/touch** + `touch_pins=` |
@@ -167,7 +170,7 @@ Visible in `idf.py menuconfig`. Rebuild after changes.
 | **Join WiFi when main.pd on disk** | off | Generic profile enables; board kits skip STA by default |
 | **Legacy espd TCP/UDP transport** | on (Generic) | Port 4498 host transport |
 | **USB serial console** | on | Pd print to UART |
-| **Compile espd/ain** | off | ADC GPIO inputs |
+| **Compile espd/ain** | off | GPIO analog inputs (pots/sensors) |
 | **Compile espd/touch** | off | Capacitive touch |
 | **Compile espd/aout** | off | PWM outputs |
 | **Compile espd/din GPIO** | off | Extra GPIO digital in |
@@ -188,7 +191,7 @@ Loaded from SD or SPIFFS at boot. Does **not** appear in menuconfig.
 | **log_broadcast_port=** | UDP broadcast of Pd print/errors |
 | **audio_sample_rate=** | Hz (8000–192000) |
 | **audio_dma_desc_num=**, **audio_dma_frame_num=** | I²S latency tuning |
-| **ain_pins=**, **ain_deadband=**, … | Analog inputs |
+| **ain_pins=**, **ain_deadband=**, … | GPIO analog inputs |
 | **touch_pins=**, … | Touch inputs |
 | **aout_pins=**, **aout_pwm_freq_hz=** | PWM outputs |
 | **din_pins=**, **din_active_low=**, … | Extra digital inputs |

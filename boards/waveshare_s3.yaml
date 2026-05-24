@@ -19,7 +19,6 @@ features:
     - ESPD_USE_ADC
     - ESPD_USE_SDCARD
     - ESPD_USE_AIN
-    - ESPD_INCLUDEPATCH
     - ESPD_USE_AOUT
 
 io:
@@ -30,7 +29,6 @@ profile:
     ESPD_USE_ADC: y
     ESPD_USE_SDCARD: y
     ESPD_USE_AIN: y
-    ESPD_INCLUDEPATCH: y
     ESPD_USE_AOUT: y
     ESPD_ENABLE_LEGACY_WIFI_TRANSPORT: n
   Board hardware:
