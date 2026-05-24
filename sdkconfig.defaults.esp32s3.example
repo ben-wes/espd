@@ -1,9 +1,0 @@
-# Optional: append this line to sdkconfig.defaults.esp32s3 to pre-select Waveshare
-# before the first menuconfig (CMake then merges espd_board_waveshare_s3 profile).
-#
-#   echo 'CONFIG_ESPD_BOARD_WAVESHARE_S3=y' >> sdkconfig.defaults.esp32s3
-#
-# ESPD feature flags still follow board choice via Kconfig imply; IDF options
-# (PSRAM, CPU affinity, …) apply after save + build unless pre-selected here.
-
-CONFIG_ESPD_BOARD_WAVESHARE_S3=y

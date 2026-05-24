@@ -4,19 +4,12 @@ Short reference — full guide: **docs/ADDING_A_BOARD.md**
 
 ESPD does not embed board-specific logic in **main/**. Hardware comes from
 **espd_board_*** plugin components (esp-bsp + shim) or in-tree **bsp_*** under
-**components/**.
+**components/**. No board plugin ships with ESPD; users add their own.
 
 ## Naming convention
 
 `CONFIG_ESPD_BOARD_FOO_BAR=y` → folder **components/espd_board_foo_bar/**.
 **espd_boards** and root **CMakeLists.txt** discover plugins automatically.
-
-## Waveshare (reference plugin)
-
-| Component | Purpose |
-|-----------|---------|
-| **espd_board_waveshare_s3** | Kconfig entry, git dep, **sdkconfig.defaults**, I/O + audio shim |
-| **espd_integration** | Weak **bsp_*** stubs, **espd_bsp_codec_dev.c** (shared **esp_codec_dev** glue) |
 
 ## Optional **bsp_*** contract
 
@@ -42,8 +35,9 @@ Headers in **include/bsp/**:
 | Generic I2S | **espd_audio_generic.c** | Manual GPIO I2S |
 | BSP codec | **espd_audio_codec.c** | **espd_bsp_audio_*** (**espd_integration** implements codec I/O) |
 
+`esp_codec_dev` is a managed dep of **espd_integration** itself, so board
+plugins inherit it transitively via their `path:` dep on espd_integration.
+
 ## Adding a new board
 
-Copy **components/espd_board_waveshare_s3/** → **components/espd_board_mykit/**,
-adapt Kconfig / **idf_component.yml** / shim / **sdkconfig.defaults**. For in-tree
-hardware without esp-bsp, see Path B in **docs/ADDING_A_BOARD.md**.
+See **docs/ADDING_A_BOARD.md** for the full file layout.

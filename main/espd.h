@@ -266,8 +266,9 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
  *   aout_pins=8,9 — GPIOs for espd/aout/0.. in order (max 4)
  *   aout_pwm_freq_hz=20000 — LEDC frequency (optional; default 20000)
  * Digital in (when PD_USE_DIN0 compiled in): GPIO channels append after BSP
- *   buttons. espd/din/0..(N-1) are board digital ins (e.g. Waveshare TCA9555);
- *   din_pins= adds espd/din/N.. at indices bsp_button_count()+i. Boot log lists
+ *   buttons. espd/din/0..(N-1) are board digital ins (e.g. via an I2C IO
+ *   expander on a BSP kit); din_pins= adds espd/din/N.. at indices
+ *   bsp_button_count()+i. Boot log lists
  *   the full map. No din_pins= key → no extra GPIO polling (BSP din still works).
  *   din_pins=4,5 — GPIOs for extra espd/din channels (max 8)
  *   din_active_low=1 — treat low level as pressed (default 1)
@@ -280,8 +281,9 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
  *   audio_dma_desc_num=3 — number of DMA buffers (2..16; IDF default 6)
  *   audio_dma_frame_num=64 — frames per buffer (8..1024; IDF default 240)
  *   Output latency ≈ desc_num * frame_num / sample_rate seconds.
- *   Stock Waveshare firmware uses 3×64 (~4 ms). IDF defaults are 6×240 (~30 ms).
- *   Pd block size is 64 samples; 64 frames/buffer matches one block (low latency).
+ *   IDF defaults (6×240, ~30 ms) are conservative; 3×64 (~4 ms) is a good
+ *   low-latency target for typical audio kits. Pd block size is 64 samples;
+ *   64 frames/buffer matches one block (low latency).
  *   Larger frame_num (e.g. 128 or 240) adds headroom for FFT-heavy patches.
  */
 /* [pdcontrol] message "ip" → list of four float octets 0..255, or symbol "noip" when unavailable. */

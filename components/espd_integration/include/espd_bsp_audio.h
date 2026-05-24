@@ -2,9 +2,10 @@
  * Board codec hooks for the BSP audio backend.
  *
  * espd_board_* plugins implement espd_bsp_audio_hw_init() (kit-specific).
- * espd_integration/espd_bsp_codec_dev.c implements codec I/O when BSP backend
- * is selected; **espd_board_*** plugins must declare **espressif/esp_codec_dev** in
- * **idf_component.yml** so Component Manager fetches it before this file compiles.
+ * espd_integration/espd_bsp_codec_dev.c implements codec I/O when the BSP
+ * backend is selected; espd_integration declares espressif/esp_codec_dev
+ * itself, so plugins inherit it transitively via their `path:` dep on
+ * espd_integration in idf_component.yml.
  */
 #pragma once
 

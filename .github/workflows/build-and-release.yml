@@ -1,24 +1,26 @@
-name: Build Waveshare firmware
+name: Build ESPD firmware
 
 on:
   push:
     branches:
-      - waveshare
-      - waveshare-bsp
+      - main
+      - master
       - feature/ci
     tags:
       - '**'
   pull_request:
     branches:
-      - waveshare
-      - waveshare-bsp
       - main
       - master
 
 jobs:
-  build-waveshare:
-    name: Waveshare ESP32-S3-AUDIO (esp32s3)
+  build:
+    name: Generic ${{ matrix.target }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [esp32, esp32s3]
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -31,22 +33,17 @@ jobs:
       - name: Apply required Pd patches
         run: ./scripts/apply-pd-patches.sh
 
-      - name: Build Waveshare BSP firmware
+      - name: Build Generic firmware
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v6.0.1
-          target: esp32s3
-          command: >-
-            idf.py set-target esp32s3 &&
-            printf '%s\n'
-            'CONFIG_ESPD_BOARD_WAVESHARE_S3=y'
-            >> sdkconfig &&
-            idf.py build
+          target: ${{ matrix.target }}
+          command: idf.py set-target ${{ matrix.target }} build
 
       - name: Upload firmware as action artifact
         uses: actions/upload-artifact@v4
         with:
-          name: espd-waveshare-${{ github.sha }}
+          name: espd-generic-${{ matrix.target }}-${{ github.sha }}
           path: |
             build/espd.bin
             build/bootloader/bootloader.bin

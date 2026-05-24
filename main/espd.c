@@ -1971,15 +1971,6 @@ void app_main(void)
         CONFIG_ESP_MAIN_TASK_STACK_SIZE);
 #endif
 
-#if !CONFIG_SPIRAM && CONFIG_ESPD_BOARD_WAVESHARE_S3
-    {
-        ESP_LOGE(TAG,
-            "SPIRAM is off but Waveshare S3 is selected. Pd FFT buffers "
-            "need PSRAM — delete sdkconfig, then: idf.py menuconfig build "
-            "(pick board, Save). Or enable Component config → ESP PSRAM.");
-    }
-#endif
-
     /* Allocation routing for generic malloc/calloc (incl. Pd's getbytes):
      *   < 16 KB → prefer internal SRAM (signal vectors at block 2048,
      *            object state, per-block hot path)

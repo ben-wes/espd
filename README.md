@@ -3,7 +3,9 @@
 Pure Data (Pd) on Espressif ESP32 microcontrollers. Core firmware is **board-agnostic**;
 hardware is provided by optional **BSP components** selected in **menuconfig**.
 
-The default configuration is **Generic I2S** (manual GPIO pins, no codec driver). **Waveshare ESP32-S3-AUDIO** is a worked example in **components/espd_board_waveshare_s3/** — see [docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md).
+Out of the box, only **Generic I2S** (manual GPIO pins, no codec driver) is
+shipped. To support a specific kit, drop an **espd_board_*** plugin into
+**components/** — see [docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md).
 
 ## Features
 
@@ -46,7 +48,7 @@ idf.py build flash monitor
 
 In **menuconfig → ESPD Configuration**: **Target board** defaults to **Generic I2S**. Set WiFi, optional SD/audio GPIO pins, etc. → **Save**, then build.
 
-**Waveshare ESP32-S3-AUDIO (example BSP board):** `idf.py set-target esp32s3 menuconfig` → **Target board → Waveshare ESP32-S3-AUDIO** → Save → **`idf.py build flash monitor`**. Wiring details: [docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md) and the [Waveshare wiki](https://www.waveshare.com/wiki/ESP32-S3-AUDIO-Board).
+**BSP boards:** when an **espd_board_*** plugin is present in `components/`, it appears under **Target board** in menuconfig. Pick it → Save → **`idf.py build flash monitor`**. See [docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md) for the full layout.
 
 **Switching boards:** change board in menuconfig, Save, **`idf.py build`**. After deleting **sdkconfig**, run **`set-target`** again.
 
@@ -63,9 +65,11 @@ Without files on SD, SPIFFS at **`/espd_pd`** is used when populated. If no **ma
 
 Example patches: [test-patch/](test-patch/). **config.txt** keys: [main/espd.h](main/espd.h).
 
-## Adding another board
+## Adding a board
 
-[docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md) — full BSP guide (Waveshare is the reference implementation). Short reference: [components/espd_integration/README.md](components/espd_integration/README.md).
+[docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md) — full plugin layout and discovery rules. Short reference: [components/espd_integration/README.md](components/espd_integration/README.md).
+
+**Worked example:** [docs/BOARD_EXAMPLE_WAVESHARE_S3.md](docs/BOARD_EXAMPLE_WAVESHARE_S3.md) — Waveshare ESP32-S3-AUDIO via `ben-wes/esp-bsp@waveshare-bsp`.
 
 ## WiFi and remote patches
 
@@ -79,15 +83,15 @@ Optional legacy host transport: board connects on port 4498; load patches with `
 ## Project layout
 
 ```
-main/                                Core ESPD (board-neutral)
-components/espd_integration/         bsp_* contract + weak stubs
-components/espd_boards/              Registry (links enabled espd_board_* plugins)
-components/espd_board_waveshare_s3/  Example board plugin (esp-bsp + shim)
-docs/ADDING_A_BOARD.md               Integrating new hardware
-pd/                                  Pd submodule
+main/                          Core ESPD (board-neutral)
+components/espd_integration/   bsp_* contract + weak stubs + codec glue
+components/espd_boards/        Registry (links enabled espd_board_* plugins)
+components/espd_board_<kit>/   User-supplied board plugins (none in tree)
+docs/ADDING_A_BOARD.md         Integrating new hardware
+pd/                            Pd submodule
 ```
 
 ## Further reading
 
 - [ESP-IDF get-started](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html)
-- [Waveshare ESP32-S3-AUDIO wiki](https://www.waveshare.com/wiki/ESP32-S3-AUDIO-Board)
+- [esp-bsp board packages](https://github.com/espressif/esp-bsp)
