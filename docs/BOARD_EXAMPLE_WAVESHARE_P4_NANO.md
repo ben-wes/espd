@@ -15,10 +15,9 @@ Board definition: **[boards/waveshare_p4_nano.yaml](../boards/waveshare_p4_nano.
 
 ## Wi-Fi (ESP-Hosted)
 
-The P4 has no native Wi-Fi. espd uses Espressif’s **esp_wifi_remote** +
-**esp_hosted** components (declared in the board plugin when `hosted_wifi: true`
-in YAML). Your application still calls `esp_wifi_*`; the stack talks to the C6
-over SDIO.
+The P4 has no native Wi-Fi. The **esp32_p4_nano** BSP declares **esp_wifi_remote**
+and **esp_hosted** (transitive via the board plugin’s BSP dep). Your application
+still calls `esp_wifi_*`; the stack talks to the C6 over SDIO.
 
 **Runtime (same as S3):** put credentials on the SD card:
 

@@ -95,8 +95,8 @@ config ESPD_USE_WIFI
     help
         Native Wi-Fi on ESP32/ESP32-S3 (ESP_WIFI_ENABLED), or SDIO
         coprocessor Wi-Fi on ESP32-P4 (ESP_HOST_WIFI_ENABLED + esp_hosted).
-        Waveshare P4-NANO includes ESP32-C6; board YAML pulls esp_wifi_remote
-        and esp_hosted. Runtime: non-empty wifi_ssid= in config.txt.
+        Waveshare P4-NANO includes ESP32-C6; esp32_p4_nano BSP pulls
+        esp_wifi_remote and esp_hosted. Runtime: non-empty wifi_ssid= in config.txt.
 
 config ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     bool "Legacy espd TCP/UDP transport (port 4498)"

@@ -7,10 +7,7 @@ target: esp32p4
 help: |
   Waveshare ESP32-P4-NANO (ES8311 codec, microSD). Onboard ESP32-C6-MINI provides
   Wi-Fi 6 / BLE over SDIO (ESP-Hosted). STA uses wifi_ssid= in config.txt (same
-  as S3). BSP from ben-wes/esp-bsp (IDF 6).
-
-# Pull esp_wifi_remote + esp_hosted into the board plugin (P4 has no native Wi-Fi).
-hosted_wifi: true
+  as S3). BSP from ben-wes/esp-bsp (IDF 6); hosted Wi-Fi deps in esp32_p4_nano BSP.
 
 bsp:
   component: esp32_p4_nano
