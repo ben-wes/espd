@@ -5,12 +5,18 @@ id: waveshare_p4_nano
 name: Waveshare ESP32-P4-NANO
 target: esp32p4
 help: |
-  Waveshare ESP32-P4-NANO (ES8311 codec, microSD, optional DSI display).
-  Official BSP from the Espressif Component Registry.
+  Waveshare ESP32-P4-NANO (ES8311 codec, microSD). Onboard ESP32-C6-MINI provides
+  Wi-Fi 6 / BLE over SDIO (ESP-Hosted). STA uses wifi_ssid= in config.txt (same
+  as S3). BSP from ben-wes/esp-bsp (IDF 6).
+
+# Pull esp_wifi_remote + esp_hosted into the board plugin (P4 has no native Wi-Fi).
+hosted_wifi: true
 
 bsp:
-  component: waveshare/esp32_p4_nano
-  version: "^1.2.0"
+  component: esp32_p4_nano
+  git: https://github.com/ben-wes/esp-bsp.git
+  path: bsp/esp32_p4_nano
+  version: waveshare-s3-p4
 
 features:
   imply:
@@ -28,16 +34,29 @@ profile:
     ESPD_USE_AOUT: y
     ESPD_USE_WIFI: y
   Board hardware:
+    BSP_CONFIG_NO_GRAPHIC_LIB: 1
     ESPTOOLPY_FLASHSIZE_16MB: y
     SPIRAM: y
     SPIRAM_MODE_HEX: y
     SPIRAM_SPEED_200M: y
     SPIRAM_BOOT_INIT: y
     SPIRAM_USE_MALLOC: y
+    SPIRAM_TRY_ALLOCATE_WIFI_LWIP: y
     SPIRAM_MALLOC_ALWAYSINTERNAL: 16384
     SPIRAM_MALLOC_RESERVE_INTERNAL: 65536
     CODEC_ES8311_SUPPORT: y
     BSP_SD_MOUNT_POINT: '"/sdcard"'
+  ESP-Hosted (C6 SDIO):
+    CONFIG_SLAVE_IDF_TARGET_ESP32C6: y
+    CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6: y
+    CONFIG_ESP_HOSTED_P4_DEV_BOARD_FUNC_BOARD: y
+    CONFIG_WIFI_RMT_STATIC_RX_BUFFER_NUM: 16
+    CONFIG_WIFI_RMT_DYNAMIC_RX_BUFFER_NUM: 64
+    CONFIG_WIFI_RMT_DYNAMIC_TX_BUFFER_NUM: 64
+    CONFIG_WIFI_RMT_AMPDU_TX_ENABLED: y
+    CONFIG_WIFI_RMT_TX_BA_WIN: 32
+    CONFIG_WIFI_RMT_AMPDU_RX_ENABLED: y
+    CONFIG_WIFI_RMT_RX_BA_WIN: 32
   Pd runtime tuning:
     ESP_MAIN_TASK_AFFINITY_CPU1: y
     ESP_MAIN_TASK_AFFINITY: "0x1"
@@ -46,6 +65,12 @@ profile:
     PTHREAD_TASK_CORE_DEFAULT: 0
     LWIP_MAX_SOCKETS: 8
     LWIP_IPV6: y
+    LWIP_TCP_SND_BUF_DEFAULT: 65534
+    LWIP_TCP_WND_DEFAULT: 65534
+    LWIP_TCP_RECVMBOX_SIZE: 64
+    LWIP_UDP_RECVMBOX_SIZE: 64
+    LWIP_TCPIP_RECVMBOX_SIZE: 64
+    LWIP_TCP_SACK_OUT: y
     MBEDTLS_TLS_CLIENT_ONLY: y
     COMPILER_OPTIMIZATION_PERF: y
     COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE: y
