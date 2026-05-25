@@ -87,16 +87,17 @@ config ESPD_INCLUDEPATCH
 endmenu
 
 menu "WiFi & network"
+    depends on ESP_WIFI_ENABLED || ESP_HOST_WIFI_ENABLED || ESP_WIFI_REMOTE_ENABLED
 
 config ESPD_USE_WIFI
     bool "Enable WiFi (Pd netsend / netreceive)"
-    depends on ESP_WIFI_ENABLED || ESP_HOST_WIFI_ENABLED
+    depends on ESP_WIFI_ENABLED || ESP_HOST_WIFI_ENABLED || ESP_WIFI_REMOTE_ENABLED
     default n
     help
-        Native Wi-Fi on ESP32/ESP32-S3 (ESP_WIFI_ENABLED), or SDIO
-        coprocessor Wi-Fi on ESP32-P4 (ESP_HOST_WIFI_ENABLED + esp_hosted).
-        Waveshare P4-NANO includes ESP32-C6; esp32_p4_nano BSP pulls
-        esp_wifi_remote and esp_hosted. Runtime: non-empty wifi_ssid= in config.txt.
+        Native Wi-Fi on ESP32/ESP32-S3 (ESP_WIFI_ENABLED), IDF host Wi-Fi on
+        some targets (ESP_HOST_WIFI_ENABLED), or P4 SDIO coprocessor Wi-Fi via
+        esp_wifi_remote + esp_hosted (ESP_WIFI_REMOTE_ENABLED). Waveshare P4-NANO
+        uses the latter. Runtime: non-empty wifi_ssid= in config.txt.
 
 config ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     bool "Legacy espd TCP/UDP transport (port 4498)"

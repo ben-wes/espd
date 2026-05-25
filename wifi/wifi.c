@@ -166,8 +166,10 @@ void wifi_init_sta(void)
 void wifi_init(void)
 {
     /* NVS is initialized once in app_main (espd.c) before SPIFFS / Pd boot. */
-#if CONFIG_ESP_HOST_WIFI_ENABLED
-    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (ESP-Hosted / C6 coprocessor)");
+#if CONFIG_ESP_WIFI_REMOTE_ENABLED
+    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (esp_wifi_remote / ESP-Hosted)");
+#elif CONFIG_ESP_HOST_WIFI_ENABLED
+    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA (ESP_HOST_WIFI)");
 #else
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
 #endif
