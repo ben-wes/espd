@@ -186,8 +186,7 @@ Loaded from SD or SPIFFS at boot. Does **not** appear in menuconfig.
 
 | Key | Purpose |
 |-----|---------|
-| **wifi_ssid=**, **wifi_password=** | Join AP (STA starts when ssid is set) |
-| **wifi_enable=** | `0` force off; `1` force on (overrides local-main.pd WiFi skip) |
+| **wifi_ssid=**, **wifi_password=** | Join AP (STA starts when `wifi_ssid` is non-empty) |
 | **log_broadcast_port=** | UDP broadcast of Pd print/errors |
 | **audio_sample_rate=** | Hz (8000–192000) |
 | **audio_dma_desc_num=**, **audio_dma_frame_num=** | I²S latency tuning |

@@ -1,7 +1,6 @@
 # Example config.txt — copy to /sdcard or /espd_pd and edit before use.
 # wifi_ssid=MyNetwork
 # wifi_password=secret
-# wifi_enable=1          # optional: force STA or disable (see main/espd.h)
 # ain_pins=1             # GPIO(s) for espd/ain/0.. (requires ESPD_USE_AIN)
 # ain_task_period_ms=5
 # ain_deadband=32

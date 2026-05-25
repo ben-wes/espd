@@ -19,9 +19,6 @@ const char *espd_storage_config_path(void);
 /** Mount dir containing main.pd (e.g. /sdcard), or NULL if not found. */
 const char *espd_storage_main_pd_mount_dir(void);
 
-/** True when main.pd exists on any local storage backend. */
-bool espd_storage_local_main_pd_present(void);
-
 bool espd_storage_spiffs_mounted(void);
 
 /* Legacy helpers (prefer espd_storage_* above). */

@@ -761,14 +761,11 @@ static int espd_wifi_started;
 char espd_wifi_ssid[33];
 char espd_wifi_password[65];
 int espd_log_broadcast_port;
-int espd_wifi_force_enable = 0;
-
 static void espd_wifi_config_defaults(void)
 {
     snprintf(espd_wifi_ssid, sizeof(espd_wifi_ssid), "%s", CONFIG_ESP_WIFI_SSID);
     snprintf(espd_wifi_password, sizeof(espd_wifi_password), "%s", CONFIG_ESP_WIFI_PASSWORD);
     espd_log_broadcast_port = 0;
-    espd_wifi_force_enable = 0;
 }
 
 static int s_wifi_credentials_in_config_txt;
@@ -791,15 +788,12 @@ static void espd_wifi_try_load_config(void)
     FILE *f;
     char line[256];
     int ssid_nonempty = 0;
-    int saw_wifi_enable_key = 0;
-    int wifi_enable_value = 0;
 
     if (!config_path)
     {
         s_wifi_credentials_in_config_txt = 0;
         espd_wifi_ssid[0] = '\0';
         espd_wifi_password[0] = '\0';
-        espd_wifi_force_enable = 0;
 #ifdef ESPD_USE_SDCARD
         ESP_LOGI(TAG, "wifi: no config.txt on SD or %s",
             ESPD_PATCH_STORE_MOUNT);
@@ -813,7 +807,6 @@ static void espd_wifi_try_load_config(void)
         s_wifi_credentials_in_config_txt = 0;
         espd_wifi_ssid[0] = '\0';
         espd_wifi_password[0] = '\0';
-        espd_wifi_force_enable = 0;
         ESP_LOGI(TAG, "wifi: cannot read %s", config_path);
         return;
     }
@@ -843,12 +836,6 @@ static void espd_wifi_try_load_config(void)
         {
             snprintf(espd_wifi_password, sizeof(espd_wifi_password), "%s", v);
         }
-        else if (!strcmp(k, "wifi_enable"))
-        {
-            saw_wifi_enable_key = 1;
-            wifi_enable_value = (atoi(v) != 0);
-            espd_wifi_force_enable = wifi_enable_value;
-        }
         else if (!strcmp(k, "log_broadcast_port"))
         {
             long p = strtol(v, NULL, 10);
@@ -859,23 +846,16 @@ static void espd_wifi_try_load_config(void)
         }
     }
     fclose(f);
-    if (saw_wifi_enable_key)
-        s_wifi_credentials_in_config_txt = wifi_enable_value;
-    else
-        s_wifi_credentials_in_config_txt = ssid_nonempty;
+    s_wifi_credentials_in_config_txt = ssid_nonempty;
     if (!s_wifi_credentials_in_config_txt)
     {
         espd_wifi_ssid[0] = '\0';
         espd_wifi_password[0] = '\0';
-        espd_wifi_force_enable = 0;
         ESP_LOGI(TAG, "wifi: no wifi_ssid in %s — STA off", config_path);
     }
-    else if (ssid_nonempty && !saw_wifi_enable_key)
-        espd_wifi_force_enable = 1;
-    ESP_LOGI(TAG, "wifi: %s (ssid=%s, sta_ok=%d, force=%d, log_port=%d)",
+    ESP_LOGI(TAG, "wifi: %s (ssid=%s, sta_ok=%d, log_port=%d)",
         config_path, espd_wifi_ssid[0] ? espd_wifi_ssid : "(none)",
-        s_wifi_credentials_in_config_txt, espd_wifi_force_enable,
-        espd_log_broadcast_port);
+        s_wifi_credentials_in_config_txt, espd_log_broadcast_port);
 }
 #endif /* ESPD_USE_WIFI */
 
@@ -2058,19 +2038,9 @@ void app_main(void)
 #if !ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     if (espd_wifi_net_enabled)
     {
-        if (espd_storage_local_main_pd_present() &&
-            !ESPD_WIFI_STA_WITH_LOCAL_MAIN_PD && !espd_wifi_force_enable) {
-            espd_wifi_net_enabled = 0;
-            printf("wifi: skipped (main.pd on local storage; set wifi_ssid= or"
-                   " wifi_enable=1 in config.txt to force STA)\n");
-            ESP_LOGI(TAG,
-                "main.pd detected on local storage — skipping WiFi before Pd init");
-        } else {
-            espd_wifi_net_enabled = 1;
-            ESP_LOGI(TAG, "[ 1a ] start network (early for Pd net objects)");
-            wifi_init();
-            espd_wifi_started = 1;
-        }
+        ESP_LOGI(TAG, "[ 1a ] start network (early for Pd net objects)");
+        wifi_init();
+        espd_wifi_started = 1;
     }
 #endif
 #endif
@@ -2086,7 +2056,7 @@ void app_main(void)
 #ifdef ESPD_USE_WIFI
     /* Bring up lwIP + default event loop unconditionally before Pd loads the
      * patch. If the patch contains [netreceive]/[netsend] but Wi-Fi has been
-     * skipped (e.g. wifi_enable=0 or no AP), socket() would otherwise call
+     * skipped (e.g. no wifi_ssid= or no AP), socket() would otherwise call
      * into the tcpip thread before it exists and abort() inside lwIP. This is
      * idempotent and a no-op if wifi_init() already ran above. */
     espd_netif_ensure_init();
@@ -2108,14 +2078,8 @@ void app_main(void)
     {
         ESP_LOGI(TAG, "wifi: STA off — not starting network or legacy patch transport");
     }
-    else if (espd_main_pd_loaded_from_store && !ESPD_WIFI_STA_WITH_LOCAL_MAIN_PD &&
-        !espd_wifi_force_enable) {
-        espd_wifi_net_enabled = 0;
-        ESP_LOGI(TAG,
-                 "main.pd loaded from %s — skipping WiFi and TCP/UDP patch transport",
-                 espd_main_pd_loaded_dir ? espd_main_pd_loaded_dir : ESPD_PATCH_STORE_MOUNT);
-    } else {
-        espd_wifi_net_enabled = 1;
+    else
+    {
         if (!espd_wifi_started) {
             ESP_LOGI(TAG, "[ 1a ] start network");
             wifi_init();

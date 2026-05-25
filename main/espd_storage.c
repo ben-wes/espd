@@ -133,11 +133,6 @@ const char *espd_storage_main_pd_mount_dir(void)
     return s_main_pd_mount;
 }
 
-bool espd_storage_local_main_pd_present(void)
-{
-    return s_main_pd_mount != NULL;
-}
-
 bool espd_storage_spiffs_mounted(void)
 {
     return s_spiffs_mounted;

@@ -205,9 +205,6 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #ifndef ESPD_PATCH_SPIFFS_PARTITION_LABEL
 #define ESPD_PATCH_SPIFFS_PARTITION_LABEL "pdstore"
 #endif
-#ifndef ESPD_WIFI_STA_WITH_LOCAL_MAIN_PD
-#define ESPD_WIFI_STA_WITH_LOCAL_MAIN_PD 0
-#endif
 /* 1 = start legacy espd TCP/UDP transport tasks; 0 = WiFi only for Pd objects. */
 #ifndef ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
 #define ESPD_ENABLE_LEGACY_WIFI_TRANSPORT 1
@@ -233,10 +230,8 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 /* config.txt optional keys (key=value, # comment). Search order: SD card,
  * then SPIFFS at ESPD_PATCH_STORE_MOUNT, then USB MSC (if enabled).
  * WiFi (when ESPD_USE_WIFI): STA starts when config.txt has a non-empty wifi_ssid=
- *   (wifi_password optional). wifi_enable=0 disables STA even if wifi_ssid is set;
- *   wifi_enable=1 forces STA when local main.pd would otherwise skip WiFi
- *   (ESPD_WIFI_STA_WITH_LOCAL_MAIN_PD off). Missing config.txt → with
- *   ESPD_USE_SDCARD, STA stays off; otherwise Kconfig/locale defaults apply.
+ *   (wifi_password optional). Missing config.txt → with ESPD_USE_SDCARD, STA stays
+ *   off; otherwise Kconfig/locale defaults apply.
  *   log_broadcast_port=9001
  *     >0 enables UDP broadcast of Pd print/error output to this port
  *     (when WiFi/net is active); 0 or missing keeps default log routing.
