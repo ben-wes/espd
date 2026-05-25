@@ -9,7 +9,8 @@ patches.
 | Doc | What |
 |-----|------|
 | **[GETTING_STARTED.md](GETTING_STARTED.md)** (this file) | Build, features, configuration |
-| [BOARD_EXAMPLE_WAVESHARE_S3.md](BOARD_EXAMPLE_WAVESHARE_S3.md) | Waveshare build shortcut + button map |
+| [BOARD_EXAMPLE_WAVESHARE_S3.md](BOARD_EXAMPLE_WAVESHARE_S3.md) | Waveshare S3 build shortcut + button map |
+| [BOARD_EXAMPLE_WAVESHARE_P4_NANO.md](BOARD_EXAMPLE_WAVESHARE_P4_NANO.md) | Waveshare P4-NANO + ESP-Hosted Wi-Fi |
 | [ADDING_A_BOARD.md](ADDING_A_BOARD.md) | Add a kit via `boards/*.yaml` |
 | [main/espd.h](../main/espd.h) | `config.txt` keys (comments in source) |
 | [test-patch/](../test-patch/) | Example `main.pd` + `config.txt` |
@@ -19,7 +20,8 @@ patches.
 - [ESP-IDF **v6.0.1**](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html) (`install.sh` once in the IDF tree)
 - USB serial for flash/monitor
 - **Generic I2S:** ESP32 or ESP32-S3 + manual I2S wiring (e.g. INMP441 + MAX98357A)
-- **Board kit (e.g. Waveshare):** ESP32-S3 kit with an esp-bsp package (see [boards/](../boards/))
+- **Board kit (e.g. Waveshare):** ESP32-S3 or ESP32-P4-NANO with an esp-bsp package
+  (see [boards/](../boards/)); P4 uses onboard C6 for Wi-Fi (ESP-Hosted)
 
 ## Clone and prepare
 
