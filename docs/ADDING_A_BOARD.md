@@ -66,18 +66,43 @@ Unselected board plugins are **EXCLUDE_COMPONENTS** until chosen in menuconfig
   boards/mykit.yaml
         │  (gen_board_plugins.py on cmake configure)
         ▼
-  components/espd_board_mykit/     metadata + shared glue SRCS
-        │  idf_component.yml
+  components/espd_board_mykit/     thin plugin: espd profile + espd_integration
+        │  idf_component.yml → pulls BSP package only
         ▼
-  managed esp-bsp package            bsp/esp-bsp.h drivers
+  BSP package (esp-bsp)            hardware: deps, drivers, bsp_* API
         ▲
-  espd_integration                 weak stubs + codec glue
+  espd_integration                 thin glue → bsp_* / weak stubs
         ▲
   main/espd_board.c, espd_io.c     board-agnostic Pd firmware
 ```
 
 **main/** never names a board. **menuconfig → Target board** selects the kit;
 **main** always **REQUIRES espd_boards**, which links the enabled plugin.
+
+### Delegate to the BSP package
+
+The **board support package** (esp-bsp layout: `bsp/esp-bsp.h`, `bsp_audio_init`,
+`bsp_sdcard_mount`, `idf_component.yml`, Kconfig) should own:
+
+- Component Manager dependencies (`esp_codec_dev`, `espressif/usb`, LCD drivers, …)
+- IDF 6 `CMakeLists.txt` `REQUIRES` (`esp_driver_gpio`, `esp_driver_i2s`, …)
+- Pinout, codec, SD, display, touch
+
+The **espd board YAML** should only point at that package and add **espd-specific**
+policy:
+
+| Belongs in BSP package | Belongs in `boards/*.yaml` |
+|----------------------|----------------------------|
+| `idf_component.yml` deps & versions | `features.imply` (ESPD_USE_*) |
+| `CMakeLists.txt` peripheral requires | `profile` (PSRAM, BSP Kconfig, Pd tuning) |
+| `bsp_*` init / mount APIs | `io.buttons` → `espd/din/N` map (optional) |
+| IDF / API updates for new IDF releases | Help text, `target:` |
+
+**Worked examples:** [boards/waveshare_s3.yaml](../boards/waveshare_s3.yaml) and
+[boards/waveshare_p4_nano.yaml](../boards/waveshare_p4_nano.yaml) pull
+[`ben-wes/esp-bsp@waveshare-s3-p4`](https://github.com/ben-wes/esp-bsp/tree/waveshare-s3-p4)
+(`bsp/waveshare_esp32_s3_audio`, `bsp/esp32_p4_nano`). Hardware deps and IDF 6
+fixes live in that fork, not in espd.
 
 ## YAML schema
 

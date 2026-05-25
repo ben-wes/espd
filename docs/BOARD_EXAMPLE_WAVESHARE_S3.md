@@ -19,7 +19,7 @@ TCA9555 expander, WS2812 LED ring, 3 buttons, microSD.
 
 ## esp-bsp source
 
-[`ben-wes/esp-bsp@waveshare-bsp`](https://github.com/ben-wes/esp-bsp/tree/waveshare-bsp)
+[`ben-wes/esp-bsp@waveshare-s3-p4`](https://github.com/ben-wes/esp-bsp/tree/waveshare-s3-p4)
 — fork with fixes ESPD relies on (48 kHz stereo default, codec bus init order,
 ES8311/ES7210 MCLK config). Upstream merge is a publishing step, not an
 architecture change.
