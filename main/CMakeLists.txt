@@ -73,8 +73,6 @@ set(MAIN_SRCS
     "../pd/src/x_vexp_fun.c"
     "../pd/src/x_vexp_if.c"
     "../pd/src/s_inter_gui.c"
-    "../wifi/wifi.c"
-    "../wifi/net.c"
 )
 
 # FIXME: remove these warning suppression flags once Pd is fixed
@@ -89,7 +87,6 @@ set(MAIN_REQUIRES
     esp_timer
     esp_event
     esp_netif
-    esp_wifi
     esp_driver_ledc
     esp_driver_i2s
     esp_driver_i2c
@@ -107,6 +104,12 @@ idf_component_register(
     INCLUDE_DIRS "."
     REQUIRES ${MAIN_REQUIRES}
 )
+
+if(CONFIG_ESPD_USE_WIFI)
+    target_sources(${COMPONENT_LIB} PRIVATE "../wifi/wifi.c" "../wifi/net.c")
+    idf_component_get_property(_main_lib main COMPONENT_LIB)
+    target_link_libraries(${_main_lib} PRIVATE idf::esp_wifi)
+endif()
 
 if(CONFIG_ESPD_AUDIO_BACKEND_BSP_CODEC STREQUAL "y")
     target_sources(${COMPONENT_LIB} PRIVATE "espd_audio_codec.c")
