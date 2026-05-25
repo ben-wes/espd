@@ -105,6 +105,12 @@ idf_component_register(
     REQUIRES ${MAIN_REQUIRES}
 )
 
+if(CONFIG_ESPD_USE_USB_COMPOSITE)
+    idf_component_optional_requires(PRIVATE esp_tinyusb espressif__esp_tinyusb
+        wear_levelling esp_partition)
+    target_link_libraries(${COMPONENT_LIB} PRIVATE idf::fatfs idf::wear_levelling)
+endif()
+
 if(CONFIG_ESPD_USE_WIFI)
     target_sources(${COMPONENT_LIB} PRIVATE "../wifi/wifi.c" "../wifi/net.c")
     idf_component_get_property(_main_lib main COMPONENT_LIB)

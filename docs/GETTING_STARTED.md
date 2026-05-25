@@ -167,11 +167,12 @@ Visible in `idf.py menuconfig`. Rebuild after changes.
 | **Enable adc~ capture** | off (Generic) | Microphone / codec input path |
 | **Audio backend** | Generic I2S / BSP codec | Auto per board |
 | **Enable SD card** | off (Generic) | `/sdcard` mount |
+| **USB mass storage + serial** | off (Generic); on (Waveshare S3/P4) | TinyUSB MSC + CDC on OTG |
 | **Embed fallback test patch** | off (Generic) | Built-in patch if no main.pd |
 | **Enable WiFi** | on | Pd net objects |
 | **Join WiFi when main.pd on disk** | off | Generic profile enables; board kits skip STA by default |
 | **Legacy espd TCP/UDP transport** | on (Generic) | Port 4498 host transport |
-| **USB serial console** | on | Pd print to UART |
+| **Route Pd print / logs to console** | on | UART (Generic) or USB CDC (S3/P4 composite) |
 | **Compile espd/ain** | off | GPIO analog inputs (pots/sensors) |
 | **Compile espd/touch** | off | Capacitive touch |
 | **Compile espd/aout** | off | PWM outputs |

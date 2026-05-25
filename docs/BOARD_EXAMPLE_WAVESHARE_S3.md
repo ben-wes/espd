@@ -36,6 +36,28 @@ idf.py build flash monitor
 
 First build downloads the BSP into **managed_components/** (network required).
 
+## USB (composite MSC + serial)
+
+USB **OTG** exposes a **MSC drive** (`storage` partition) and **CDC serial** for
+logs. Board profile sets `ESPD_USB_CONSOLE_CDC` and `ESP_CONSOLE_NONE`. TinyUSB
+runs on **CPU0**; Pd/audio on **CPU1**.
+
+```bash
+grep -E 'ESPD_USB_CONSOLE_CDC|ESP_CONSOLE' sdkconfig
+# expect CONFIG_ESPD_USB_CONSOLE_CDC=y and CONFIG_ESP_CONSOLE_NONE=y
+```
+
+**Monitor:** `idf.py -p /dev/cu.usbmodem* monitor`, then press **RESET**. USB
+re-enumerates once at boot (MSC + CDC). Do not use `debug-console` for app logs.
+
+**Flash:** hold **BOOT**, tap **RESET**, release **BOOT** when esptool connects.
+After flash, **RESET** normally (not `waiting for download`).
+
+First boot may **format** `storage` (quiet for several seconds). `[cputime]` can
+rise during large Finder copies; eject the drive when done.
+
+See [tusb_composite_msc_serialdevice](https://github.com/espressif/esp-idf/tree/v6.0.1/examples/peripherals/usb/device/tusb_composite_msc_serialdevice).
+
 ## Buttons
 
 Waveshare YAML maps physical keys to **`espd/din/0..2`** (numeric, not named):
