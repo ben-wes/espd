@@ -1,0 +1,4 @@
+# ESP32-P4 — Pd main-task stack. Flash size and PSRAM are board-specific (see
+# espd_board_*/sdkconfig.defaults or menuconfig).
+
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536

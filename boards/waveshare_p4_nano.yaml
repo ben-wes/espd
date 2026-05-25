@@ -1,18 +1,16 @@
-# ESPD board definition — source of truth for components/espd_board_waveshare_s3/
+# ESPD board definition — source of truth for components/espd_board_waveshare_p4_nano/
 # Regenerated on every CMake configure (scripts/gen_board_plugins.py).
 
-id: waveshare_s3
-name: Waveshare ESP32-S3-AUDIO
-target: esp32s3
+id: waveshare_p4_nano
+name: Waveshare ESP32-P4-NANO
+target: esp32p4
 help: |
-  Waveshare AI Smart Speaker / ESP32-S3-AUDIO Board (ES8311 DAC,
-  ES7210 mic). Fetches esp-bsp via Component Manager.
+  Waveshare ESP32-P4-NANO (ES8311 codec, microSD, optional DSI display).
+  Official BSP from the Espressif Component Registry.
 
 bsp:
-  component: waveshare_esp32_s3_audio
-  git: https://github.com/ben-wes/esp-bsp.git
-  path: bsp/waveshare_esp32_s3_audio
-  version: waveshare-bsp
+  component: waveshare/esp32_p4_nano
+  version: "^1.2.0"
 
 features:
   imply:
@@ -21,9 +19,6 @@ features:
     - ESPD_USE_AIN
     - ESPD_USE_AOUT
     - ESPD_USE_WIFI
-
-io:
-  buttons: [VOLUP, PLAY, VOLDOWN]
 
 profile:
   ESPD features:
@@ -35,35 +30,20 @@ profile:
   Board hardware:
     ESPTOOLPY_FLASHSIZE_16MB: y
     SPIRAM: y
-    SPIRAM_MODE_OCT: y
-    SPIRAM_SPEED_80M: y
+    SPIRAM_MODE_HEX: y
+    SPIRAM_SPEED_200M: y
     SPIRAM_BOOT_INIT: y
     SPIRAM_USE_MALLOC: y
-    SPIRAM_TRY_ALLOCATE_WIFI_LWIP: y
     SPIRAM_MALLOC_ALWAYSINTERNAL: 16384
     SPIRAM_MALLOC_RESERVE_INTERNAL: 65536
-    ESP32S3_REV_MIN_2: y
-    ESP32S3_REV_MIN_FULL: 2
-    ESP_REV_MIN_FULL: 2
     CODEC_ES8311_SUPPORT: y
-    CODEC_ES7210_SUPPORT: y
     BSP_SD_MOUNT_POINT: '"/sdcard"'
-    IO_EXPANDER_ENABLE_GPIO_API_WRAPPER: y
   Pd runtime tuning:
-    ESP_DEFAULT_CPU_FREQ_MHZ_240: y
     ESP_MAIN_TASK_AFFINITY_CPU1: y
     ESP_MAIN_TASK_AFFINITY: "0x1"
-    ESP_WIFI_TASK_PINNED_TO_CORE_0: y
-    LWIP_TCPIP_TASK_AFFINITY_CPU0: y
-    LWIP_TCPIP_TASK_AFFINITY: "0x0"
-    ESP_TIMER_TASK_AFFINITY: "0x0"
-    ESP_TIMER_TASK_AFFINITY_CPU0: y
     PTHREAD_TASK_STACK_SIZE_DEFAULT: 8192
     PTHREAD_TASK_PRIO_DEFAULT: 5
     PTHREAD_TASK_CORE_DEFAULT: 0
-    ESP_WIFI_STATIC_RX_BUFFER_NUM: 8
-    ESP_WIFI_DYNAMIC_RX_BUFFER_NUM: 16
-    ESP_WIFI_DYNAMIC_TX_BUFFER_NUM: 16
     LWIP_MAX_SOCKETS: 8
     LWIP_IPV6: y
     MBEDTLS_TLS_CLIENT_ONLY: y
