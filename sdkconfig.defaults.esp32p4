@@ -1,4 +1,5 @@
-# ESP32-P4 — Pd main-task stack. Flash size and PSRAM are board-specific (see
-# espd_board_*/sdkconfig.defaults or menuconfig).
+# ESP32-P4 — pre-select Waveshare P4 Nano after set-target (override in menuconfig).
+CONFIG_ESPD_BOARD_WAVESHARE_P4_NANO=y
 
+# Pd main-task stack. Flash/PSRAM: espd_board_waveshare_p4_nano/sdkconfig.defaults.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536
