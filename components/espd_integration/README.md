@@ -35,8 +35,8 @@ Headers in **include/bsp/**:
 | Generic I2S | **espd_audio_generic.c** | Manual GPIO I2S |
 | BSP codec | **espd_audio_codec.c** | **espd_bsp_audio_*** (**espd_integration** implements codec I/O) |
 
-`esp_codec_dev` is a managed dep of **espd_integration** itself, so board
-plugins inherit it transitively via their `path:` dep on espd_integration.
+`esp_codec_dev` is pulled by the board BSP package; **espd_integration** only
+links it when the BSP codec backend is enabled (`PRIV_REQUIRES` + the line above).
 
 ## Adding a new board
 

@@ -3,9 +3,7 @@
  *
  * espd_board_* plugins implement espd_bsp_audio_hw_init() (kit-specific).
  * espd_integration/espd_bsp_codec_dev.c implements codec I/O when the BSP
- * backend is selected; espd_integration declares espressif/esp_codec_dev
- * itself, so plugins inherit it transitively via their `path:` dep on
- * espd_integration in idf_component.yml.
+ * backend is selected; the BSP package provides espressif/esp_codec_dev.
  */
 #pragma once
 

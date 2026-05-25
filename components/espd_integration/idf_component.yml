@@ -1,4 +1,3 @@
-## Declares managed deps for this component (see REQUIRES in CMakeLists.txt).
 dependencies:
   idf: ">=6.0.1,<6.1"
   espressif/esp_codec_dev:

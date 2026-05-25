@@ -12,6 +12,10 @@
 #include "esp_check.h"
 #include "esp_log.h"
 
+#ifndef BSP_AUDIO_MCLK_MULTIPLE
+#define BSP_AUDIO_MCLK_MULTIPLE I2S_MCLK_MULTIPLE_384
+#endif
+
 static const char *TAG = "espd_bsp";
 
 esp_err_t espd_bsp_audio_hw_init(const espd_bsp_audio_hw_params_t *params,
@@ -50,6 +54,12 @@ esp_err_t espd_bsp_audio_hw_init(const espd_bsp_audio_hw_params_t *params,
     mclk_multiple = params->mclk_multiple ? params->mclk_multiple
                                          : BSP_AUDIO_MCLK_MULTIPLE;
     std_cfg.clk_cfg.mclk_multiple = mclk_multiple;
+
+    ESP_RETURN_ON_ERROR(bsp_i2c_init(), TAG, "bsp_i2c_init");
+#if BSP_CAPS_BUTTONS
+    ESP_RETURN_ON_FALSE(bsp_io_expander_init() != NULL, ESP_FAIL, TAG,
+        "io expander");
+#endif
 
     ESP_RETURN_ON_ERROR(bsp_audio_init(&std_cfg), TAG, "bsp_audio_init");
 

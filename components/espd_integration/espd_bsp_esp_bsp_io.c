@@ -18,8 +18,19 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
+#ifndef BSP_CAPS_BUTTONS
+#define BSP_CAPS_BUTTONS 0
+#endif
+
+#if BSP_CAPS_BUTTONS
 #include "iot_button.h"
+#endif
+
+#if defined(BSP_LED_STRIP_NUM) && defined(BSP_LED_STRIP_IO)
 #include "led_strip.h"
+#define ESPD_BSP_HAVE_LED 1
+#endif
 
 #if __has_include("espd_board_io_config.h")
 #include "espd_board_io_config.h"
@@ -31,6 +42,7 @@
 
 static const char *TAG = "espd_bsp";
 
+#if BSP_CAPS_BUTTONS
 #ifndef ESPD_BSP_BUTTON_MAP_DEFAULT
 static const bsp_button_t s_button_map[] = ESPD_BSP_BUTTON_MAP;
 #endif
@@ -38,10 +50,14 @@ static const bsp_button_t s_button_map[] = ESPD_BSP_BUTTON_MAP;
 static button_handle_t s_buttons[BSP_BUTTON_NUM];
 static int s_button_exposed_count;
 static bool s_buttons_ready;
+static void (*s_button_handler)(int idx, int pressed);
+#endif
+
+#ifdef ESPD_BSP_HAVE_LED
 static led_strip_handle_t s_strip;
 static TaskHandle_t s_refresh_task;
 static volatile int s_led_dirty;
-static void (*s_button_handler)(int idx, int pressed);
+#endif
 
 #define ESPD_BSP_DIN_QUEUE_LEN 16
 
@@ -54,7 +70,9 @@ static espd_bsp_din_event_t s_din_queue[ESPD_BSP_DIN_QUEUE_LEN];
 static volatile uint8_t s_din_qhead;
 static volatile uint8_t s_din_qtail;
 
+#if BSP_CAPS_BUTTONS
 static void espd_bsp_button_event(void *button_handle, void *usr_data);
+#endif
 
 #ifndef ESPD_LED_REFRESH_TASK_PRIO
 #define ESPD_LED_REFRESH_TASK_PRIO 2
@@ -66,6 +84,7 @@ static void espd_bsp_button_event(void *button_handle, void *usr_data);
 #define ESPD_LED_REFRESH_MIN_INTERVAL_MS 10
 #endif
 
+#ifdef ESPD_BSP_HAVE_LED
 static void espd_bsp_led_refresh_task(void *arg)
 {
     (void)arg;
@@ -79,7 +98,9 @@ static void espd_bsp_led_refresh_task(void *arg)
         ulTaskNotifyTake(pdTRUE, 0);
     }
 }
+#endif /* ESPD_BSP_HAVE_LED */
 
+#if BSP_CAPS_BUTTONS
 static void espd_bsp_button_register(button_handle_t btn, int map_idx)
 {
 #if BUTTON_VER_MAJOR >= 4
@@ -94,7 +115,9 @@ static void espd_bsp_button_register(button_handle_t btn, int map_idx)
         espd_bsp_button_event, (void *)(intptr_t)map_idx);
 #endif
 }
+#endif /* BSP_CAPS_BUTTONS */
 
+#if BSP_CAPS_BUTTONS
 static int espd_bsp_din_queue_push(int idx, int pressed)
 {
     uint8_t head = s_din_qhead;
@@ -128,7 +151,9 @@ static void espd_bsp_button_event(void *button_handle, void *usr_data)
         ESP_LOGW(TAG, "din queue full (dropped btn %d %s)", map_idx,
             pressed ? "down" : "up");
 }
+#endif /* BSP_CAPS_BUTTONS */
 
+#ifdef ESPD_BSP_HAVE_LED
 int bsp_led_count(void)
 {
     return s_strip ? BSP_LED_STRIP_NUM : 0;
@@ -212,7 +237,9 @@ void bsp_led_mark_dirty(void)
     if (s_refresh_task)
         xTaskNotifyGive(s_refresh_task);
 }
+#endif /* ESPD_BSP_HAVE_LED */
 
+#if BSP_CAPS_BUTTONS
 int bsp_button_count(void)
 {
     return s_buttons_ready ? s_button_exposed_count : 0;
@@ -276,13 +303,11 @@ void bsp_button_poll(void)
             s_button_handler(ev.idx, ev.pressed);
     }
 }
+#endif /* BSP_CAPS_BUTTONS */
 
 esp_err_t espd_bsp_sdcard_mount(const char *mount_point)
 {
 #ifdef BSP_SD_MOUNT_POINT
-    if (bsp_sdcard_get_handle() != NULL)
-        return ESP_OK;
-
     if (mount_point && strcmp(mount_point, BSP_SD_MOUNT_POINT) != 0)
         ESP_LOGW(TAG, "mount_point %s ignored (BSP uses %s)",
             mount_point, BSP_SD_MOUNT_POINT);
@@ -299,8 +324,23 @@ esp_err_t espd_bsp_sdcard_mount(const char *mount_point)
     }
 #endif
 
+#if __has_include("bsp/esp_bsp_sdcard.h")
+    if (bsp_sdcard_get_handle() != NULL)
+        return ESP_OK;
+
     {
         bsp_sdcard_cfg_t cfg = {0};
         return bsp_sdcard_sdmmc_mount(&cfg);
     }
+#elif BSP_CAPS_SDCARD && defined(BSP_SDCARD_HAS_GET_HANDLE)
+    if (bsp_sdcard_get_handle() != NULL)
+        return ESP_OK;
+    (void)mount_point;
+    return bsp_sdcard_mount();
+#elif BSP_CAPS_SDCARD
+    (void)mount_point;
+    return bsp_sdcard_mount();
+#else
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
 }

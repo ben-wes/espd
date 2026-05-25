@@ -1,8 +1,7 @@
 /*
  * Shared esp_codec_dev glue for the BSP audio backend (all esp-bsp boards).
  * Compiled when CONFIG_ESPD_AUDIO_BACKEND_BSP_CODEC. **espd_integration**
- * declares **espressif/esp_codec_dev** itself, so any **espd_board_***
- * plugin gets it transitively via its `path:` dep on espd_integration.
+ * links **espressif/esp_codec_dev** (from the board BSP + idf_component.yml above).
  */
 
 #include "espd_bsp_audio.h"
