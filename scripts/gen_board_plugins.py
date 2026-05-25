@@ -29,7 +29,8 @@ if(CONFIG_ESPD_BOARD_ESP_BSP_GLUE)
         SRCS
             "${{_espd_glue}}/espd_bsp_esp_bsp_audio.c"
             "${{_espd_glue}}/espd_bsp_esp_bsp_io.c"
-        INCLUDE_DIRS "."
+        INCLUDE_DIRS "." "${{CMAKE_CURRENT_LIST_DIR}}"
+        REQUIRES espd_integration {bsp_component}
     )
 else()
     idf_component_register()
@@ -121,6 +122,11 @@ def _gen_idf_component_yml(data: dict, src: str) -> str:
         lines.append(f"    version: \"{ver}\"\n")
     else:
         raise ValueError(f"{src}: bsp needs git or registry version")
+    if data.get("hosted_wifi"):
+        lines.append("  espressif/esp_wifi_remote:\n")
+        lines.append('    version: ">=0.10,<2.0"\n')
+        lines.append("  espressif/esp_hosted:\n")
+        lines.append('    version: "~2"\n')
     return "".join(lines)
 
 
@@ -181,7 +187,10 @@ def _generate_board(repo: Path, yaml_path: Path) -> Path:
     out_dir = repo / "components" / f"espd_board_{data['id']}"
     _write_if_changed(out_dir / "Kconfig.board", _gen_kconfig(data, rel_src))
     _write_if_changed(out_dir / "idf_component.yml", _gen_idf_component_yml(data, rel_src))
-    _write_if_changed(out_dir / "CMakeLists.txt", CMAKE_GLUE.format(src=rel_src))
+    _write_if_changed(
+        out_dir / "CMakeLists.txt",
+        CMAKE_GLUE.format(src=rel_src, bsp_component=data["bsp"]["component"]),
+    )
     _write_if_changed(out_dir / "sdkconfig.defaults", _gen_sdkconfig_defaults(data, rel_src))
 
     io_cfg = _gen_io_config(data, rel_src)
