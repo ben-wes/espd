@@ -37,10 +37,17 @@
 #include "esp_timer.h"
 #include <stdlib.h>
 #include <stdint.h>
+#if CONFIG_ESPD_DEV_CDC_SYNC
+#include "espd_dev.h"
+#endif
 #if CONFIG_ESPD_USE_USB_COMPOSITE
 #include "esp_partition.h"
 #include "freertos/semphr.h"
 #include "wear_levelling.h"
+#if CONFIG_FATFS_USE_LABEL
+#include "diskio/diskio_wl.h"
+#include "ff.h"
+#endif
 #include "tinyusb.h"
 #include "tinyusb_msc.h"
 #include "tinyusb_cdc_acm.h"
@@ -1539,6 +1546,30 @@ static void espd_touch_poll(void)
 #define ESPD_USB_INIT_TASK_PRIO     2
 #define ESPD_USB_DEVICE_TASK_PRIO   4  /* step 2: drain MSC FIFO during host writes */
 
+#if CONFIG_ESPD_USE_USB_COMPOSITE && CONFIG_FATFS_USE_LABEL
+static void espd_usb_apply_msc_volume_label(void)
+{
+    const char *label = CONFIG_ESPD_MSC_VOLUME_LABEL;
+    unsigned char pdrv;
+    char spec[16];
+    FRESULT fr;
+
+    if (!label || !label[0])
+        return;
+    pdrv = ff_diskio_get_pdrv_wl(wl_handle);
+    if (pdrv == 0xff)
+        return;
+    snprintf(spec, sizeof(spec), "%u:%.11s", (unsigned)pdrv, label);
+    fr = f_setlabel(spec);
+    if (fr != FR_OK)
+        ESP_LOGW(TAG, "USB: volume label '%s' failed (%d)", label, (int)fr);
+    else
+        ESP_LOGI(TAG, "USB: MSC volume label '%.11s'", label);
+}
+#else
+static void espd_usb_apply_msc_volume_label(void) {}
+#endif
+
 static void usb_init_on_core0(void)
 {
     const esp_partition_t *data_partition = esp_partition_find_first(
@@ -1575,6 +1606,7 @@ static void usb_init_on_core0(void)
         return;
     }
     ESP_LOGI(TAG, "USB: MSC at %s (partition storage)", ESPD_STORAGE_MOUNT);
+    espd_usb_apply_msc_volume_label();
 
     tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
     tusb_cfg.task = TINYUSB_TASK_CUSTOM(
@@ -1585,14 +1617,24 @@ static void usb_init_on_core0(void)
         return;
     }
 
+#if CONFIG_ESPD_DEV_CDC_SYNC
+    tinyusb_config_cdcacm_t acm_cfg = {
+        .cdc_port = TINYUSB_CDC_ACM_0,
+        .callback_rx = espd_dev_cdc_rx_cb,
+    };
+#else
     tinyusb_config_cdcacm_t acm_cfg = {
         .cdc_port = TINYUSB_CDC_ACM_0,
     };
+#endif
     err = tinyusb_cdcacm_init(&acm_cfg);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "USB: CDC init: %s", esp_err_to_name(err));
     }
 
+#if CONFIG_ESPD_DEV_CDC_SYNC
+    espd_dev_init();
+#endif
 #if CONFIG_ESPD_USB_CONSOLE_CDC && CONFIG_ESPD_USE_CONSOLE
     err = tinyusb_console_init(TINYUSB_CDC_ACM_0);
     if (err != ESP_OK) {
@@ -2107,6 +2149,13 @@ void app_main(void)
         espd_touch_poll();
 #endif
         espd_io_poll();
+
+#if CONFIG_ESPD_DEV_CDC_SYNC
+        if (espd_dev_reload_pending()) {
+            pdmain_reload_patch();
+            espd_dev_clear_reload_pending();
+        }
+#endif
 
         pdmain_tick();
 #ifdef ESPD_USE_WIFI

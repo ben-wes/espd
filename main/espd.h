@@ -290,6 +290,8 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 
 #include "espd_storage.h"
 
+void pdmain_reload_patch(void);
+
 extern int espd_main_pd_loaded_from_store;
 /** If a local main.pd was opened, which directory it was loaded from (e.g. /sdcard or /espd_pd). */
 extern const char *espd_main_pd_loaded_dir;

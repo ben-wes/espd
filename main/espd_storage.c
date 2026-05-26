@@ -165,3 +165,20 @@ bool espd_storage_main_pd_exists(void)
     return false;
 #endif
 }
+
+bool espd_storage_sdcard_ready(void)
+{
+#ifdef ESPD_USE_SDCARD
+    struct stat st;
+    if (stat(ESPD_SDCARD_MOUNT, &st) != 0 || !S_ISDIR(st.st_mode))
+        return false;
+    return true;
+#else
+    return false;
+#endif
+}
+
+void espd_storage_refresh_paths(void)
+{
+    espd_storage_resolve_paths();
+}

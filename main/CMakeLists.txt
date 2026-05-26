@@ -6,6 +6,7 @@ set(MAIN_SRCS
     "pd_posix_file_compat.c"
     "pd_pdcontrol_compat.c"
     "espd_storage.c"
+    "espd_dev.c"
     "pdmain.c"
     "espdsp_osc_override.c"
     "pd_cputime_compat.c"

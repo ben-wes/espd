@@ -26,3 +26,9 @@ bool espd_patch_store_is_mounted(void);
 bool espd_patch_store_main_pd_exists(void);
 bool espd_sdcard_main_pd_exists(void);
 bool espd_storage_main_pd_exists(void);
+
+/** Re-probe config.txt / main.pd after files change on SD (e.g. CDC PUT). */
+void espd_storage_refresh_paths(void);
+
+/** True when the SD card VFS mount is present. */
+bool espd_storage_sdcard_ready(void);

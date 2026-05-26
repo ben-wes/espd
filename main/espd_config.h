@@ -23,6 +23,10 @@
 #define ESPD_USE_SDCARD 1
 #endif
 
+#if CONFIG_ESPD_DEV_CDC_SYNC
+#define ESPD_DEV_CDC_SYNC 1
+#endif
+
 #if CONFIG_ESPD_USE_AIN
 #define ESPD_USE_AIN 1
 #endif

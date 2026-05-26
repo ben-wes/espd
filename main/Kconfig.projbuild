@@ -84,23 +84,45 @@ config ESPD_INCLUDEPATCH
     help
         Used when no main.pd is found on SD or SPIFFS at boot.
 
-config ESPD_USE_USB_COMPOSITE
-    bool "USB mass storage + serial (TinyUSB composite)"
+menu "USB composite (OTG)"
     depends on SOC_USB_OTG_SUPPORTED
-    default n
-    help
-        Expose the flash "storage" partition as a USB drive on the USB OTG port
-        (ESP32-S3, ESP32-P4). Optional CDC serial on OTG (see below). Original
-        ESP32 has no USB OTG. Patches/config: SD, SPIFFS, or /storage.
 
-config ESPD_USB_CONSOLE_CDC
-    bool "Route logs/printf to TinyUSB CDC (OTG port)"
-    depends on ESPD_USE_USB_COMPOSITE && TINYUSB_CDC_ENABLED
-    default n
-    help
-        Composite mode: set ESP-STDIO console to None and enable this so
-        idf.py monitor uses the OTG CDC port (cu.usbmodem* on macOS). MSC and
-        CDC share one OTG cable. Prefer: idf.py -p PORT monitor --no-reset.
+    config ESPD_USE_USB_COMPOSITE
+        bool "Enable USB MSC + CDC on OTG port"
+        default n
+        help
+            Expose the flash "storage" partition as a USB drive and optional CDC
+            serial on the USB OTG port (ESP32-S3, ESP32-P4). Patches/config: SD,
+            SPIFFS, or /storage. See docs/DEV_SYNC.md for rapid SD development.
+
+    config ESPD_USB_CONSOLE_CDC
+        bool "Route logs/printf to TinyUSB CDC (OTG port)"
+        depends on ESPD_USE_USB_COMPOSITE && TINYUSB_CDC_ENABLED
+        default n
+        help
+            Set ESP-STDIO console to None and route printf/logs to the OTG CDC
+            port (cu.usbmodem* on macOS). Use: idf.py -p PORT monitor --no-reset
+
+    config ESPD_MSC_VOLUME_LABEL
+        string "Internal flash MSC volume label (Finder name)"
+        depends on ESPD_USE_USB_COMPOSITE && FATFS_USE_LABEL
+        default "ESPD"
+        help
+            FAT volume label for the USB mass-storage partition (max 11
+            characters). This is the disk name shown in Finder/macOS, not the
+            TinyUSB product string (see Component config → TinyUSB for that).
+
+    config ESPD_DEV_CDC_SYNC
+        bool "CDC rapid patch sync to SD card (PUT/RELOAD)"
+        depends on ESPD_USE_SDCARD && ESPD_USE_USB_COMPOSITE && ESPD_USB_CONSOLE_CDC
+        default y if ESPD_USE_SDCARD && ESPD_USE_USB_COMPOSITE && ESPD_USB_CONSOLE_CDC
+        default n
+        help
+            Listen on the CDC port for espd_sync.py (PUT, RELOAD, PING). Writes
+            go to /sdcard only; internal flash MSC is unchanged. Requires
+            microSD in the device. See docs/DEV_SYNC.md.
+
+endmenu
 
 endmenu
 

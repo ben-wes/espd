@@ -67,6 +67,8 @@ First boot may **format** `storage` (quiet for several seconds).
 
 See [USB_MSC_AND_AUDIO.md](USB_MSC_AND_AUDIO.md) for optional copy/audio tuning.
 
+**Rapid patch dev:** microSD + [DEV_SYNC.md](DEV_SYNC.md) (`espd_sync.py` over CDC).
+
 See [tusb_composite_msc_serialdevice](https://github.com/espressif/esp-idf/tree/v6.0.1/examples/peripherals/usb/device/tusb_composite_msc_serialdevice).
 
 ## Buttons

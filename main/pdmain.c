@@ -245,6 +245,32 @@ void pd_sendmsg(char *buf, int bufsize)
 
 extern float soundin[], soundout[];
 void  canvas_start_dsp( void);
+
+void pdmain_reload_patch(void)
+{
+    const char *dir = NULL;
+    t_canvas *c;
+
+    if (!espd_storage_sdcard_ready()) {
+        pdmain_print("reload: insert SD card (/sdcard)\n");
+        return;
+    }
+    dir = ESPD_SDCARD_MOUNT;
+
+    while ((c = pd_getcanvaslist()) != NULL)
+        pd_free((t_pd *)c);
+
+    espd_add_patch_dir_to_searchpath(dir);
+    {
+        t_pd *loaded = glob_evalfile(0, gensym("main.pd"), gensym(dir));
+        espd_main_pd_loaded_from_store = 1;
+        espd_main_pd_loaded_dir = dir;
+        if (loaded && *loaded == canvas_class)
+            canvas_update_dsp();
+    }
+    pdmain_print("reload: main.pd\n");
+}
+
 void pdmain_init( void)
 {
     sys_printhook = pdmain_print;
