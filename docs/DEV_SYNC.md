@@ -60,14 +60,18 @@ the same port simultaneously.
 
 | Stream | Pattern | Meaning |
 |--------|---------|---------|
-| stderr `→ …` | host command | dev sync (PUT / PING / RELOAD) |
-| stderr `+OK` / `-ERR` | device reply | dev protocol |
-| stdout `cpu:` | Pd load meter | patch DSP usage |
+| stderr `→ …` | host → device | dev sync (PUT / PING / RELOAD) |
+| stderr `← …` | device → host | `+OK` / `-ERR` replies (UTF-8 arrows; fine on macOS Terminal) |
 | stdout `I/W/E (…) tag:` | ESP-IDF | storage, WiFi, USB init |
+| stdout *anything else* | Pd | `[print]` messages, etc. |
 
-With a TTY, `espd_sync.py` colorizes these (cyan/green/red dev, yellow Pd, dim ESP).
-Use `--no-color` or `--no-esp-log` to tone it down. There is no binary framing — only
-line prefixes distinguish dev vs Pd vs ESP on the shared serial stream.
+`ESP_LOG` is **not** on CDC by default in IDF — only `printf`/stdout is. Firmware calls
+`esp_log_set_vprintf()` after USB console init so `I/W/E (…) tag:` lines appear on the
+same port (with log level INFO when USB console CDC is enabled).
+
+With a TTY, `espd_sync.py` colorizes these (cyan/green/red dev, bright white Pd, dim ESP).
+Use `--no-color` or `--no-esp-log` to tone it down. There is no binary framing — dev
+and ESP are recognized by line prefix; all other lines are treated as Pd output.
 
 Quick check (after `idf.py flash` and board **RESET**):
 

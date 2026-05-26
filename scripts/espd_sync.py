@@ -37,17 +37,16 @@ _STYLES = {
     "dev-ok": "\033[32m",
     "dev-err": "\033[31m",
     "dev-tx": "\033[36m",
-    "pd": "\033[33m",
+    "pd": "\033[97m",
     "esp-i": "\033[90m",
     "esp-d": "\033[90m",
     "esp-v": "\033[90m",
     "esp-w": "\033[93m",
     "esp-e": "\033[31m",
     "script": "\033[2m",
-    "misc": "",
 }
 
-# Device lines: +OK / -ERR (dev protocol). Pd: cpu:. ESP-IDF: I (123) tag: msg
+# Dev: +OK / -ERR. ESP-IDF: I (123) tag:. Everything else → Pd ([print], [stdout], cpu:, …)
 _ESP_LOG_RE = re.compile(rb"^[IWEDV] \(\d+\) ")
 
 
@@ -56,11 +55,9 @@ def classify_line(line: bytes) -> str:
         return "dev-err"
     if line.startswith(b"+"):
         return "dev-ok"
-    if line.startswith(b"cpu:"):
-        return "pd"
     if _ESP_LOG_RE.match(line):
         return "esp-" + line[:1].decode().lower()
-    return "misc"
+    return "pd"
 
 
 def _styled(stream, text: str, kind: str) -> None:
@@ -83,18 +80,17 @@ def log_dev_tx(cmd: str) -> None:
 def log_dev_rx(line: bytes) -> None:
     text = line.decode(errors="replace")
     kind = classify_line(line)
-    _styled(sys.stderr, text, kind)
+    _styled(sys.stderr, f"← {text}", kind)
 
 
 def log_device_line(line: bytes) -> None:
     kind = classify_line(line)
-    if kind.startswith("esp-") and not _out.show_esp:
-        return
-    stream = sys.stdout if kind in ("pd", "misc") or kind.startswith("esp-") else sys.stderr
-    if kind.startswith("esp-") or kind == "pd":
-        _styled(stream, line.decode(errors="replace"), kind)
+    if kind.startswith("esp-"):
+        if not _out.show_esp:
+            return
+        _styled(sys.stdout, line.decode(errors="replace"), kind)
     else:
-        _styled(stream, line.decode(errors="replace"), kind)
+        _styled(sys.stdout, line.decode(errors="replace"), "pd")
 
 
 def _need_serial():
@@ -311,8 +307,7 @@ def connect_cdc(port_pattern: str, debug: bool = False) -> EspdCdc:
     else:
         raise last_err or TimeoutError("device reply timeout")
 
-    log_script(f"connected ({port})")
-    log_dev_rx(line)
+    log_script(f"connected ({port}): {line.decode(errors='replace')}")
     return cdc
 
 

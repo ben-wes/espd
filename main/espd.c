@@ -37,6 +37,7 @@
 #include "esp_timer.h"
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdarg.h>
 #if CONFIG_ESPD_DEV_CDC_SYNC
 #include "espd_dev.h"
 #endif
@@ -1546,6 +1547,14 @@ static void espd_touch_poll(void)
 #define ESPD_USB_INIT_TASK_PRIO     2
 #define ESPD_USB_DEVICE_TASK_PRIO   4  /* step 2: drain MSC FIFO during host writes */
 
+#if CONFIG_ESPD_USB_CONSOLE_CDC && CONFIG_ESPD_USE_CONSOLE
+/* After tinyusb_console_init (inside usb_init). Do not call from usb_init_on_core0. */
+static int espd_cdc_log_vprintf(const char *fmt, va_list ap)
+{
+    return vfprintf(stdout, fmt, ap);
+}
+#endif
+
 #if CONFIG_ESPD_USE_USB_COMPOSITE && CONFIG_FATFS_USE_LABEL
 static void espd_usb_apply_msc_volume_label(void)
 {
@@ -1982,7 +1991,11 @@ unsigned int espd_cputime_get(void)
 
 void app_main(void)
 {
+#if CONFIG_ESPD_USB_CONSOLE_CDC && CONFIG_ESPD_USE_CONSOLE
+    esp_log_level_set("*", ESP_LOG_INFO);
+#else
     esp_log_level_set("*", ESP_LOG_WARN);
+#endif
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
 #if CONFIG_ESP_MAIN_TASK_STACK_SIZE < 16384
@@ -2020,6 +2033,9 @@ void app_main(void)
 
 #if CONFIG_ESPD_USE_USB_COMPOSITE
     usb_init();
+#if CONFIG_ESPD_USB_CONSOLE_CDC && CONFIG_ESPD_USE_CONSOLE
+    esp_log_set_vprintf(espd_cdc_log_vprintf);
+#endif
 #endif
 
     espd_board_early_init();
