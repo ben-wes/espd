@@ -22,20 +22,29 @@ independent; flash MSC can stay mounted for other files.
 
 | Option | Purpose |
 |--------|---------|
-| **Enable TinyUSB device stack** | OTG USB device — turn on first; sub-options appear below |
+| **Enable TinyUSB device stack** | OTG USB device + CDC serial (`print`, ESP_LOG on `cu.usbmodem*`) |
 | **USB mass storage** | Internal-flash drive in Finder (default on; uncheck to omit) |
-| **Serial on OTG CDC** | Pd `print` / `printf`, `espd_sync` on OTG `cu.usbmodem*` (default on) |
-| **CDC rapid patch sync** | `espd_sync.py` PUT/RELOAD → `/sdcard` (needs SD) |
+| **Patch sync over OTG CDC** | `espd_sync` PUT/RELOAD/PING — needs **Enable SD card** and a mounted card |
 | **MSC volume label** | Finder disk name when MSC is enabled |
 
 **Logs on OTG CDC:** `tinyusb_console_init` sends both Pd `print:` and `ESP_LOG`
 (`I (…) tag:`) to `cu.usbmodem…`. Boot `ESP_LOG` is mostly gone by the time
 `espd_sync` connects; you still see lines on **RELOAD**, **DTR connect**, etc.
-`cu.debug-console` is for flash, not app logs with this firmware.
+**Do not flash on `cu.debug-console`.** On macOS it often appears beside
+`cu.usbmodem*`, but with this OTG firmware esptool gets **no serial data** there
+(`Failed to connect … No serial data received`). App logs and `espd_sync` use
+**OTG CDC** (`cu.usbmodem*`) while the board is running.
+
+**Reflash:** hold **BOOT**, tap **RESET**, release **BOOT** when esptool’s dots
+connect, then `idf.py flash` (omit `-p` or use the port that responds — often
+`cu.usbmodem*`, not `debug-console`). Auto-reset while the TinyUSB app is running
+usually fails. After flash, **RESET** and sync on `cu.usbmodem*`.
+
 USB product strings: **Component config → TinyUSB**.
 
-Waveshare profiles default-enable OTG with MSC + CDC + dev sync. Uncheck **USB mass
-storage** only if you do not want the flash drive on the cable.
+Waveshare profiles default-enable OTG with MSC + patch sync. Uncheck **USB mass
+storage** if you do not want the flash drive on the cable; uncheck **Patch sync**
+if you only need serial, not `espd_sync`.
 
 CDC commands (host → device):
 
@@ -58,7 +67,7 @@ python3 scripts/espd_sync.py -p /dev/cu.usbmodem1234561 ~/my_pd_project
 ```
 
 If `ls /dev/cu.usb*` shows **more than one** `usbmodem` device, pass the **OTG CDC**
-port explicitly (not USB-JTAG ROM). Flash uses `cu.debug-console`.
+port explicitly for `espd_sync` (the one that answers `PING` after a normal **RESET**).
 
 Edit and save in Pure Data on the Mac; the script watches the folder, `PUT`s changed
 `.pd` / `config.txt` files, then sends `RELOAD`.
@@ -110,8 +119,8 @@ Use the **USB flash drive** (MSC) for patches — no rapid CDC path. See
 ## Without the USB flash drive
 
 Enable **TinyUSB on OTG** (CDC and dev sync default on). Uncheck **USB mass storage** only.
-`espd_sync.py` still works; patches on **microSD**. Flash via **USB-JTAG**
-(`cu.debug-console`), **RESET**, then sync on `cu.usbmodem*`.
+`espd_sync.py` still works; patches on **microSD**. Reflash via **BOOT + RESET**
+(download mode), not `cu.debug-console`; then sync on `cu.usbmodem*`.
 
 ## Without USB OTG (fully off)
 

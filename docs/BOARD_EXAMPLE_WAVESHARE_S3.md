@@ -39,17 +39,18 @@ First build downloads the BSP into **managed_components/** (network required).
 ## USB (composite MSC + serial)
 
 USB **OTG** exposes a **MSC drive** (`storage` partition) and **CDC serial** for
-logs. Board profile enables OTG (MSC + CDC on by default), `ESPD_USB_CONSOLE_CDC`,
-and `ESP_CONSOLE_NONE`. **Pd `print` and `ESP_LOG`** go to OTG CDC (`stdout` after
+logs. Board profile enables OTG (CDC + MSC + patch sync by default) and
+`ESP_CONSOLE_NONE`. **Pd `print` and `ESP_LOG`** go to OTG CDC (`stdout` after
 `tinyusb_console_init`). TinyUSB on **CPU0**; Pd/audio on **CPU1**.
 
-**Flash:** `cu.debug-console`. **Pd / `espd_sync` / app logs:** pick OTG
-`cu.usbmodem…` from `ls /dev/cu.usb*`. Disable **USB mass storage** only if you
-do not want the Finder volume.
+**Running firmware:** Pd / `espd_sync` / app logs on OTG `cu.usbmodem…` from
+`ls /dev/cu.usb*`. **`cu.debug-console` is not the esptool port** — flashing
+with `-p /dev/cu.debug-console` often fails with “No serial data received”.
+Disable **USB mass storage** only if you do not want the Finder volume.
 
 ```bash
-grep -E 'ESPD_USB_CONSOLE_CDC|ESP_CONSOLE' sdkconfig
-# expect CONFIG_ESPD_USB_CONSOLE_CDC=y and CONFIG_ESP_CONSOLE_NONE=y
+grep -E 'ESPD_USE_USB_OTG|ESPD_DEV_CDC_SYNC|ESP_CONSOLE' sdkconfig
+# expect CONFIG_ESPD_USE_USB_OTG=y, CONFIG_ESPD_USE_USB_CDC=y, CONFIG_ESP_CONSOLE_NONE=y
 ```
 
 ```bash
@@ -61,7 +62,8 @@ python3 scripts/espd_sync.py -p /dev/cu.usbmodem1234561 ~/my_patch
 Boot `ESP_LOG` is easy to miss if the host connects late; after **RESET**, expect
 `print:` and dev-sync lines (`RELOAD`, sparse `I (…) espd_dev:`).
 
-**Flash:** hold **BOOT**, tap **RESET**, release **BOOT** when esptool connects.
+**Flash:** hold **BOOT**, tap **RESET**, release **BOOT** when esptool connects;
+then `idf.py flash` (no `-p`, or the responding `cu.usbmodem*`, not `debug-console`).
 
 First boot may **format** `storage` (quiet for several seconds).
 

@@ -87,14 +87,27 @@ config ESPD_INCLUDEPATCH
 menu "USB device (OTG)"
     depends on SOC_USB_OTG_SUPPORTED
 
+    config ESPD_USE_USB_CDC
+        bool
+        depends on ESPD_USE_USB_OTG && TINYUSB_CDC_ENABLED
+        help
+            Internal: always on when OTG is enabled. Serial on cu.usbmodem* for
+            Pd printf/print and ESP_LOG (see docs/DEV_SYNC.md).
+
     config ESPD_USE_USB_OTG
         bool "Enable TinyUSB device stack on OTG port"
         default n
         help
-            USB device on the OTG port (ESP32-S3, ESP32-P4). Sub-options default on:
-            CDC serial (printf, ESP_LOG, espd_sync) and internal-flash USB drive.
-            Uncheck MSC if you do not want the Finder volume. Requires
-            CONFIG_ESP_CONSOLE_NONE (Waveshare board profile sets this).
+            USB device on the OTG port (ESP32-S3, ESP32-P4). Enables OTG CDC
+            (Pd printf, ESP_LOG on cu.usbmodem*) and, by default, internal-flash
+            USB mass storage. Uncheck MSC if you do not want the Finder volume.
+            Patch sync (espd_sync) is a separate option and needs microSD.
+            Requires CONFIG_ESP_CONSOLE_NONE (Waveshare board profile sets this).
+
+            Reflash: BOOT + RESET (download mode), then idf.py flash — not
+            cu.debug-console on macOS (esptool often gets no data there). App
+            serial is OTG cu.usbmodem* while running. See docs/DEV_SYNC.md.
+        select ESPD_USE_USB_CDC
 
     if ESPD_USE_USB_OTG
 
@@ -108,12 +121,22 @@ menu "USB device (OTG)"
                 the drive on the same cable.
 
         config ESPD_USB_CONSOLE_CDC
-            bool "Serial on OTG CDC (Pd printf, espd_sync)"
-            depends on TINYUSB_CDC_ENABLED
+            bool
+            default ESPD_USE_USB_CDC
+            help
+                Internal: stdout/printf routing via tinyusb_console_init.
+
+        config ESPD_DEV_CDC_SYNC
+            bool "Patch sync over OTG CDC (espd_sync)"
+            depends on ESPD_USE_SDCARD
             default y
             help
-                Pd printf/print, ESP_LOG, and espd_sync on the OTG CDC port
-                (cu.usbmodem*). Boot logs are easy to miss if the host connects late.
+                PUT/RELOAD/PING/RESET on the OTG serial port; writes to /sdcard
+                only. Needs "Enable SD card" in ESPD Configuration. With SD
+                support off or no card mounted, sync commands return an error.
+                Serial (printf, ESP_LOG) still works when this is off.
+
+                See docs/DEV_SYNC.md.
 
         config ESPD_MSC_VOLUME_LABEL
             string "Internal flash MSC volume label (Finder name)"
@@ -123,15 +146,6 @@ menu "USB device (OTG)"
                 FAT volume label for the USB mass-storage partition (max 11
                 characters). This is the disk name shown in Finder/macOS, not the
                 TinyUSB product string (see Component config → TinyUSB for that).
-
-        config ESPD_DEV_CDC_SYNC
-            bool "CDC rapid patch sync to SD card (PUT/RELOAD)"
-            depends on ESPD_USE_SDCARD && ESPD_USB_CONSOLE_CDC
-            default y if ESPD_USE_SDCARD && ESPD_USB_CONSOLE_CDC
-            default n
-            help
-                Listen on the CDC port for espd_sync.py (PUT, RELOAD, PING). Writes
-                go to /sdcard only. Does not require MSC. See docs/DEV_SYNC.md.
 
     endif
 

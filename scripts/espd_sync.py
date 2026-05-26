@@ -7,7 +7,7 @@ Requires: pip install pyserial
 Usage:
   python3 scripts/espd_sync.py -p /dev/cu.usbmodem1234561 ./my_patch
 
-The ESP must have CONFIG_ESPD_DEV_CDC_SYNC and a microSD card mounted at /sdcard.
+The ESP must have CONFIG_ESPD_DEV_CDC_SYNC (OTG + SD) for dev sync; microSD at /sdcard.
 Do not run idf.py monitor on the same port at the same time.
 """
 

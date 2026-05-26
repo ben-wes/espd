@@ -1653,7 +1653,7 @@ static void usb_init_on_core0(void)
 #endif
     }
 #elif CONFIG_ESPD_USE_USB_MSC
-    ESP_LOGW(TAG, "USB: MSC only — enable ESPD_USB_CONSOLE_CDC for serial logs");
+    ESP_LOGW(TAG, "USB: MSC only — enable OTG CDC for serial logs");
 #endif
 }
 

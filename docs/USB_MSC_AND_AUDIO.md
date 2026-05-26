@@ -88,5 +88,6 @@ Test after **each** step; stay on **b3e6248 USB init** in `espd.c`.
 idf.py -p /dev/cu.usbmodem* monitor
 ```
 
-Press **RESET** after plug-in. App `ESP_LOG` and Pd output are on OTG `cu.usbmodem…`;
-`cu.debug-console` is for flash.
+Press **RESET** after plug-in. App `ESP_LOG` and Pd output are on OTG `cu.usbmodem…`.
+Reflash: **BOOT + RESET** into download mode, then `idf.py flash` — not
+`cu.debug-console` (esptool usually gets no data there with OTG firmware).
