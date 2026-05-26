@@ -252,7 +252,7 @@ void pdmain_reload_patch(void)
     t_canvas *c;
 
     if (!espd_storage_sdcard_ready()) {
-        pdmain_print("RELOAD: insert SD card (/sdcard)\n");
+        pdmain_print("RELOAD failed: no SD card (/sdcard)\n");
         return;
     }
     dir = ESPD_SDCARD_MOUNT;
@@ -268,7 +268,7 @@ void pdmain_reload_patch(void)
         if (loaded && *loaded == canvas_class)
             canvas_update_dsp();
     }
-    pdmain_print("RELOAD: main.pd\n");
+    pdmain_print("RELOAD done: main.pd\n");
 }
 
 void pdmain_init( void)

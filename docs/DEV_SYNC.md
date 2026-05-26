@@ -48,8 +48,11 @@ if you only need serial, not `espd_sync`.
 
 CDC commands (host → device):
 
-- `PING` — check connection / SD presence
-- `PUT <relpath> <nbytes>` then raw bytes — write under `/sdcard/`
+- `PING` — check connection; replies `+OK PING sdcard mounted` or `sdcard not mounted`
+- `PUT <relpath> <nbytes> <crc32hex>` — `relpath` may contain spaces (e.g.
+  `no_voice/Tools/NH Tools 14.wav`); size and CRC are the last two fields. Device
+  replies `+OK PUT skip` if SD already matches, else `+OK PUT ready` then raw bytes;
+  verifies CRC (`+OK PUT done <crc>` or `-ERR PUT crc mismatch`)
 - `RELOAD` — reload `main.pd` from `/sdcard` (audio loop, CPU1)
 - `RESET` — reply `+OK RESET` then reboot the ESP
 
@@ -69,8 +72,28 @@ python3 scripts/espd_sync.py -p /dev/cu.usbmodem1234561 ~/my_pd_project
 If `ls /dev/cu.usb*` shows **more than one** `usbmodem` device, pass the **OTG CDC**
 port explicitly for `espd_sync` (the one that answers `PING` after a normal **RESET**).
 
-Edit and save in Pure Data on the Mac; the script watches the folder, `PUT`s changed
-`.pd` / `config.txt` files, then sends `RELOAD`.
+On connect the script **syncs the whole project tree** (patches, `config.txt`, and
+audio samples). Each file is one **`PUT`**: the device **skips** if the card already
+has that size/CRC (`+OK PUT skip`), otherwise receives bytes and **verifies after
+write** (retries on mismatch). No separate `HASH` command. Edit and save in Pure
+Data; the watcher then `PUT`s changed `.pd` / `config.txt` only and sends `RELOAD`.
+
+```bash
+python3 scripts/espd_sync.py -p '/dev/cu.usbmodem*' ~/my_pd_project
+```
+
+`--patches-only` — initial/resync sync without audio samples. `--no-initial-sync` —
+watch for saves only (no connect sync). Large files have no firmware PUT cap;
+CDC is still slow for multi‑MB uploads when content changed.
+
+**CRC mismatch or disconnect during PUT:** usually not a “bad cable”. Causes have been
+RX ring overflow (fixed: 16 KB buffer), **espd_dev task priority above TinyUSB** (fixed:
+dev task now below USB), and host pacing for ~64 KB+ files (smaller chunks, longer
+pause). `Device not configured` during `+OK PUT ready` means the board reset or USB
+re-enumerated — reflash and retry; the script reconnects when possible.
+
+Paths under subfolders and **names with spaces** are fine — no escaping; the firmware
+parses the path between `PUT ` and the trailing `size crc` pair.
 
 **Logs:** the script prints whatever arrives on the OTG port (mostly Pd `print:`).
 `--no-esp-log` hides lines that look like `I/W/E (…) tag:` if any show up. Do not
@@ -80,11 +103,12 @@ run monitor and `espd_sync` on the same port at once.
 |--------|---------|---------|
 | stderr `→ …` | host → device | dev sync (PUT / PING / RELOAD) |
 | stderr `← …` | device → host | `+OK` / `-ERR` replies (host adds `←`; wire is `+OK` only) |
-| stderr `RELOAD: …` | firmware status | patch reload done (after `→ RELOAD` / `← +OK RELOAD pending`) |
+| stderr `skip … (unchanged)` | host | `+OK PUT skip` from device |
+| stderr `RELOAD done: …` / `RELOAD failed: …` | firmware status | patch reload finished (after `→ RELOAD` / `← +OK RELOAD pending`) |
 | stdout `I/W/E (…) tag:` | ESP-IDF (rare on OTG) | usually on JTAG, not OTG |
 | stdout *anything else* | Pd | `[print]`, `cpu:`, etc. |
 
-With a TTY, `espd_sync.py` colorizes these (cyan/green/red dev, bright cyan `RELOAD:`,
+With a TTY, `espd_sync.py` colorizes these (cyan/green/red dev, bright cyan `RELOAD done:`,
 bright white Pd, dim ESP). Use `--no-color` or `--no-esp-log` to tone it down.
 
 Quick check (after `idf.py flash` and board **RESET**):
@@ -93,12 +117,14 @@ Quick check (after `idf.py flash` and board **RESET**):
 python3 scripts/espd_sync.py -p '/dev/cu.usbmodem*' --ping ~/my_pd_project
 ```
 
-On success, **stderr** shows `+OK PING sdcard` then `connected (...): +OK PING sdcard`.
+On success, **stderr** shows `+OK PING sdcard mounted` then
+`connected (...): +OK PING sdcard mounted`.
 Stdout may keep printing `cpu:` — that is normal. If PING fails, reflash; do not use an old image without `espd_dev` CDC RX.
 
-**Disconnect / reset:** By default the watcher waits for the CDC port to return (after
-unplug, `RESET`, or the reset button) and re-syncs all patch files. Use `--no-reconnect`
-to exit instead.
+**Disconnect / reset:** By default the watcher waits for the CDC port and keeps
+watching; it does **not** re-sync on reconnect until you opt in.
+Use `--resync-on-reconnect` to run the same sync pass again after unplug/reset.
+Use `--no-reconnect` to exit when the port goes away.
 
 Remote reboot:
 

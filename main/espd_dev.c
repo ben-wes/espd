@@ -3,7 +3,9 @@
  *
  * Protocol (host -> device):
  *   PING
- *   PUT <relpath> <nbytes>\n  then exactly <nbytes> raw bytes
+ *   PUT <relpath> <nbytes> <crc32hex>
+ *       -> +OK PUT skip (SD file already matches) or +OK PUT ready then <nbytes>
+ *          raw bytes -> +OK PUT done <crc> (CRC-32, same as Python zlib.crc32)
  *   RELOAD
  *   RESET  (reboot ESP after reply)
  *
@@ -23,20 +25,24 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_crc.h"
 #include "tinyusb_cdc_acm.h"
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 static const char *TAG = "espd_dev";
 
 #define ESPD_DEV_TASK_CORE          0
-#define ESPD_DEV_TASK_PRIO          5
+/* Below TinyUSB device task (4) so CDC RX is not starved during PUT payload. */
+#define ESPD_DEV_TASK_PRIO          3
 #define ESPD_DEV_RX_CHUNK           256
-#define ESPD_DEV_RX_RING            2048
-#define ESPD_DEV_LINE_MAX           160
-#define ESPD_DEV_PUT_MAX            (512 * 1024)
+#define ESPD_DEV_RX_RING            16384
+/* Room for PUT <path-with-spaces> <size> <crc> (path up to ESPD_DEV_PATH_MAX). */
+#define ESPD_DEV_LINE_MAX           256
 #define ESPD_DEV_PATH_MAX           192
 
 typedef enum {
@@ -56,23 +62,38 @@ static size_t s_rx_tail;
 static dev_cmd_t s_cmd;
 static char s_put_rel[ESPD_DEV_PATH_MAX];
 static size_t s_put_remain;
+static uint32_t s_put_expect_crc;
+static uint32_t s_put_crc;
 static FILE *s_put_fp;
 
 static void dev_reply(const char *msg);
 
+static void dev_rx_flush(void)
+{
+    portENTER_CRITICAL(&s_rx_lock);
+    s_rx_head = 0;
+    s_rx_tail = 0;
+    portEXIT_CRITICAL(&s_rx_lock);
+}
+
 static void dev_rx_push(const uint8_t *data, size_t len)
 {
     size_t i;
+    size_t dropped = 0;
 
     portENTER_CRITICAL(&s_rx_lock);
     for (i = 0; i < len; i++) {
         size_t next = (s_rx_head + 1) % ESPD_DEV_RX_RING;
-        if (next == s_rx_tail)
-            break;
+        if (next == s_rx_tail) {
+            dropped++;
+            continue;
+        }
         s_rx_ring[s_rx_head] = data[i];
         s_rx_head = next;
     }
     portEXIT_CRITICAL(&s_rx_lock);
+    if (dropped)
+        ESP_LOGW(TAG, "CDC RX ring overflow, dropped %u bytes", (unsigned)dropped);
 }
 
 static size_t dev_rx_pop(uint8_t *out, size_t max)
@@ -198,6 +219,37 @@ static int dev_build_path(char *out, size_t outsz, const char *rel)
     return 1;
 }
 
+#define ESPD_DEV_HASH_CHUNK          1024
+
+/* CRC-32 (same polynomial as Python zlib.crc32). Runs on espd_dev task only. */
+static int dev_file_hash(const char *full, size_t *out_size, uint32_t *out_crc)
+{
+    static uint8_t buf[ESPD_DEV_HASH_CHUNK];
+    FILE *fp;
+    size_t n, total = 0;
+    uint32_t crc = 0;
+    struct stat st;
+    unsigned chunks = 0;
+
+    if (stat(full, &st) != 0 || !S_ISREG(st.st_mode))
+        return -1;
+    fp = fopen(full, "rb");
+    if (!fp)
+        return -2;
+    while ((n = fread(buf, 1, sizeof(buf), fp)) > 0) {
+        crc = esp_crc32_le(crc, buf, (uint32_t)n);
+        total += n;
+        if ((++chunks & 7u) == 0)
+            vTaskDelay(1);
+    }
+    fclose(fp);
+    if (total != (size_t)st.st_size)
+        return -2;
+    *out_size = total;
+    *out_crc = crc;
+    return 0;
+}
+
 static void dev_mkdir_parents(const char *fullpath)
 {
     char tmp[ESPD_DEV_PATH_MAX];
@@ -215,10 +267,12 @@ static void dev_mkdir_parents(const char *fullpath)
     }
 }
 
-static void dev_put_begin(const char *rel, size_t nbytes)
+static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
 {
     char full[ESPD_DEV_PATH_MAX];
-    char reply[ESPD_DEV_PATH_MAX + 32];
+    size_t on_disk = 0;
+    uint32_t disk_crc = 0;
+    int err;
 
     if (!dev_sdcard_ready()) {
         dev_reply("-ERR no sdcard (insert card for rapid dev)");
@@ -228,7 +282,7 @@ static void dev_put_begin(const char *rel, size_t nbytes)
         dev_reply("-ERR bad path");
         return;
     }
-    if (nbytes == 0 || nbytes > ESPD_DEV_PUT_MAX) {
+    if (nbytes == 0) {
         dev_reply("-ERR bad size");
         return;
     }
@@ -236,6 +290,15 @@ static void dev_put_begin(const char *rel, size_t nbytes)
         dev_reply("-ERR path too long");
         return;
     }
+
+    err = dev_file_hash(full, &on_disk, &disk_crc);
+    if (err == 0 && on_disk == nbytes && disk_crc == expect_crc) {
+        dev_reply("+OK PUT skip");
+        return;
+    }
+
+    dev_rx_flush();
+    dev_drain_cdc_hw();
 
     dev_mkdir_parents(full);
     s_put_fp = fopen(full, "wb");
@@ -247,15 +310,16 @@ static void dev_put_begin(const char *rel, size_t nbytes)
     strncpy(s_put_rel, rel, sizeof(s_put_rel) - 1);
     s_put_rel[sizeof(s_put_rel) - 1] = '\0';
     s_put_remain = nbytes;
+    s_put_expect_crc = expect_crc;
+    s_put_crc = 0;
     s_cmd = DEV_CMD_PUT;
-    snprintf(reply, sizeof(reply), "+OK PUT %s %u", rel, (unsigned)nbytes);
-    dev_reply(reply);
+    dev_reply("+OK PUT ready");
 }
 
 static void dev_put_data(const uint8_t *data, size_t len)
 {
     size_t n;
-    char reply[64];
+    char reply[96];
 
     if (!s_put_fp || s_cmd != DEV_CMD_PUT) {
         return;
@@ -263,20 +327,34 @@ static void dev_put_data(const uint8_t *data, size_t len)
     n = len;
     if (n > s_put_remain)
         n = s_put_remain;
-    if (n && fwrite(data, 1, n, s_put_fp) != n) {
-        fclose(s_put_fp);
-        s_put_fp = NULL;
-        s_put_remain = 0;
-        s_cmd = DEV_CMD_NONE;
-        dev_reply("-ERR write failed");
-        return;
+    if (n) {
+        if (fwrite(data, 1, n, s_put_fp) != n) {
+            fclose(s_put_fp);
+            s_put_fp = NULL;
+            s_put_remain = 0;
+            s_cmd = DEV_CMD_NONE;
+            dev_reply("-ERR write failed");
+            return;
+        }
+        s_put_crc = esp_crc32_le(s_put_crc, data, (uint32_t)n);
     }
     s_put_remain -= n;
     if (s_put_remain == 0) {
+        int fd = fileno(s_put_fp);
+        fflush(s_put_fp);
+        if (fd >= 0)
+            fsync(fd);
         fclose(s_put_fp);
         s_put_fp = NULL;
         s_cmd = DEV_CMD_NONE;
-        snprintf(reply, sizeof(reply), "+OK PUT done %s", s_put_rel);
+        if (s_put_crc != s_put_expect_crc) {
+            snprintf(reply, sizeof(reply),
+                "-ERR PUT crc exp %08" PRIx32 " got %08" PRIx32,
+                s_put_expect_crc, s_put_crc);
+            dev_reply(reply);
+            return;
+        }
+        snprintf(reply, sizeof(reply), "+OK PUT done %08" PRIx32, s_put_crc);
         dev_reply(reply);
         espd_storage_refresh_paths();
     }
@@ -306,6 +384,48 @@ static void dev_trim_line(char *line)
         *--end = '\0';
 }
 
+/* PUT <relpath> <nbytes> <crc> — path may contain spaces; size/CRC are last tokens. */
+static int dev_parse_put_line(char *line, char *rel, size_t relsz,
+    size_t *nbytes, uint32_t *expect_crc)
+{
+    char *body = line + 4;
+    char *crc_tok;
+    char *size_tok;
+    char *end;
+    unsigned long nb;
+    unsigned long crc;
+
+    if (strncmp(line, "PUT ", 4) != 0)
+        return 0;
+    crc_tok = strrchr(body, ' ');
+    if (!crc_tok)
+        return 0;
+    *crc_tok = '\0';
+    size_tok = strrchr(body, ' ');
+    if (!size_tok) {
+        *crc_tok = ' ';
+        return 0;
+    }
+    crc = strtoul(crc_tok + 1, &end, 16);
+    if (end == crc_tok + 1)
+        return 0;
+    nb = strtoul(size_tok + 1, &end, 10);
+    if (end == size_tok + 1 || nb == 0) {
+        *crc_tok = ' ';
+        return 0;
+    }
+    *size_tok = '\0';
+    if (strlen(body) >= relsz) {
+        *size_tok = ' ';
+        *crc_tok = ' ';
+        return 0;
+    }
+    strcpy(rel, body);
+    *nbytes = (size_t)nb;
+    *expect_crc = (uint32_t)crc;
+    return 1;
+}
+
 static void dev_handle_line(char *line)
 {
     if (!line)
@@ -316,9 +436,9 @@ static void dev_handle_line(char *line)
 
     if (!strcmp(line, "PING")) {
         if (dev_sdcard_ready())
-            dev_reply("+OK PING sdcard");
+            dev_reply("+OK PING sdcard mounted");
         else
-            dev_reply("+OK PING (no sdcard — rapid dev disabled)");
+            dev_reply("+OK PING sdcard not mounted");
         return;
     }
     if (!strcmp(line, "RELOAD")) {
@@ -333,9 +453,10 @@ static void dev_handle_line(char *line)
     }
     if (!strncmp(line, "PUT ", 4)) {
         char rel[ESPD_DEV_PATH_MAX];
-        unsigned long nbytes = 0;
-        if (sscanf(line + 4, "%190s %lu", rel, &nbytes) == 2)
-            dev_put_begin(rel, (size_t)nbytes);
+        size_t nbytes = 0;
+        uint32_t expect_crc = 0;
+        if (dev_parse_put_line(line, rel, sizeof(rel), &nbytes, &expect_crc))
+            dev_put_offer(rel, nbytes, expect_crc);
         else
             dev_reply("-ERR PUT syntax");
         return;
@@ -387,19 +508,33 @@ static void dev_poll_rx(void)
 {
     uint8_t buf[ESPD_DEV_RX_CHUNK];
     size_t n;
-    int line_mode = (s_cmd != DEV_CMD_PUT || s_put_remain == 0);
 
     dev_drain_cdc_hw();
     while ((n = dev_rx_pop(buf, sizeof(buf))) > 0)
-        dev_feed_bytes(buf, n, line_mode ? 1 : 0);
+        dev_feed_bytes(buf, n, 1);
+}
+
+static void dev_poll_put_payload(void)
+{
+    uint8_t buf[ESPD_DEV_RX_CHUNK];
+    size_t n;
+
+    dev_drain_cdc_hw();
+    while ((n = dev_rx_pop(buf, sizeof(buf))) > 0)
+        dev_put_data(buf, n);
 }
 
 static void espd_dev_task(void *arg)
 {
     (void)arg;
     for (;;) {
-        dev_poll_rx();
-        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10));
+        if (s_cmd == DEV_CMD_PUT && s_put_remain > 0) {
+            dev_poll_put_payload();
+            vTaskDelay(pdMS_TO_TICKS(1));
+        } else {
+            dev_poll_rx();
+            (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10));
+        }
     }
 }
 
@@ -421,7 +556,7 @@ void espd_dev_init(void)
             ESP_LOGW(TAG, "CDC line callback register failed: %s", esp_err_to_name(err));
     }
 
-    if (xTaskCreatePinnedToCore(espd_dev_task, "espd_dev", 4096, NULL,
+    if (xTaskCreatePinnedToCore(espd_dev_task, "espd_dev", 6144, NULL,
             ESPD_DEV_TASK_PRIO, &s_dev_task, ESPD_DEV_TASK_CORE) != pdPASS) {
         ESP_LOGW(TAG, "dev CDC task create failed");
         s_dev_task = NULL;

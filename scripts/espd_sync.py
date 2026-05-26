@@ -18,6 +18,7 @@ import glob
 import os
 import re
 import sys
+import zlib
 import threading
 import time
 from dataclasses import dataclass
@@ -47,6 +48,7 @@ _STYLES = {
 
 _ANSI_RE = re.compile(rb"\x1b\[[0-9;]*m")
 _ESP_LOG_RE = re.compile(rb"^[IWEDV] \([^)]+\) [^:\n]+: ")
+_PUT_DONE_RE = re.compile(rb"^\+OK PUT done ([0-9a-fA-F]{8})$")
 
 
 def _strip_ansi(line: bytes) -> bytes:
@@ -59,7 +61,7 @@ def classify_line(line: bytes) -> str:
         return "dev-err"
     if line.startswith(b"+"):
         return "dev-ok"
-    if line.startswith(b"RELOAD:"):
+    if line.startswith(b"RELOAD done:") or line.startswith(b"RELOAD failed:"):
         return "espd"
     if _ESP_LOG_RE.match(line):
         return "esp-" + line[:1].decode().lower()
@@ -239,16 +241,43 @@ class EspdCdc:
                 raise EspdDisconnected(str(e)) from e
             return self._wait_reply(timeout)
 
-    def put_file(self, local_path: str, rel_path: str) -> None:
+    def put_file(self, local_path: str, rel_path: str, crc: int) -> bool:
+        """PUT with CRC. Returns True if bytes were sent, False if device skipped."""
         data = open(local_path, "rb").read()
         rel_path = rel_path.replace(os.sep, "/")
-        self.command(f"PUT {rel_path} {len(data)}", timeout=15.0)
-        self._ser.write(data)
-        self._ser.flush()
+        nbytes = len(data)
+        probe_timeout = max(10.0, nbytes / 80000.0)
+        done_timeout = max(60.0, nbytes / 8000.0)
+        line = self.command(f"PUT {rel_path} {nbytes} {crc:08x}", timeout=probe_timeout)
+        if line.startswith(b"+OK PUT skip"):
+            return False
+        if not line.startswith(b"+OK PUT ready"):
+            if line.startswith(b"-ERR"):
+                raise RuntimeError(line.decode(errors="replace"))
+            raise RuntimeError(f"unexpected PUT reply: {line.decode(errors='replace')}")
+        if nbytes > 32768:
+            chunk, delay = 256, 0.012
+        elif nbytes > 8192:
+            chunk, delay = 384, 0.006
+        else:
+            chunk, delay = 512, 0.002
+        try:
+            with self._cmd_lock:
+                for off in range(0, len(data), chunk):
+                    self._ser.write(data[off : off + chunk])
+                    time.sleep(delay)
+                self._ser.flush()
+        except OSError as e:
+            self._mark_disconnected(str(e))
+            raise EspdDisconnected(str(e)) from e
         while True:
-            line = self._wait_reply(10.0)
-            if line.startswith(b"+OK PUT done"):
-                return
+            line = self._wait_reply(done_timeout)
+            m = _PUT_DONE_RE.match(line.strip())
+            if m and int(m.group(1), 16) == crc:
+                return True
+            if line.startswith(b"-ERR"):
+                raise RuntimeError(line.decode(errors="replace"))
+            raise RuntimeError(f"unexpected PUT reply: {line.decode(errors='replace')}")
 
     def reload(self) -> None:
         self.command("RELOAD", timeout=30.0)
@@ -272,26 +301,84 @@ def connect_cdc(port_pattern: str) -> EspdCdc:
     raise TimeoutError(f"PING failed: {last.decode(errors='replace')}")
 
 
-def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str]) -> None:
+def local_file_hash(path: str) -> tuple[int, int]:
+    crc = 0
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(65536)
+            if not chunk:
+                break
+            crc = zlib.crc32(chunk, crc)
+    return os.path.getsize(path), crc & 0xFFFFFFFF
+
+
+def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str], port: str) -> EspdCdc:
     pd_changed = False
+    uploaded = 0
+    skipped = 0
     t0 = time.time()
-    for rel in sorted(rels):
+
+    def _sync_order(rel: str) -> tuple[int, str]:
+        return (1 if rel == "main.pd" else 0, rel)
+
+    for rel in sorted(rels, key=_sync_order):
         local = os.path.join(watch_dir, rel.replace("/", os.sep))
-        log_script(f"PUT {rel}")
-        cdc.put_file(local, rel)
-        if rel == "main.pd" or rel.endswith(".pd"):
-            pd_changed = True
+        _size, crc = local_file_hash(local)
+        while True:
+            log_script(f"PUT {rel}")
+            try:
+                sent = cdc.put_file(local, rel, crc)
+            except EspdDisconnected:
+                log_script(f"reconnect during PUT {rel}…")
+                cdc.close()
+                cdc = connect_cdc(port)
+                continue
+            except RuntimeError as e:
+                if "crc mismatch" in str(e) or "crc exp" in str(e):
+                    log_script(f"PUT verify failed for {rel}, retrying…")
+                    continue
+                raise
+            if sent:
+                uploaded += 1
+                if rel == "main.pd" or rel.endswith(".pd"):
+                    pd_changed = True
+            else:
+                log_script(f"skip {rel} (unchanged)")
+                skipped += 1
+            break
     if pd_changed:
         log_script("RELOAD")
-        cdc.reload()
-    log_script(f"sync done in {time.time() - t0:.2f}s")
+        try:
+            cdc.reload()
+        except EspdDisconnected:
+            log_script("disconnected during RELOAD (patch may still reload on device)")
+    log_script(
+        f"sync done in {time.time() - t0:.2f}s "
+        f"({uploaded} uploaded, {skipped} unchanged)"
+    )
+    return cdc
 
 
-def collect_files(root: str) -> dict[str, float]:
+_PATCH_SUFFIXES = (".pd",)
+_ASSET_SUFFIXES = (".wav", ".aiff", ".aif", ".flac", ".ogg", ".mp3", ".raw")
+
+
+def _sync_name_ok(name: str, include_assets: bool) -> bool:
+    if not name or name.startswith("."):
+        return False
+    if name == "config.txt":
+        return True
+    low = name.lower()
+    if low.endswith(_PATCH_SUFFIXES):
+        return True
+    return include_assets and low.endswith(_ASSET_SUFFIXES)
+
+
+def collect_files(root: str, include_assets: bool = False) -> dict[str, float]:
     out: dict[str, float] = {}
     for dirpath, _dirnames, filenames in os.walk(root):
         for name in filenames:
-            if not (name.endswith(".pd") or name == "config.txt"):
+            if not _sync_name_ok(name, include_assets):
                 continue
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, root).replace(os.sep, "/")
@@ -319,9 +406,19 @@ def main() -> int:
         help="exit when USB disconnects instead of waiting for the port",
     )
     ap.add_argument(
-        "--no-resync-on-reconnect",
+        "--patches-only",
         action="store_true",
-        help="do not re-PUT all patch files after reconnect/reset",
+        help="initial/resync sync: only .pd and config.txt (default includes samples)",
+    )
+    ap.add_argument(
+        "--no-initial-sync",
+        action="store_true",
+        help="skip the sync pass on connect (watch for saves only)",
+    )
+    ap.add_argument(
+        "--resync-on-reconnect",
+        action="store_true",
+        help="after reconnect/reset, run the same PUT/sync pass again",
     )
     args = ap.parse_args()
 
@@ -342,6 +439,17 @@ def main() -> int:
             log_script(f"connect failed: {e}")
             return 1
 
+        include_assets = not args.patches_only
+
+        def run_sync(label: str) -> None:
+            nonlocal cdc
+            rels = list(collect_files(watch_dir, include_assets))
+            if not rels:
+                log_script(f"{label}: nothing to send")
+                return
+            log_script(f"{label} ({len(rels)} files)")
+            cdc = sync_files(cdc, watch_dir, rels, args.port)
+
         if args.reset:
             cdc.reset_device()
             cdc.close()
@@ -350,15 +458,20 @@ def main() -> int:
                 return 0
             log_script("waiting for device…")
             cdc = connect_cdc(args.port)
-            if not args.no_resync_on_reconnect:
-                sync_files(cdc, watch_dir, list(collect_files(watch_dir)))
+            if not args.no_initial_sync:
+                run_sync("sync after reset")
             return 0
 
         if args.ping:
             return 0
 
-        mtimes = collect_files(watch_dir)
-        log_script(f"watching {watch_dir} ({len(mtimes)} files) — save in Pd to sync")
+        if not args.no_initial_sync:
+            run_sync("sync")
+
+        mtimes = collect_files(watch_dir, include_assets=False)
+        log_script(
+            f"watching {watch_dir} ({len(mtimes)} patches) — save in Pd to sync"
+        )
 
         while True:
             if not cdc.alive:
@@ -373,26 +486,24 @@ def main() -> int:
                 except (TimeoutError, EspdDisconnected) as e:
                     log_script(str(e))
                     continue
-                if not args.no_resync_on_reconnect:
-                    rels = list(mtimes)
-                    if rels:
-                        log_script(f"resync after reconnect ({len(rels)} files)")
-                        sync_files(cdc, watch_dir, rels)
+                if args.resync_on_reconnect and not args.no_initial_sync:
+                    run_sync("resync after reconnect")
+                    mtimes = collect_files(watch_dir, include_assets=False)
 
             time.sleep(0.2)
             try:
-                now = collect_files(watch_dir)
+                now = collect_files(watch_dir, include_assets=False)
                 changed = [rel for rel in now if rel not in mtimes or now[rel] != mtimes[rel]]
                 if not changed:
                     continue
                 time.sleep(args.debounce)
-                now2 = collect_files(watch_dir)
+                now2 = collect_files(watch_dir, include_assets=False)
                 changed = [
                     rel for rel in now2 if rel not in mtimes or now2[rel] != mtimes[rel]
                 ]
                 if not changed:
                     continue
-                sync_files(cdc, watch_dir, changed)
+                cdc = sync_files(cdc, watch_dir, changed, args.port)
                 mtimes = now2
             except EspdDisconnected:
                 continue
