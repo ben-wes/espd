@@ -1,7 +1,12 @@
 # Rapid patch dev (SD card + CDC)
 
-Save patches on the Mac, hear updates on the board in about **1–2 seconds**, without
-using the internal-flash USB drive for every save.
+Edit patches on the host, hear them on the board **almost immediately** for small
+`.pd` / `config.txt` saves (typically well under a second after save). Use
+microSD + `espd_sync.py` instead of copying every change through the slow
+internal-flash USB drive.
+
+Works on **macOS, Linux, and Windows** — Python 3 + `pyserial`, any CDC serial port.
+Examples below use macOS device names; substitute `/dev/ttyACM0`, `COM3`, etc.
 
 ## Rules
 
@@ -66,11 +71,19 @@ pip install pyserial
 idf.py build flash
 # RESET; eject internal flash optional
 
+# macOS (pick your OTG CDC port after ls /dev/cu.usb*)
 python3 scripts/espd_sync.py -p /dev/cu.usbmodem1234561 ~/my_pd_project
+
+# Linux example
+# python3 scripts/espd_sync.py -p /dev/ttyACM0 ~/my_pd_project
+
+# Windows example
+# python3 scripts/espd_sync.py -p COM3 ~/my_pd_project
 ```
 
-If `ls /dev/cu.usb*` shows **more than one** `usbmodem` device, pass the **OTG CDC**
-port explicitly for `espd_sync` (the one that answers `PING` after a normal **RESET**).
+If several serial devices appear, pass the **OTG CDC** port explicitly (the one that
+answers `PING` after a normal **RESET**). On macOS, `ls /dev/cu.usb*`; on Linux,
+`ls /dev/ttyACM* /dev/ttyUSB*`.
 
 On connect the script **syncs the whole project tree** (patches, `config.txt`, and
 audio samples). Each file is one **`PUT`**: the device **skips** if the card already
@@ -136,17 +149,6 @@ python3 scripts/espd_sync.py -p '/dev/cu.usbmodem*' --reset ~/my_pd_project
 
 SD → SPIFFS → internal `/storage`. With SD present and `main.pd` on the card, Pd
 loads from `/sdcard` at boot.
-
-## Without SD
-
-Use the **USB flash drive** (MSC) for patches — no rapid CDC path. See
-[USB_MSC_AND_AUDIO.md](USB_MSC_AND_AUDIO.md).
-
-## Without the USB flash drive
-
-Enable **TinyUSB on OTG** (CDC and dev sync default on). Uncheck **USB mass storage** only.
-`espd_sync.py` still works; patches on **microSD**. Reflash via **BOOT + RESET**
-(download mode), not `cu.debug-console`; then sync on `cu.usbmodem*`.
 
 ## Without USB OTG (fully off)
 

@@ -36,42 +36,9 @@ idf.py build flash monitor
 
 First build downloads the BSP into **managed_components/** (network required).
 
-## USB (composite MSC + serial)
-
-USB **OTG** exposes a **MSC drive** (`storage` partition) and **CDC serial** for
-logs. Board profile enables OTG (CDC + MSC + patch sync by default) and
-`ESP_CONSOLE_NONE`. **Pd `print` and `ESP_LOG`** go to OTG CDC (`stdout` after
-`tinyusb_console_init`). TinyUSB on **CPU0**; Pd/audio on **CPU1**.
-
-**Running firmware:** Pd / `espd_sync` / app logs on OTG `cu.usbmodem…` from
-`ls /dev/cu.usb*`. **`cu.debug-console` is not the esptool port** — flashing
-with `-p /dev/cu.debug-console` often fails with “No serial data received”.
-Disable **USB mass storage** only if you do not want the Finder volume.
-
-```bash
-grep -E 'ESPD_USE_USB_OTG|ESPD_DEV_CDC_SYNC|ESP_CONSOLE' sdkconfig
-# expect CONFIG_ESPD_USE_USB_OTG=y, CONFIG_ESPD_USE_USB_CDC=y, CONFIG_ESP_CONSOLE_NONE=y
-```
-
-```bash
-ls /dev/cu.usb*
-idf.py -p /dev/cu.usbmodem1234561 monitor --no-reset   # print: + ESP_LOG on CDC
-python3 scripts/espd_sync.py -p /dev/cu.usbmodem1234561 ~/my_patch
-```
-
-Boot `ESP_LOG` is easy to miss if the host connects late; after **RESET**, expect
-`print:` and dev-sync lines (`RELOAD`, sparse `I (…) espd_dev:`).
-
-**Flash:** hold **BOOT**, tap **RESET**, release **BOOT** when esptool connects;
-then `idf.py flash` (no `-p`, or the responding `cu.usbmodem*`, not `debug-console`).
-
-First boot may **format** `storage` (quiet for several seconds).
-
-See [USB_MSC_AND_AUDIO.md](USB_MSC_AND_AUDIO.md) for optional copy/audio tuning.
-
-**Rapid patch dev:** microSD + [DEV_SYNC.md](DEV_SYNC.md) (`espd_sync.py` over CDC).
-
-See [tusb_composite_msc_serialdevice](https://github.com/espressif/esp-idf/tree/v6.0.1/examples/peripherals/usb/device/tusb_composite_msc_serialdevice).
+Board YAML turns on OTG (CDC + MSC + patch sync). Patches, flash, and
+`espd_sync.py`: **[DEV_SYNC.md](DEV_SYNC.md)**. First boot may format internal
+`storage` (quiet for a few seconds).
 
 ## Buttons
 
@@ -82,16 +49,3 @@ Waveshare YAML maps physical keys to **`espd/din/0..2`** (numeric, not named):
 | 0 | Vol up |
 | 1 | Play |
 | 2 | Vol down |
-
-See [GETTING_STARTED.md — Buttons](GETTING_STARTED.md#buttons-bsp-kits).
-
-## Sample rate
-
-`CONFIG_ESPD_AUDIO_SAMPLE_RATE` (default 48000) and optional
-`audio_sample_rate=` in **config.txt** drive both the codec and Pd's
-`sys_getsr()`.
-
-## Adding another kit
-
-Copy **boards/waveshare_s3.yaml** → **boards/mykit.yaml**, edit `id`, `bsp`,
-`features`, `profile`, and optional `io.buttons`. See [ADDING_A_BOARD.md](ADDING_A_BOARD.md).

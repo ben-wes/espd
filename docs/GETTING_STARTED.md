@@ -9,6 +9,7 @@ patches.
 | Doc | What |
 |-----|------|
 | **[GETTING_STARTED.md](GETTING_STARTED.md)** (this file) | Build, features, configuration |
+| **[DEV_SYNC.md](DEV_SYNC.md)** | **Rapid dev** — `espd_sync.py`, OTG CDC, SD sync |
 | [BOARD_EXAMPLE_WAVESHARE_S3.md](BOARD_EXAMPLE_WAVESHARE_S3.md) | Waveshare S3 build shortcut + button map |
 | [BOARD_EXAMPLE_WAVESHARE_P4_NANO.md](BOARD_EXAMPLE_WAVESHARE_P4_NANO.md) | Waveshare P4-NANO + ESP-Hosted Wi-Fi |
 | [ADDING_A_BOARD.md](ADDING_A_BOARD.md) | Add a kit via `boards/*.yaml` |
@@ -105,6 +106,35 @@ Switching boards: change **Target board** in menuconfig → Save → `idf.py bui
 Copy examples from [test-patch/](../test-patch/). Without `main.pd`, an embedded
 test patch runs only if **Embed fallback test patch** is enabled in menuconfig
 (`ESPD_INCLUDEPATCH` — off by default).
+
+## Rapid dev (OTG CDC + microSD)
+
+With **OTG USB + microSD**, edit patches on your computer and hear them on the board
+in near real time — no ejecting the card and no copying through the slow internal-flash
+USB drive each time. Needs firmware with **TinyUSB OTG**, **SD card**, and **Patch
+sync over OTG CDC** (menuconfig or your board profile). Full protocol, ports, and
+troubleshooting: **[DEV_SYNC.md](DEV_SYNC.md)**.
+
+1. Flash once; insert a **microSD** card.
+2. On the host (any OS — Python 3 + [pyserial](https://pyserial.readthedocs.io/)):
+
+```bash
+pip install pyserial
+python3 scripts/espd_sync.py -p PORT ./my_pd_project
+```
+
+| OS | Typical CDC port (`-p`) |
+|----|-------------------------|
+| macOS | `/dev/cu.usbmodem*` (OTG; not `cu.debug-console` for flash) |
+| Linux | `/dev/ttyACM0` or `/dev/ttyUSB0` |
+| Windows | `COM3` (Device Manager) |
+
+Use a glob only if one device matches (e.g. macOS `'/dev/cu.usbmodem*'`).
+
+After the first project sync, saving a small `.pd` in Pure Data and reloading on the
+board is effectively **real time** (PUT + `RELOAD` over CDC). The initial connect pass
+syncs the tree; unchanged files are skipped via CRC. Large samples are slower — CDC
+throughput, not the protocol.
 
 ## Feature reference
 
@@ -211,8 +241,9 @@ Full list and semantics: comments in [main/espd.h](../main/espd.h). Example:
 ## Typical Waveshare first boot
 
 1. Flash firmware (build path B above).
-2. Put `main.pd` and optional `config.txt` on microSD (`/sdcard`) or flash SPIFFS.
-3. Serial monitor shows boot log, din map, audio rate.
+2. Put `main.pd` on microSD — copy the card once, or use [DEV_SYNC.md](DEV_SYNC.md) /
+   `espd_sync.py` from the host (recommended for ongoing edits).
+3. OTG CDC serial shows boot log, Pd `print:`, and dev-sync replies (not `cu.debug-console`).
 4. Patch receives button presses on `espd/din/0..2`, LED commands on `espd/led/N`.
 
 Example minimal test (serial print on play button):

@@ -61,14 +61,5 @@ idf.py build flash monitor
 First build downloads BSP, **esp_hosted**, and **esp_wifi_remote** into
 `managed_components/` (network required).
 
-## USB (composite MSC + serial)
-
-Same as S3: MSC + CDC on one cable; TinyUSB on CPU0. SD card (`/sdcard`) remains
-the primary patch path when inserted. See
-[BOARD_EXAMPLE_WAVESHARE_S3.md](BOARD_EXAMPLE_WAVESHARE_S3.md#usb-composite-msc--serial).
-
-## Audio
-
-Same BSP codec path as other esp-bsp boards: `config.txt` may set
-`audio_sample_rate=` (default 48000 Hz). No `aout_pins=` / `ain_pins=` needed
-for the ES8311 path.
+OTG / SD / `espd_sync.py`: same as S3 — **[DEV_SYNC.md](DEV_SYNC.md)**. ES8311
+codec; no `aout_pins=` / `ain_pins=` in `config.txt`.

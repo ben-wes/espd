@@ -5,7 +5,10 @@ Watch a local Pure Data project folder and sync to the ESP32 SD card over CDC.
 Requires: pip install pyserial
 
 Usage:
-  python3 scripts/espd_sync.py -p /dev/cu.usbmodem1234561 ./my_patch
+  python3 scripts/espd_sync.py -p PORT ./my_patch
+
+PORT is the OTG CDC serial device (pyserial): e.g. /dev/cu.usbmodem* (macOS),
+/dev/ttyACM0 (Linux), COM3 (Windows). See docs/DEV_SYNC.md.
 
 The ESP must have CONFIG_ESPD_DEV_CDC_SYNC (OTG + SD) for dev sync; microSD at /sdcard.
 Do not run idf.py monitor on the same port at the same time.
