@@ -218,7 +218,7 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #define ESPD_SDCARD_CONFIG_PATH ESPD_SDCARD_MOUNT "/config.txt"
 /** Internal flash (SPIFFS) fallback when SD has no main.pd / config.txt. */
 #define ESPD_PATCH_STORE_CONFIG_PATH ESPD_PATCH_STORE_MOUNT "/config.txt"
-#if CONFIG_ESPD_USE_USB_COMPOSITE
+#if CONFIG_ESPD_USE_USB_MSC
 /** VFS path where USB MSC storage is mounted (flash "storage" partition). */
 #ifndef ESPD_STORAGE_MOUNT
 #define ESPD_STORAGE_MOUNT "/storage"

@@ -106,7 +106,7 @@ idf_component_register(
     REQUIRES ${MAIN_REQUIRES}
 )
 
-if(CONFIG_ESPD_USE_USB_COMPOSITE)
+if(CONFIG_ESPD_USE_USB_OTG)
     idf_component_optional_requires(PRIVATE esp_tinyusb espressif__esp_tinyusb
         wear_levelling esp_partition)
     target_link_libraries(${COMPONENT_LIB} PRIVATE idf::fatfs idf::wear_levelling)

@@ -84,43 +84,56 @@ config ESPD_INCLUDEPATCH
     help
         Used when no main.pd is found on SD or SPIFFS at boot.
 
-menu "USB composite (OTG)"
+menu "USB device (OTG)"
     depends on SOC_USB_OTG_SUPPORTED
 
-    config ESPD_USE_USB_COMPOSITE
-        bool "Enable USB MSC + CDC on OTG port"
+    config ESPD_USE_USB_OTG
+        bool "Enable TinyUSB device stack on OTG port"
         default n
         help
-            Expose the flash "storage" partition as a USB drive and optional CDC
-            serial on the USB OTG port (ESP32-S3, ESP32-P4). Patches/config: SD,
-            SPIFFS, or /storage. See docs/DEV_SYNC.md for rapid SD development.
+            USB device on the OTG port (ESP32-S3, ESP32-P4). Sub-options default on:
+            CDC serial (printf, ESP_LOG, espd_sync) and internal-flash USB drive.
+            Uncheck MSC if you do not want the Finder volume. Requires
+            CONFIG_ESP_CONSOLE_NONE (Waveshare board profile sets this).
 
-    config ESPD_USB_CONSOLE_CDC
-        bool "Route logs/printf to TinyUSB CDC (OTG port)"
-        depends on ESPD_USE_USB_COMPOSITE && TINYUSB_CDC_ENABLED
-        default n
-        help
-            Set ESP-STDIO console to None and route printf/logs to the OTG CDC
-            port (cu.usbmodem* on macOS). Use: idf.py -p PORT monitor --no-reset
+    if ESPD_USE_USB_OTG
 
-    config ESPD_MSC_VOLUME_LABEL
-        string "Internal flash MSC volume label (Finder name)"
-        depends on ESPD_USE_USB_COMPOSITE && FATFS_USE_LABEL
-        default "ESPD"
-        help
-            FAT volume label for the USB mass-storage partition (max 11
-            characters). This is the disk name shown in Finder/macOS, not the
-            TinyUSB product string (see Component config → TinyUSB for that).
+        config ESPD_USE_USB_MSC
+            bool "USB mass storage (internal flash drive)"
+            depends on TINYUSB_MSC_ENABLED
+            default y
+            help
+                Expose the "storage" partition as a USB drive. Slow; shares flash
+                with the CPU. Rapid dev uses SD only — uncheck if you do not need
+                the drive on the same cable.
 
-    config ESPD_DEV_CDC_SYNC
-        bool "CDC rapid patch sync to SD card (PUT/RELOAD)"
-        depends on ESPD_USE_SDCARD && ESPD_USE_USB_COMPOSITE && ESPD_USB_CONSOLE_CDC
-        default y if ESPD_USE_SDCARD && ESPD_USE_USB_COMPOSITE && ESPD_USB_CONSOLE_CDC
-        default n
-        help
-            Listen on the CDC port for espd_sync.py (PUT, RELOAD, PING). Writes
-            go to /sdcard only; internal flash MSC is unchanged. Requires
-            microSD in the device. See docs/DEV_SYNC.md.
+        config ESPD_USB_CONSOLE_CDC
+            bool "Serial on OTG CDC (Pd printf, espd_sync)"
+            depends on TINYUSB_CDC_ENABLED
+            default y
+            help
+                Pd printf/print, ESP_LOG, and espd_sync on the OTG CDC port
+                (cu.usbmodem*). Boot logs are easy to miss if the host connects late.
+
+        config ESPD_MSC_VOLUME_LABEL
+            string "Internal flash MSC volume label (Finder name)"
+            depends on ESPD_USE_USB_MSC && FATFS_USE_LABEL
+            default "ESPD"
+            help
+                FAT volume label for the USB mass-storage partition (max 11
+                characters). This is the disk name shown in Finder/macOS, not the
+                TinyUSB product string (see Component config → TinyUSB for that).
+
+        config ESPD_DEV_CDC_SYNC
+            bool "CDC rapid patch sync to SD card (PUT/RELOAD)"
+            depends on ESPD_USE_SDCARD && ESPD_USB_CONSOLE_CDC
+            default y if ESPD_USE_SDCARD && ESPD_USB_CONSOLE_CDC
+            default n
+            help
+                Listen on the CDC port for espd_sync.py (PUT, RELOAD, PING). Writes
+                go to /sdcard only. Does not require MSC. See docs/DEV_SYNC.md.
+
+    endif
 
 endmenu
 
@@ -154,8 +167,8 @@ config ESPD_USE_CONSOLE
     bool "Route Pd print / logs to console"
     default y
     help
-        With USB composite (S3/P4 default), stdout goes to the TinyUSB CDC port.
-        Otherwise uses the IDF console (usually UART0).
+        With OTG CDC console enabled, stdout goes to the TinyUSB CDC port.
+        Otherwise uses the IDF console (USB-JTAG or UART).
 
 config ESPD_USE_AIN
     bool "Compile espd/ain support (GPIO analog inputs)"

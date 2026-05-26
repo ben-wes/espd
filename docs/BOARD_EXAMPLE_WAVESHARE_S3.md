@@ -39,27 +39,27 @@ First build downloads the BSP into **managed_components/** (network required).
 ## USB (composite MSC + serial)
 
 USB **OTG** exposes a **MSC drive** (`storage` partition) and **CDC serial** for
-logs. Board profile sets `ESPD_USB_CONSOLE_CDC` and `ESP_CONSOLE_NONE`. **Pd
-printf** (e.g. `cpu:` lines) goes to CDC; **ESP_LOG** does not unless you add a
-separate hook (do not call `esp_log_set_vprintf` from inside USB init — it can
-break enumeration). TinyUSB runs on **CPU0**; Pd/audio on **CPU1**.
+logs. Board profile enables OTG (MSC + CDC on by default), `ESPD_USB_CONSOLE_CDC`,
+and `ESP_CONSOLE_NONE`. **Pd `print` and `ESP_LOG`** go to OTG CDC (`stdout` after
+`tinyusb_console_init`). TinyUSB on **CPU0**; Pd/audio on **CPU1**.
+
+**Flash:** `cu.debug-console`. **Pd / `espd_sync` / app logs:** pick OTG
+`cu.usbmodem…` from `ls /dev/cu.usb*`. Disable **USB mass storage** only if you
+do not want the Finder volume.
 
 ```bash
 grep -E 'ESPD_USB_CONSOLE_CDC|ESP_CONSOLE' sdkconfig
 # expect CONFIG_ESPD_USB_CONSOLE_CDC=y and CONFIG_ESP_CONSOLE_NONE=y
 ```
 
-**Monitor (important):** App logs are on the **OTG CDC** port, not USB-JTAG. Do not
-use bare `idf.py monitor` — it may pick the wrong port and RTS-reset into download
-mode.
-
 ```bash
-ls /dev/cu.usb*    # note cu.usbmodem* (logs) vs cu.debug-console (flash only)
-idf.py -p /dev/cu.usbmodem* monitor --no-reset
+ls /dev/cu.usb*
+idf.py -p /dev/cu.usbmodem1234561 monitor --no-reset   # print: + ESP_LOG on CDC
+python3 scripts/espd_sync.py -p /dev/cu.usbmodem1234561 ~/my_patch
 ```
 
-Press **RESET** on the board, wait ~2 s for USB composite (MSC + CDC). If the
-monitor disconnects once (`Device not configured`), let it reconnect.
+Boot `ESP_LOG` is easy to miss if the host connects late; after **RESET**, expect
+`print:` and dev-sync lines (`RELOAD`, sparse `I (…) espd_dev:`).
 
 **Flash:** hold **BOOT**, tap **RESET**, release **BOOT** when esptool connects.
 

@@ -73,9 +73,9 @@ Test after **each** step; stay on **b3e6248 USB init** in `espd.c`.
 
 1. **Phase A:** board YAML + optional `ESPD_USB_DEVICE_TASK_PRIO=4` — see doc tables.
    Apply one knob at a time after `fullclean build flash`.
-2. **ESP_LOG on CDC:** `esp_log_set_vprintf` → `stdout` in `app_main` *after*
-   `usb_init()` returns (implemented; never call from inside `usb_init_on_core0`).
-3. **Monitor:** `idf.py -p /dev/cu.usbmodem* monitor --no-reset` then board **RESET**.
+2. **ESP_LOG** and Pd `print` share OTG CDC (`stdout` after `tinyusb_console_init`).
+   Do not add `esp_log_set_vprintf` unless you mean to move logs off CDC.
+3. **Monitor / sync:** `idf.py -p /dev/cu.usbmodem… monitor --no-reset` or `espd_sync.py`.
 2. **Phase B (optional):** `WL_SECTOR_SIZE_4096` + reformat `storage` — more copy
    speed, wipes drive.
 3. **Fast patch dev (different architecture):** use **microSD** (`/sdcard`) or
@@ -88,5 +88,5 @@ Test after **each** step; stay on **b3e6248 USB init** in `espd.c`.
 idf.py -p /dev/cu.usbmodem* monitor
 ```
 
-Press **RESET** after plug-in. Prefer `cu.usbmodem*` over `cu.debug-console` for
-app logs when `CONFIG_ESP_CONSOLE_NONE=y`.
+Press **RESET** after plug-in. App `ESP_LOG` and Pd output are on OTG `cu.usbmodem…`;
+`cu.debug-console` is for flash.

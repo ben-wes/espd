@@ -110,14 +110,27 @@ void espd_dev_cdc_rx_cb(int itf, cdcacm_event_t *event)
         xTaskNotifyGive(s_dev_task);
 }
 
+static bool s_host_dtr;
+
 static void dev_cdc_line_cb(int itf, cdcacm_event_t *event)
 {
+    int dtr;
+
     if (itf != TINYUSB_CDC_ACM_0 || !event)
         return;
-    if (event->type == CDC_EVENT_LINE_STATE_CHANGED &&
-            event->line_state_changed_data.dtr) {
-        dev_reply("+OK dev ready");
+    if (event->type != CDC_EVENT_LINE_STATE_CHANGED)
+        return;
+    dtr = event->line_state_changed_data.dtr;
+    if (!dtr) {
+        s_host_dtr = false;
+        return;
     }
+    /* One ready line per host attach (rising edge only). */
+    if (!s_host_dtr) {
+        dev_reply("+OK dev ready");
+        ESP_LOGI(TAG, "CDC host connected");
+    }
+    s_host_dtr = true;
 }
 
 static void dev_reply(const char *msg)
@@ -276,6 +289,7 @@ static void dev_do_reload(void)
         return;
     }
     s_reload_pending = true;
+    ESP_LOGI(TAG, "RELOAD pending (main.pd on SD)");
     dev_reply("+OK RELOAD pending");
 }
 

@@ -18,19 +18,24 @@ independent; flash MSC can stay mounted for other files.
 
 ## Firmware / menuconfig
 
-**ESPD Configuration → Storage & patches → USB composite (OTG):**
+**ESPD Configuration → Storage & patches → USB device (OTG):**
 
 | Option | Purpose |
 |--------|---------|
-| **Enable USB MSC + CDC** | Flash drive + serial on one cable |
-| **Route logs to CDC** | `cu.usbmodem*` for printf / ESP_LOG |
-| **CDC rapid patch sync** | `espd_sync.py` PUT/RELOAD to `/sdcard` (needs SD) |
-| **MSC volume label** | Finder disk name for internal flash (max 11 chars, default `ESPD`) |
+| **Enable TinyUSB device stack** | OTG USB device — turn on first; sub-options appear below |
+| **USB mass storage** | Internal-flash drive in Finder (default on; uncheck to omit) |
+| **Serial on OTG CDC** | Pd `print` / `printf`, `espd_sync` on OTG `cu.usbmodem*` (default on) |
+| **CDC rapid patch sync** | `espd_sync.py` PUT/RELOAD → `/sdcard` (needs SD) |
+| **MSC volume label** | Finder disk name when MSC is enabled |
 
-USB interface strings (manufacturer/product) are under **Component config → TinyUSB**
-if you want to change those too.
+**Logs on OTG CDC:** `tinyusb_console_init` sends both Pd `print:` and `ESP_LOG`
+(`I (…) tag:`) to `cu.usbmodem…`. Boot `ESP_LOG` is mostly gone by the time
+`espd_sync` connects; you still see lines on **RELOAD**, **DTR connect**, etc.
+`cu.debug-console` is for flash, not app logs with this firmware.
+USB product strings: **Component config → TinyUSB**.
 
-Waveshare board profiles enable dev sync by default when SD + USB composite are on.
+Waveshare profiles default-enable OTG with MSC + CDC + dev sync. Uncheck **USB mass
+storage** only if you do not want the flash drive on the cable.
 
 CDC commands (host → device):
 
@@ -49,29 +54,29 @@ pip install pyserial
 idf.py build flash
 # RESET; eject internal flash optional
 
-python3 scripts/espd_sync.py -p '/dev/cu.usbmodem*' ~/my_pd_project
+python3 scripts/espd_sync.py -p /dev/cu.usbmodem1234561 ~/my_pd_project
 ```
+
+If `ls /dev/cu.usb*` shows **more than one** `usbmodem` device, pass the **OTG CDC**
+port explicitly (not USB-JTAG ROM). Flash uses `cu.debug-console`.
 
 Edit and save in Pure Data on the Mac; the script watches the folder, `PUT`s changed
 `.pd` / `config.txt` files, then sends `RELOAD`.
 
-**Logs:** the script tails everything on one CDC port. Do not run `idf.py monitor` on
-the same port simultaneously.
+**Logs:** the script prints whatever arrives on the OTG port (mostly Pd `print:`).
+`--no-esp-log` hides lines that look like `I/W/E (…) tag:` if any show up. Do not
+run monitor and `espd_sync` on the same port at once.
 
 | Stream | Pattern | Meaning |
 |--------|---------|---------|
 | stderr `→ …` | host → device | dev sync (PUT / PING / RELOAD) |
-| stderr `← …` | device → host | `+OK` / `-ERR` replies (UTF-8 arrows; fine on macOS Terminal) |
-| stdout `I/W/E (…) tag:` | ESP-IDF | storage, WiFi, USB init |
-| stdout *anything else* | Pd | `[print]` messages, etc. |
+| stderr `← …` | device → host | `+OK` / `-ERR` replies (host adds `←`; wire is `+OK` only) |
+| stderr `RELOAD: …` | firmware status | patch reload done (after `→ RELOAD` / `← +OK RELOAD pending`) |
+| stdout `I/W/E (…) tag:` | ESP-IDF (rare on OTG) | usually on JTAG, not OTG |
+| stdout *anything else* | Pd | `[print]`, `cpu:`, etc. |
 
-`ESP_LOG` is **not** on CDC by default in IDF — only `printf`/stdout is. Firmware calls
-`esp_log_set_vprintf()` after USB console init so `I/W/E (…) tag:` lines appear on the
-same port (with log level INFO when USB console CDC is enabled).
-
-With a TTY, `espd_sync.py` colorizes these (cyan/green/red dev, bright white Pd, dim ESP).
-Use `--no-color` or `--no-esp-log` to tone it down. There is no binary framing — dev
-and ESP are recognized by line prefix; all other lines are treated as Pd output.
+With a TTY, `espd_sync.py` colorizes these (cyan/green/red dev, bright cyan `RELOAD:`,
+bright white Pd, dim ESP). Use `--no-color` or `--no-esp-log` to tone it down.
 
 Quick check (after `idf.py flash` and board **RESET**):
 
@@ -84,7 +89,9 @@ Stdout may keep printing `cpu:` — that is normal. If PING fails, reflash; do n
 
 **Disconnect / reset:** By default the watcher waits for the CDC port to return (after
 unplug, `RESET`, or the reset button) and re-syncs all patch files. Use `--no-reconnect`
-to exit instead. Remote reboot:
+to exit instead.
+
+Remote reboot:
 
 ```bash
 python3 scripts/espd_sync.py -p '/dev/cu.usbmodem*' --reset ~/my_pd_project
@@ -99,3 +106,17 @@ loads from `/sdcard` at boot.
 
 Use the **USB flash drive** (MSC) for patches — no rapid CDC path. See
 [USB_MSC_AND_AUDIO.md](USB_MSC_AND_AUDIO.md).
+
+## Without the USB flash drive
+
+Enable **TinyUSB on OTG** (CDC and dev sync default on). Uncheck **USB mass storage** only.
+`espd_sync.py` still works; patches on **microSD**. Flash via **USB-JTAG**
+(`cu.debug-console`), **RESET**, then sync on `cu.usbmodem*`.
+
+## Without USB OTG (fully off)
+
+Disable **Enable TinyUSB device stack** to return to the pre-USB-device workflow:
+
+- **Flash / monitor:** USB-Serial-JTAG (or UART) — usually one port, auto-reset on flash.
+- **ESP_LOG:** IDF default console (not the CDC hook).
+- **Patches:** SD, SPIFFS, etc. — not `espd_sync.py`.

@@ -41,7 +41,7 @@
 #if CONFIG_ESPD_DEV_CDC_SYNC
 #include "espd_dev.h"
 #endif
-#if CONFIG_ESPD_USE_USB_COMPOSITE
+#if CONFIG_ESPD_USE_USB_OTG
 #include "esp_partition.h"
 #include "freertos/semphr.h"
 #include "wear_levelling.h"
@@ -66,7 +66,7 @@
 #endif
 static const char *TAG = "ESPD";
 
-#if CONFIG_ESPD_USE_USB_COMPOSITE
+#if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
 static wl_handle_t wl_handle = WL_INVALID_HANDLE;
 static tinyusb_msc_storage_handle_t msc_handle = NULL;
 #endif
@@ -587,12 +587,12 @@ void espd_din_log_map(void)
 #endif
 }
 
-#if defined(ESPD_USE_SDCARD) || CONFIG_ESPD_USE_USB_COMPOSITE || defined(ESPD_USE_WIFI) || \
+#if defined(ESPD_USE_SDCARD) || CONFIG_ESPD_USE_USB_MSC || defined(ESPD_USE_WIFI) || \
     defined(ESPD_USE_AIN) || defined(ESPD_USE_TOUCH) || defined(ESPD_USE_AOUT) || \
     defined(ESPD_USE_DIN) || defined(ESPD_USE_DOUT)
 #include <stdio.h>
 #endif
-#if defined(ESPD_USE_SDCARD) || CONFIG_ESPD_USE_USB_COMPOSITE
+#if defined(ESPD_USE_SDCARD) || CONFIG_ESPD_USE_USB_MSC
 #include <dirent.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -1541,21 +1541,13 @@ static void espd_touch_poll(void)
 }
 #endif
 
-#if CONFIG_ESPD_USE_USB_COMPOSITE
+#if CONFIG_ESPD_USE_USB_OTG
 /* Pd/audio on CPU1 (board profile); TinyUSB on CPU0. */
 #define ESPD_USB_TASK_CORE          0
 #define ESPD_USB_INIT_TASK_PRIO     2
 #define ESPD_USB_DEVICE_TASK_PRIO   4  /* step 2: drain MSC FIFO during host writes */
 
-#if CONFIG_ESPD_USB_CONSOLE_CDC && CONFIG_ESPD_USE_CONSOLE
-/* After tinyusb_console_init (inside usb_init). Do not call from usb_init_on_core0. */
-static int espd_cdc_log_vprintf(const char *fmt, va_list ap)
-{
-    return vfprintf(stdout, fmt, ap);
-}
-#endif
-
-#if CONFIG_ESPD_USE_USB_COMPOSITE && CONFIG_FATFS_USE_LABEL
+#if CONFIG_ESPD_USE_USB_MSC && CONFIG_FATFS_USE_LABEL
 static void espd_usb_apply_msc_volume_label(void)
 {
     const char *label = CONFIG_ESPD_MSC_VOLUME_LABEL;
@@ -1581,6 +1573,10 @@ static void espd_usb_apply_msc_volume_label(void) {}
 
 static void usb_init_on_core0(void)
 {
+    esp_err_t err;
+    tinyusb_config_t tusb_cfg;
+
+#if CONFIG_ESPD_USE_USB_MSC
     const esp_partition_t *data_partition = esp_partition_find_first(
         ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "storage");
 
@@ -1589,7 +1585,7 @@ static void usb_init_on_core0(void)
         return;
     }
 
-    esp_err_t err = wl_mount(data_partition, &wl_handle);
+    err = wl_mount(data_partition, &wl_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "USB: wear levelling failed: %s", esp_err_to_name(err));
         return;
@@ -1616,8 +1612,9 @@ static void usb_init_on_core0(void)
     }
     ESP_LOGI(TAG, "USB: MSC at %s (partition storage)", ESPD_STORAGE_MOUNT);
     espd_usb_apply_msc_volume_label();
+#endif
 
-    tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
+    tusb_cfg = TINYUSB_DEFAULT_CONFIG();
     tusb_cfg.task = TINYUSB_TASK_CUSTOM(
         TINYUSB_DEFAULT_TASK_SIZE, ESPD_USB_DEVICE_TASK_PRIO, ESPD_USB_TASK_CORE);
     err = tinyusb_driver_install(&tusb_cfg);
@@ -1649,9 +1646,13 @@ static void usb_init_on_core0(void)
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "USB: CDC console: %s", esp_err_to_name(err));
     } else {
-        ESP_LOGI(TAG, "USB: logs on CDC (cu.usbmodem*); MSC drive on same cable");
-    }
+#if CONFIG_ESPD_USE_USB_MSC
+        ESP_LOGI(TAG, "USB: logs on CDC (cu.usbmodem*); MSC on same cable");
 #else
+        ESP_LOGI(TAG, "USB: logs on CDC (cu.usbmodem*) — MSC disabled");
+#endif
+    }
+#elif CONFIG_ESPD_USE_USB_MSC
     ESP_LOGW(TAG, "USB: MSC only — enable ESPD_USB_CONSOLE_CDC for serial logs");
 #endif
 }
@@ -1913,7 +1914,7 @@ static QueueHandle_t uart_queue;
 static void console_init(void)
 {
     (void)uart_queue;
-#if !CONFIG_ESPD_USE_USB_COMPOSITE
+#if !CONFIG_ESPD_USB_CONSOLE_CDC
     /* UART console: host->Pd UART input disabled (boot crashes if we install
      * a second driver). Output still goes via printf / pdmain_print. */
 #endif
@@ -2031,11 +2032,8 @@ void app_main(void)
             ESP_LOGW(TAG, "esp_pthread_set_cfg failed; using IDF defaults");
     }
 
-#if CONFIG_ESPD_USE_USB_COMPOSITE
+#if CONFIG_ESPD_USE_USB_OTG
     usb_init();
-#if CONFIG_ESPD_USB_CONSOLE_CDC && CONFIG_ESPD_USE_CONSOLE
-    esp_log_set_vprintf(espd_cdc_log_vprintf);
-#endif
 #endif
 
     espd_board_early_init();

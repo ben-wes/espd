@@ -5,12 +5,10 @@ Watch a local Pure Data project folder and sync to the ESP32 SD card over CDC.
 Requires: pip install pyserial
 
 Usage:
-  python3 scripts/espd_sync.py -p '/dev/cu.usbmodem*' ~/my_patch
+  python3 scripts/espd_sync.py -p /dev/cu.usbmodem1234561 ./my_patch
 
 The ESP must have CONFIG_ESPD_DEV_CDC_SYNC and a microSD card mounted at /sdcard.
-Internal flash MSC can stay mounted in Finder — rapid dev uses SD only.
-
-Do not run idf.py monitor on the same port at the same time; this script tails logs.
+Do not run idf.py monitor on the same port at the same time.
 """
 
 from __future__ import annotations
@@ -37,6 +35,7 @@ _STYLES = {
     "dev-ok": "\033[32m",
     "dev-err": "\033[31m",
     "dev-tx": "\033[36m",
+    "espd": "\033[1;36m",
     "pd": "\033[97m",
     "esp-i": "\033[90m",
     "esp-d": "\033[90m",
@@ -46,15 +45,22 @@ _STYLES = {
     "script": "\033[2m",
 }
 
-# Dev: +OK / -ERR. ESP-IDF: I (123) tag:. Everything else → Pd ([print], [stdout], cpu:, …)
-_ESP_LOG_RE = re.compile(rb"^[IWEDV] \(\d+\) ")
+_ANSI_RE = re.compile(rb"\x1b\[[0-9;]*m")
+_ESP_LOG_RE = re.compile(rb"^[IWEDV] \([^)]+\) [^:\n]+: ")
+
+
+def _strip_ansi(line: bytes) -> bytes:
+    return _ANSI_RE.sub(b"", line)
 
 
 def classify_line(line: bytes) -> str:
+    line = _strip_ansi(line)
     if line.startswith(b"-ERR"):
         return "dev-err"
     if line.startswith(b"+"):
         return "dev-ok"
+    if line.startswith(b"RELOAD:"):
+        return "espd"
     if _ESP_LOG_RE.match(line):
         return "esp-" + line[:1].decode().lower()
     return "pd"
@@ -85,12 +91,15 @@ def log_dev_rx(line: bytes) -> None:
 
 def log_device_line(line: bytes) -> None:
     kind = classify_line(line)
+    text = line.decode(errors="replace")
     if kind.startswith("esp-"):
         if not _out.show_esp:
             return
-        _styled(sys.stdout, line.decode(errors="replace"), kind)
+        _styled(sys.stdout, text, kind)
+    elif kind == "espd":
+        _styled(sys.stderr, text, kind)
     else:
-        _styled(sys.stdout, line.decode(errors="replace"), "pd")
+        _styled(sys.stdout, text, "pd")
 
 
 def _need_serial():
@@ -106,7 +115,6 @@ class EspdDisconnected(Exception):
 
 
 def resolve_port(pattern: str) -> str:
-    """Expand shell-style globs; require exactly one CDC port."""
     if any(ch in pattern for ch in "*?[]"):
         matches = sorted(glob.glob(pattern))
         if not matches:
@@ -115,7 +123,7 @@ def resolve_port(pattern: str) -> str:
             sys.exit(
                 f"ambiguous port {pattern!r} ({len(matches)} devices):\n"
                 + "\n".join(f"  {m}" for m in matches)
-                + "\nPick one path explicitly."
+                + "\nUse the OTG CDC port path explicitly (see docs/DEV_SYNC.md)."
             )
         return matches[0]
     if not os.path.exists(pattern):
@@ -123,15 +131,12 @@ def resolve_port(pattern: str) -> str:
     return pattern
 
 
-def wait_for_port(pattern: str, timeout: float | None) -> str:
-    deadline = None if timeout is None else time.time() + timeout
+def wait_for_port(pattern: str) -> str:
     while True:
         try:
             return resolve_port(pattern)
         except EspdDisconnected:
-            if deadline is not None and time.time() >= deadline:
-                raise
-            time.sleep(0.4)
+            time.sleep(0.5)
 
 
 class EspdCdc:
@@ -139,26 +144,14 @@ class EspdCdc:
         import serial
 
         self.port = port
-        self._ser = serial.Serial()
-        self._ser.port = port
-        self._ser.baudrate = 115200
-        self._ser.timeout = 0.05
-        self._ser.open()
-        if hasattr(self._ser, "exclusive"):
-            self._ser.exclusive = True
-        self._ser.dtr = False
-        self._ser.rts = False
-        time.sleep(0.05)
+        self._ser = serial.Serial(port, 115200, timeout=0.05)
         self._ser.dtr = True
         self._ser.rts = True
-        self._ser.reset_input_buffer()
-        time.sleep(0.35)
 
         self._lock = threading.Lock()
         self._cmd_lock = threading.Lock()
         self._reply: bytes | None = None
         self._reply_event = threading.Event()
-        self._proto_lines: list[bytes] = []
         self._stop = threading.Event()
         self._disconnected = threading.Event()
         self._thread = threading.Thread(target=self._reader, daemon=True)
@@ -193,19 +186,12 @@ class EspdCdc:
         while not self._stop.is_set():
             try:
                 chunk = self._ser.read(4096)
-            except serial.serialutil.SerialException as e:
-                if self._stop.is_set():
-                    break
-                self._mark_disconnected(str(e))
-                break
-            except OSError as e:
+            except (serial.serialutil.SerialException, OSError) as e:
                 if self._stop.is_set():
                     break
                 self._mark_disconnected(str(e))
                 break
             if not chunk:
-                if self._disconnected.is_set():
-                    break
                 time.sleep(0.01)
                 continue
             buf += chunk
@@ -217,7 +203,6 @@ class EspdCdc:
                 if line.startswith(b"+") or line.startswith(b"-ERR"):
                     with self._lock:
                         self._reply = line
-                        self._proto_lines.append(line)
                     self._reply_event.set()
                     log_dev_rx(line)
                 else:
@@ -258,57 +243,33 @@ class EspdCdc:
         data = open(local_path, "rb").read()
         rel_path = rel_path.replace(os.sep, "/")
         self.command(f"PUT {rel_path} {len(data)}", timeout=15.0)
-        try:
-            self._ser.write(data)
-            self._ser.flush()
-        except OSError as e:
-            self._mark_disconnected(str(e))
-            raise EspdDisconnected(str(e)) from e
-        deadline = time.time() + max(60.0, len(data) / 20000.0)
-        while time.time() < deadline:
-            line = self._wait_reply(2.0)
+        self._ser.write(data)
+        self._ser.flush()
+        while True:
+            line = self._wait_reply(10.0)
             if line.startswith(b"+OK PUT done"):
                 return
-        raise TimeoutError(f"PUT {rel_path}: no done ack")
 
     def reload(self) -> None:
         self.command("RELOAD", timeout=30.0)
 
     def reset_device(self) -> None:
-        """Ask firmware to esp_restart() after +OK RESET."""
         self.command("RESET", timeout=2.0)
 
 
-def connect_cdc(port_pattern: str, debug: bool = False) -> EspdCdc:
-    port = wait_for_port(port_pattern, timeout=None)
+def connect_cdc(port_pattern: str) -> EspdCdc:
+    port = wait_for_port(port_pattern)
     log_script(f"port: {port}")
     cdc = EspdCdc(port)
-    if cdc._reply_event.wait(2.0 if debug else 1.0):
-        with cdc._lock:
-            ready = cdc._reply or b""
-            cdc._reply = None
-        cdc._reply_event.clear()
-        if ready:
-            log_dev_rx(ready)
-
-    last_err: Exception | None = None
-    line = b""
-    for attempt in range(5):
-        try:
-            if debug:
-                log_script(f"PING attempt {attempt + 1}")
-            line = cdc.command("PING", timeout=5.0)
-            break
-        except TimeoutError as e:
-            last_err = e
-            if not cdc.alive:
-                raise EspdDisconnected("device gone during PING") from e
-            time.sleep(0.25)
-    else:
-        raise last_err or TimeoutError("device reply timeout")
-
-    log_script(f"connected ({port}): {line.decode(errors='replace')}")
-    return cdc
+    time.sleep(0.25)  # let DTR / +OK dev ready clear before the first command
+    last = b""
+    for _ in range(5):
+        last = cdc.command("PING", timeout=10.0)
+        if last.startswith(b"+OK PING"):
+            log_script(f"connected ({port}): {last.decode(errors='replace')}")
+            return cdc
+        time.sleep(0.2)
+    raise TimeoutError(f"PING failed: {last.decode(errors='replace')}")
 
 
 def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str]) -> None:
@@ -341,12 +302,11 @@ def collect_files(root: str) -> dict[str, float]:
 def main() -> int:
     _need_serial()
     ap = argparse.ArgumentParser(description="ESPD SD-card rapid sync over CDC")
-    ap.add_argument("-p", "--port", required=True, help="CDC port (cu.usbmodem*)")
+    ap.add_argument("-p", "--port", required=True, help="CDC serial port path")
     ap.add_argument("watch_dir", help="Local folder to watch (contains main.pd)")
     ap.add_argument("--debounce", type=float, default=0.35, help="seconds after save")
     ap.add_argument("--ping", action="store_true", help="PING and exit")
     ap.add_argument("--reset", action="store_true", help="RESET device over CDC and exit")
-    ap.add_argument("--debug", action="store_true", help="verbose connection diagnostics")
     ap.add_argument("--no-color", action="store_true", help="disable ANSI colors")
     ap.add_argument(
         "--no-esp-log",
@@ -357,13 +317,6 @@ def main() -> int:
         "--no-reconnect",
         action="store_true",
         help="exit when USB disconnects instead of waiting for the port",
-    )
-    ap.add_argument(
-        "--reconnect-timeout",
-        type=float,
-        default=None,
-        metavar="SEC",
-        help="give up waiting for reconnect after SEC (default: wait forever)",
     )
     ap.add_argument(
         "--no-resync-on-reconnect",
@@ -381,39 +334,24 @@ def main() -> int:
     if not os.path.isfile(os.path.join(watch_dir, "main.pd")):
         log_script(f"warning: no main.pd in {watch_dir}")
 
-    port_pattern = args.port
     cdc: EspdCdc | None = None
-
     try:
         try:
-            cdc = connect_cdc(port_pattern, debug=args.debug)
+            cdc = connect_cdc(args.port)
         except (TimeoutError, EspdDisconnected) as e:
             log_script(f"connect failed: {e}")
             return 1
 
         if args.reset:
-            try:
-                cdc.reset_device()
-            except EspdDisconnected:
-                log_script("device reset (port closed)")
-                return 0
-            log_script("device resetting…")
+            cdc.reset_device()
             cdc.close()
             cdc = None
             if args.no_reconnect:
                 return 0
-            log_script("waiting for device to come back…")
-            try:
-                wait_for_port(port_pattern, args.reconnect_timeout)
-                cdc = connect_cdc(port_pattern, debug=args.debug)
-            except EspdDisconnected as e:
-                log_script(str(e))
-            return 1
+            log_script("waiting for device…")
+            cdc = connect_cdc(args.port)
             if not args.no_resync_on_reconnect:
-                rels = list(collect_files(watch_dir))
-                if rels:
-                    log_script(f"resync after reset ({len(rels)} files)")
-                    sync_files(cdc, watch_dir, rels)
+                sync_files(cdc, watch_dir, list(collect_files(watch_dir)))
             return 0
 
         if args.ping:
@@ -423,18 +361,18 @@ def main() -> int:
         log_script(f"watching {watch_dir} ({len(mtimes)} files) — save in Pd to sync")
 
         while True:
-            if cdc is None or not cdc.alive:
+            if not cdc.alive:
                 if args.no_reconnect:
                     log_script("device disconnected — exiting")
                     return 1
+                cdc.close()
                 cdc = None
                 log_script("waiting for device…")
                 try:
-                    wait_for_port(port_pattern, args.reconnect_timeout)
-                    cdc = connect_cdc(port_pattern, debug=args.debug)
-                except EspdDisconnected as e:
+                    cdc = connect_cdc(args.port)
+                except (TimeoutError, EspdDisconnected) as e:
                     log_script(str(e))
-                    return 1
+                    continue
                 if not args.no_resync_on_reconnect:
                     rels = list(mtimes)
                     if rels:
@@ -457,9 +395,6 @@ def main() -> int:
                 sync_files(cdc, watch_dir, changed)
                 mtimes = now2
             except EspdDisconnected:
-                if cdc:
-                    cdc.close()
-                cdc = None
                 continue
 
     except KeyboardInterrupt:
