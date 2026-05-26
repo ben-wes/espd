@@ -1537,7 +1537,7 @@ static void espd_touch_poll(void)
 /* Pd/audio on CPU1 (board profile); TinyUSB on CPU0. */
 #define ESPD_USB_TASK_CORE          0
 #define ESPD_USB_INIT_TASK_PRIO     2
-#define ESPD_USB_DEVICE_TASK_PRIO   2
+#define ESPD_USB_DEVICE_TASK_PRIO   4  /* step 2: drain MSC FIFO during host writes */
 
 static void usb_init_on_core0(void)
 {

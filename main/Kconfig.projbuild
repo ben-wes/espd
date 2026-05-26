@@ -100,9 +100,7 @@ config ESPD_USB_CONSOLE_CDC
     help
         Composite mode: set ESP-STDIO console to None and enable this so
         idf.py monitor uses the OTG CDC port (cu.usbmodem* on macOS). MSC and
-        CDC are separate USB functions on the same cable. Waveshare board profiles
-        enable this by default. USB Serial/JTAG is not available for logs while
-        the device is a USB gadget on that port.
+        CDC share one OTG cable. Prefer: idf.py -p PORT monitor --no-reset.
 
 endmenu
 

@@ -39,22 +39,33 @@ First build downloads the BSP into **managed_components/** (network required).
 ## USB (composite MSC + serial)
 
 USB **OTG** exposes a **MSC drive** (`storage` partition) and **CDC serial** for
-logs. Board profile sets `ESPD_USB_CONSOLE_CDC` and `ESP_CONSOLE_NONE`. TinyUSB
-runs on **CPU0**; Pd/audio on **CPU1**.
+logs. Board profile sets `ESPD_USB_CONSOLE_CDC` and `ESP_CONSOLE_NONE`. **Pd
+printf** (e.g. `cpu:` lines) goes to CDC; **ESP_LOG** does not unless you add a
+separate hook (do not call `esp_log_set_vprintf` from inside USB init — it can
+break enumeration). TinyUSB runs on **CPU0**; Pd/audio on **CPU1**.
 
 ```bash
 grep -E 'ESPD_USB_CONSOLE_CDC|ESP_CONSOLE' sdkconfig
 # expect CONFIG_ESPD_USB_CONSOLE_CDC=y and CONFIG_ESP_CONSOLE_NONE=y
 ```
 
-**Monitor:** `idf.py -p /dev/cu.usbmodem* monitor`, then press **RESET**. USB
-re-enumerates once at boot (MSC + CDC). Do not use `debug-console` for app logs.
+**Monitor (important):** App logs are on the **OTG CDC** port, not USB-JTAG. Do not
+use bare `idf.py monitor` — it may pick the wrong port and RTS-reset into download
+mode.
+
+```bash
+ls /dev/cu.usb*    # note cu.usbmodem* (logs) vs cu.debug-console (flash only)
+idf.py -p /dev/cu.usbmodem* monitor --no-reset
+```
+
+Press **RESET** on the board, wait ~2 s for USB composite (MSC + CDC). If the
+monitor disconnects once (`Device not configured`), let it reconnect.
 
 **Flash:** hold **BOOT**, tap **RESET**, release **BOOT** when esptool connects.
-After flash, **RESET** normally (not `waiting for download`).
 
-First boot may **format** `storage` (quiet for several seconds). `[cputime]` can
-rise during large Finder copies; eject the drive when done.
+First boot may **format** `storage` (quiet for several seconds).
+
+See [USB_MSC_AND_AUDIO.md](USB_MSC_AND_AUDIO.md) for optional copy/audio tuning.
 
 See [tusb_composite_msc_serialdevice](https://github.com/espressif/esp-idf/tree/v6.0.1/examples/peripherals/usb/device/tusb_composite_msc_serialdevice).
 
