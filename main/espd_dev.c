@@ -1,12 +1,13 @@
 /*
- * Host dev sync over TinyUSB CDC (rapid patching to microSD only).
+ * Host dev sync over TinyUSB CDC (rapid patching to local storage target).
  *
  * Protocol (host -> device):
  *   PING
  *   PUT <relpath> <nbytes> <crc32hex>
- *       -> +OK PUT skip (SD file already matches) or +OK PUT ready then <nbytes>
- *          raw bytes -> +OK PUT done <crc> (CRC-32, same as Python zlib.crc32)
+ *       -> +OK PUT skip (file already matches) or +OK PUT ready then <nbytes>
+ *          raw bytes -> +OK PUT done <crc> (writes to <path>.tmp, rename on success)
  *   RELOAD
+ *   MODE MSC_SYNC | MODE NORMAL
  *   RESET  (reboot ESP after reply)
  *
  * Device replies (one line each, prefixed for filtering):
@@ -32,6 +33,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include <unistd.h>
 
 static const char *TAG = "espd_dev";
@@ -39,11 +41,12 @@ static const char *TAG = "espd_dev";
 #define ESPD_DEV_TASK_CORE          0
 /* Below TinyUSB device task (4) so CDC RX is not starved during PUT payload. */
 #define ESPD_DEV_TASK_PRIO          3
-#define ESPD_DEV_RX_CHUNK           256
+#define ESPD_DEV_RX_CHUNK           2048
+#define ESPD_DEV_PUT_FILEBUF        8192
 #define ESPD_DEV_RX_RING            16384
 /* Room for PUT <path-with-spaces> <size> <crc> (path up to ESPD_DEV_PATH_MAX). */
 #define ESPD_DEV_LINE_MAX           256
-#define ESPD_DEV_PATH_MAX           192
+#define ESPD_DEV_PATH_MAX           384
 
 typedef enum {
     DEV_CMD_NONE = 0,
@@ -51,6 +54,11 @@ typedef enum {
     DEV_CMD_RELOAD,
     DEV_CMD_PING,
 } dev_cmd_t;
+
+typedef enum {
+    DEV_TARGET_SD = 0,
+    DEV_TARGET_MSC,
+} dev_target_t;
 
 static TaskHandle_t s_dev_task;
 static volatile bool s_reload_pending;
@@ -65,8 +73,12 @@ static size_t s_put_remain;
 static uint32_t s_put_expect_crc;
 static uint32_t s_put_crc;
 static FILE *s_put_fp;
+static char s_put_tmp[ESPD_DEV_PATH_MAX];
+static SemaphoreHandle_t s_put_mux;
+static dev_target_t s_target = DEV_TARGET_SD;
 
 static void dev_reply(const char *msg);
+static void dev_put_data(const uint8_t *data, size_t len);
 
 static void dev_rx_flush(void)
 {
@@ -121,12 +133,27 @@ static void dev_drain_cdc_hw(void)
         dev_rx_push(buf, rx);
 }
 
+/* PUT payload bypasses the 16 KiB line ring (large files overflow it otherwise). */
+static void dev_drain_cdc_put(void)
+{
+    uint8_t buf[ESPD_DEV_RX_CHUNK];
+    size_t rx;
+
+    if (!tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
+        return;
+
+    while (tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, buf, sizeof(buf), &rx) == ESP_OK && rx > 0)
+        dev_put_data(buf, rx);
+}
+
 void espd_dev_cdc_rx_cb(int itf, cdcacm_event_t *event)
 {
     (void)event;
     if (itf != TINYUSB_CDC_ACM_0)
         return;
-    dev_drain_cdc_hw();
+    /* PUT payload drained only on espd_dev task (avoids races with this callback). */
+    if (s_cmd != DEV_CMD_PUT || s_put_remain == 0)
+        dev_drain_cdc_hw();
     if (s_dev_task)
         xTaskNotifyGive(s_dev_task);
 }
@@ -185,8 +212,45 @@ static void dev_reply(const char *msg)
     tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, pdMS_TO_TICKS(200));
 }
 
-static int dev_sdcard_ready(void)
+static const char *dev_target_mount(dev_target_t target)
 {
+#if CONFIG_ESPD_USE_USB_MSC
+    if (target == DEV_TARGET_MSC)
+        return ESPD_STORAGE_MOUNT;
+#endif
+    return ESPD_SDCARD_MOUNT;
+}
+
+static const char *dev_target_name(dev_target_t target)
+{
+    if (target == DEV_TARGET_MSC)
+        return "msc";
+    return "sd";
+}
+
+static dev_target_t dev_default_target(void)
+{
+#ifdef ESPD_USE_SDCARD
+    if (espd_storage_sdcard_ready())
+        return DEV_TARGET_SD;
+#endif
+#if CONFIG_ESPD_USE_USB_MSC
+    if (espd_storage_flash_ready())
+        return DEV_TARGET_MSC;
+#endif
+    return DEV_TARGET_SD;
+}
+
+static int dev_target_ready(dev_target_t target)
+{
+#if CONFIG_ESPD_USE_USB_MSC
+    if (target == DEV_TARGET_MSC) {
+        struct stat st;
+        if (stat(ESPD_STORAGE_MOUNT, &st) != 0 || !S_ISDIR(st.st_mode))
+            return 0;
+        return 1;
+    }
+#endif
 #ifdef ESPD_USE_SDCARD
     struct stat st;
     if (stat(ESPD_SDCARD_MOUNT, &st) != 0 || !S_ISDIR(st.st_mode))
@@ -213,7 +277,7 @@ static int dev_rel_path_ok(const char *rel)
 
 static int dev_build_path(char *out, size_t outsz, const char *rel)
 {
-    int n = snprintf(out, outsz, "%s/%s", ESPD_SDCARD_MOUNT, rel);
+    int n = snprintf(out, outsz, "%s/%s", dev_target_mount(s_target), rel);
     if (n < 0 || (size_t)n >= outsz)
         return 0;
     return 1;
@@ -250,20 +314,44 @@ static int dev_file_hash(const char *full, size_t *out_size, uint32_t *out_crc)
     return 0;
 }
 
+static void dev_put_cleanup_temp(void)
+{
+    if (s_put_tmp[0]) {
+        unlink(s_put_tmp);
+        s_put_tmp[0] = '\0';
+    }
+}
+
+static int dev_put_commit(const char *final_full)
+{
+    if (!s_put_tmp[0])
+        return -1;
+    unlink(final_full);
+    if (rename(s_put_tmp, final_full) != 0) {
+        ESP_LOGW(TAG, "rename %s failed (%d)", s_put_rel, errno);
+        dev_put_cleanup_temp();
+        return -1;
+    }
+    s_put_tmp[0] = '\0';
+    return 0;
+}
+
 static void dev_mkdir_parents(const char *fullpath)
 {
     char tmp[ESPD_DEV_PATH_MAX];
     char *p;
+    struct stat st;
 
     if (strlen(fullpath) >= sizeof(tmp))
         return;
     strcpy(tmp, fullpath);
     for (p = tmp + 1; *p; p++) {
-        if (*p == '/') {
-            *p = '\0';
-            mkdir(tmp, 0755);
-            *p = '/';
-        }
+        if (*p != '/')
+            continue;
+        *p = '\0';
+        if (stat(tmp, &st) != 0 && mkdir(tmp, 0755) != 0)
+            ESP_LOGW(TAG, "mkdir %s failed (%d)", tmp, errno);
+        *p = '/';
     }
 }
 
@@ -274,8 +362,10 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     uint32_t disk_crc = 0;
     int err;
 
-    if (!dev_sdcard_ready()) {
-        dev_reply("-ERR no sdcard (insert card for rapid dev)");
+    if (!dev_target_ready(s_target)) {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "-ERR target %s not mounted", dev_target_name(s_target));
+        dev_reply(msg);
         return;
     }
     if (!dev_rel_path_ok(rel)) {
@@ -301,9 +391,24 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     dev_drain_cdc_hw();
 
     dev_mkdir_parents(full);
-    s_put_fp = fopen(full, "wb");
+    dev_put_cleanup_temp();
+    if (snprintf(s_put_tmp, sizeof(s_put_tmp), "%s.tmp", full) >= (int)sizeof(s_put_tmp)) {
+        dev_reply("-ERR path too long");
+        return;
+    }
+    /* Drop a partial temp from an earlier attempt; keep s_put_tmp for fopen. */
+    unlink(s_put_tmp);
+    s_put_fp = fopen(s_put_tmp, "wb");
+    if (s_put_fp) {
+        static char put_io_buf[ESPD_DEV_PUT_FILEBUF];
+        setvbuf(s_put_fp, put_io_buf, _IOFBF, sizeof(put_io_buf));
+    }
     if (!s_put_fp) {
-        dev_reply("-ERR open failed");
+        char msg[80];
+        snprintf(msg, sizeof(msg), "-ERR open failed (%d)", errno);
+        dev_reply(msg);
+        ESP_LOGW(TAG, "PUT open %s failed (%d)", s_put_tmp, errno);
+        s_put_tmp[0] = '\0';
         return;
     }
 
@@ -318,10 +423,14 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
 
 static void dev_put_data(const uint8_t *data, size_t len)
 {
+    char final_full[ESPD_DEV_PATH_MAX];
     size_t n;
     char reply[96];
 
+    if (!s_put_mux || xSemaphoreTake(s_put_mux, portMAX_DELAY) != pdTRUE)
+        return;
     if (!s_put_fp || s_cmd != DEV_CMD_PUT) {
+        xSemaphoreGive(s_put_mux);
         return;
     }
     n = len;
@@ -333,27 +442,49 @@ static void dev_put_data(const uint8_t *data, size_t len)
             s_put_fp = NULL;
             s_put_remain = 0;
             s_cmd = DEV_CMD_NONE;
+            dev_put_cleanup_temp();
+            xSemaphoreGive(s_put_mux);
             dev_reply("-ERR write failed");
             return;
         }
         s_put_crc = esp_crc32_le(s_put_crc, data, (uint32_t)n);
     }
     s_put_remain -= n;
-    if (s_put_remain == 0) {
+    if (s_put_remain > 0) {
+        xSemaphoreGive(s_put_mux);
+        return;
+    }
+
+    {
         int fd = fileno(s_put_fp);
         fflush(s_put_fp);
-        if (fd >= 0)
+#if CONFIG_ESPD_USE_USB_MSC
+        /* fsync on internal flash is slow and can stall CDC; SD commit is fine after fflush. */
+        if (fd >= 0 && s_target == DEV_TARGET_MSC)
             fsync(fd);
+#else
+        (void)fd;
+#endif
         fclose(s_put_fp);
         s_put_fp = NULL;
         s_cmd = DEV_CMD_NONE;
+
         if (s_put_crc != s_put_expect_crc) {
+            dev_put_cleanup_temp();
+            xSemaphoreGive(s_put_mux);
             snprintf(reply, sizeof(reply),
                 "-ERR PUT crc exp %08" PRIx32 " got %08" PRIx32,
                 s_put_expect_crc, s_put_crc);
             dev_reply(reply);
             return;
         }
+        if (!dev_build_path(final_full, sizeof(final_full), s_put_rel)
+                || dev_put_commit(final_full) != 0) {
+            xSemaphoreGive(s_put_mux);
+            dev_reply("-ERR commit failed");
+            return;
+        }
+        xSemaphoreGive(s_put_mux);
         snprintf(reply, sizeof(reply), "+OK PUT done %08" PRIx32, s_put_crc);
         dev_reply(reply);
         espd_storage_refresh_paths();
@@ -362,12 +493,14 @@ static void dev_put_data(const uint8_t *data, size_t len)
 
 static void dev_do_reload(void)
 {
-    if (!dev_sdcard_ready()) {
-        dev_reply("-ERR no sdcard");
+    if (!dev_target_ready(s_target)) {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "-ERR target %s not mounted", dev_target_name(s_target));
+        dev_reply(msg);
         return;
     }
     s_reload_pending = true;
-    ESP_LOGI(TAG, "RELOAD pending (main.pd on SD)");
+    ESP_LOGI(TAG, "RELOAD pending (main.pd on %s)", dev_target_mount(s_target));
     dev_reply("+OK RELOAD pending");
 }
 
@@ -426,6 +559,26 @@ static int dev_parse_put_line(char *line, char *rel, size_t relsz,
     return 1;
 }
 
+static void dev_set_mode_msc_sync(void)
+{
+#if CONFIG_ESPD_USE_USB_MSC
+    dev_reply("+OK MODE msc_sync rebooting");
+    vTaskDelay(pdMS_TO_TICKS(250));
+    espd_usb_msc_sync_mode_set(true);
+    esp_restart();
+#else
+    dev_reply("-ERR msc not enabled");
+#endif
+}
+
+static void dev_set_mode_normal(void)
+{
+    dev_reply("+OK MODE normal rebooting");
+    vTaskDelay(pdMS_TO_TICKS(250));
+    espd_usb_msc_sync_mode_set(false);
+    esp_restart();
+}
+
 static void dev_handle_line(char *line)
 {
     if (!line)
@@ -435,10 +588,20 @@ static void dev_handle_line(char *line)
         return;
 
     if (!strcmp(line, "PING")) {
-        if (dev_sdcard_ready())
-            dev_reply("+OK PING sdcard mounted");
-        else
-            dev_reply("+OK PING sdcard not mounted");
+        char reply[128];
+        snprintf(reply, sizeof(reply), "+OK PING target=%s mounted=%s mode=%s",
+            dev_target_name(s_target),
+            dev_target_ready(s_target) ? "yes" : "no",
+            espd_usb_msc_sync_mode_active() ? "msc_sync" : "normal");
+        dev_reply(reply);
+        return;
+    }
+    if (!strcmp(line, "MODE MSC_SYNC")) {
+        dev_set_mode_msc_sync();
+        return;
+    }
+    if (!strcmp(line, "MODE NORMAL")) {
+        dev_set_mode_normal();
         return;
     }
     if (!strcmp(line, "RELOAD")) {
@@ -516,12 +679,7 @@ static void dev_poll_rx(void)
 
 static void dev_poll_put_payload(void)
 {
-    uint8_t buf[ESPD_DEV_RX_CHUNK];
-    size_t n;
-
-    dev_drain_cdc_hw();
-    while ((n = dev_rx_pop(buf, sizeof(buf))) > 0)
-        dev_put_data(buf, n);
+    dev_drain_cdc_put();
 }
 
 static void espd_dev_task(void *arg)
@@ -530,7 +688,7 @@ static void espd_dev_task(void *arg)
     for (;;) {
         if (s_cmd == DEV_CMD_PUT && s_put_remain > 0) {
             dev_poll_put_payload();
-            vTaskDelay(pdMS_TO_TICKS(1));
+            (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(0));
         } else {
             dev_poll_rx();
             (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10));
@@ -548,6 +706,10 @@ void espd_dev_init(void)
     s_reload_pending = false;
     s_rx_head = 0;
     s_rx_tail = 0;
+    s_put_tmp[0] = '\0';
+    if (!s_put_mux)
+        s_put_mux = xSemaphoreCreateMutex();
+    s_target = dev_default_target();
 
     if (tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0)) {
         err = tinyusb_cdcacm_register_callback(TINYUSB_CDC_ACM_0,
@@ -562,7 +724,12 @@ void espd_dev_init(void)
         s_dev_task = NULL;
         return;
     }
-    ESP_LOGI(TAG, "CDC dev sync: PUT/RELOAD -> %s (SD required)", ESPD_SDCARD_MOUNT);
+    ESP_LOGI(TAG, "CDC dev sync: PUT/RELOAD -> %s (%s mode)",
+        dev_target_mount(s_target),
+        espd_usb_msc_sync_mode_active() ? "msc_sync" : "normal");
+    /* Host may assert DTR before espd_dev_init (early espd_sync attach). */
+    if (s_host_dtr)
+        dev_reply("+OK dev ready");
 }
 
 bool espd_dev_reload_pending(void)
@@ -575,10 +742,16 @@ void espd_dev_clear_reload_pending(void)
     s_reload_pending = false;
 }
 
+const char *espd_dev_reload_dir(void)
+{
+    return dev_target_mount(s_target);
+}
+
 #else /* !CONFIG_ESPD_DEV_CDC_SYNC */
 
 void espd_dev_init(void) {}
 bool espd_dev_reload_pending(void) { return false; }
 void espd_dev_clear_reload_pending(void) {}
+const char *espd_dev_reload_dir(void) { return NULL; }
 
 #endif /* CONFIG_ESPD_DEV_CDC_SYNC */

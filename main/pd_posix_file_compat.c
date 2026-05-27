@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "espd.h"
+#include "espd_storage.h"
 
 static int espd_glob_match(const char *pattern, const char *text)
 {
@@ -88,10 +89,13 @@ int glob(const char *pattern, int flags,
         return GLOB_NOMATCH;
 
     if (pattern[0] != '/') {
+        const char *root = espd_storage_main_pd_mount_dir();
+        if (!root || !root[0])
+            root = ESPD_SDCARD_MOUNT;
         if (!strncmp(pattern, "./", 2))
-            snprintf(resolved, sizeof(resolved), "%s/%s", ESPD_SDCARD_MOUNT, pattern + 2);
+            snprintf(resolved, sizeof(resolved), "%s/%s", root, pattern + 2);
         else
-            snprintf(resolved, sizeof(resolved), "%s/%s", ESPD_SDCARD_MOUNT, pattern);
+            snprintf(resolved, sizeof(resolved), "%s/%s", root, pattern);
         resolved[sizeof(resolved) - 1] = '\0';
         use_pattern = resolved;
     }

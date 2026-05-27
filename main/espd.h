@@ -2,6 +2,7 @@
 #define ESPD_H
 
 #include "espd_config.h"
+#include <stdbool.h>
 
 /* task priorities */
 #define  PRIORITY_WIFI 2
@@ -213,7 +214,7 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #ifndef ESPD_SDCARD_MOUNT
 #define ESPD_SDCARD_MOUNT "/sdcard"
 #endif
-/** If present on the mounted SD card, highest boot priority (see pdmain_init). */
+/** SD card patch store when the card is mounted (see pdmain_init). */
 #define ESPD_SDCARD_MAIN_PD_PATH ESPD_SDCARD_MOUNT "/main.pd"
 #define ESPD_SDCARD_CONFIG_PATH ESPD_SDCARD_MOUNT "/config.txt"
 /** On-chip SPIFFS; last resort after SD and USB MSC (if enabled). */
@@ -226,8 +227,8 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #define ESPD_STORAGE_MAIN_PD_PATH ESPD_STORAGE_MOUNT "/main.pd"
 #define ESPD_STORAGE_CONFIG_PATH ESPD_STORAGE_MOUNT "/config.txt"
 #endif
-/* config.txt optional keys (key=value, # comment). Search order: SD card,
- * then USB MSC at ESPD_STORAGE_MOUNT (if enabled), then SPIFFS at ESPD_PATCH_STORE_MOUNT.
+/* config.txt optional keys (key=value, # comment). Active store: mounted SD,
+ * else mounted internal flash (/storage), else SPIFFS — not mixed by file presence.
  * WiFi (when ESPD_USE_WIFI): STA starts when config.txt has a non-empty wifi_ssid=
  *   (wifi_password optional). Missing config.txt → with ESPD_USE_SDCARD, STA stays
  *   off; otherwise Kconfig/locale defaults apply.
@@ -286,11 +287,18 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
  *   Larger frame_num (e.g. 128 or 240) adds headroom for FFT-heavy patches.
  */
 /* [pdcontrol] message "ip" → list of four float octets 0..255, or symbol "noip" when unavailable. */
+void espd_pdcontrol_sync_cwd(void);
 #define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"
 
 #include "espd_storage.h"
 
 void pdmain_reload_patch(void);
+void pdmain_reload_patch_from(const char *dir);
+
+/* USB dev-sync MSC takeover mode:
+ * active => keep MSC hidden from host and use /storage for CDC dev sync. */
+bool espd_usb_msc_sync_mode_active(void);
+void espd_usb_msc_sync_mode_set(bool active);
 
 extern int espd_main_pd_loaded_from_store;
 /** If a local main.pd was opened, which directory it was loaded from (e.g. /sdcard or /espd_pd). */

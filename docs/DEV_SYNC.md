@@ -12,14 +12,25 @@ Examples below use macOS device names; substitute `/dev/ttyACM0`, `COM3`, etc.
 
 | Storage | Role |
 |---------|------|
-| **microSD** (`/sdcard`) | Rapid dev — `espd_sync.py` over CDC |
-| **Internal flash** (`/storage`, MSC) | Bulk copy / no-SD fallback — Finder, slow |
+| **microSD** (`/sdcard`) | Rapid dev when a card is **mounted** — `espd_sync.py` (default) |
+| **Internal flash** (`/storage`) | Used only when SD is absent or not mounted |
+
+Boot and CDC sync pick the store by **what is mounted** (SD → flash → SPIFFS), not
+by which volume happens to contain `main.pd`. The host script follows the device
+`PING` reply — no `--target` flag.
 
 Insert a **microSD card** in the board. Put `main.pd` (and abstractions) on the card
 via the sync script, not by pulling the card for each edit.
 
-**Do not** open the internal flash volume in Finder while syncing to SD — they are
-independent; flash MSC can stay mounted for other files.
+**Do not** open the internal flash volume in Finder while `espd_sync` is writing to
+flash (it switches to **msc_sync** and hides the drive from the host). With no sync
+tool running, USB **normal** mode shows the internal flash in Finder again.
+
+While `espd_sync` is watching flash, the device stays in **msc_sync** (Finder
+hidden). Quit the script and **power-cycle or hard-reset** the board to return to
+**normal** mode and show the USB volume again. `msc_sync` is kept only across
+`esp_restart()` from `MODE MSC_SYNC`, not across power-on or the reset button.
+On connect the script does not force `msc_sync` until it actually PUTs files.
 
 ## Firmware / menuconfig
 
@@ -29,8 +40,7 @@ independent; flash MSC can stay mounted for other files.
 |--------|---------|
 | **Enable TinyUSB device stack** | OTG USB device + CDC serial (`print`, ESP_LOG on `cu.usbmodem*`) |
 | **USB mass storage** | Internal-flash drive in Finder (default on; uncheck to omit) |
-| **Patch sync over OTG CDC** | `espd_sync` PUT/RELOAD/PING — needs **Enable SD card** and a mounted card |
-| **MSC volume label** | Finder disk name when MSC is enabled |
+| **Patch sync over OTG CDC** | `espd_sync` PUT/RELOAD/PING — SD and/or internal flash MSC |
 
 **Logs on OTG CDC:** `tinyusb_console_init` sends both Pd `print:` and `ESP_LOG`
 (`I (…) tag:`) to `cu.usbmodem…`. Boot `ESP_LOG` is mostly gone by the time
@@ -85,11 +95,12 @@ If several serial devices appear, pass the **OTG CDC** port explicitly (the one 
 answers `PING` after a normal **RESET**). On macOS, `ls /dev/cu.usb*`; on Linux,
 `ls /dev/ttyACM* /dev/ttyUSB*`.
 
-On connect the script **syncs the whole project tree** (patches, `config.txt`, and
-audio samples). Each file is one **`PUT`**: the device **skips** if the card already
-has that size/CRC (`+OK PUT skip`), otherwise receives bytes and **verifies after
-write** (retries on mismatch). No separate `HASH` command. Edit and save in Pure
-Data; the watcher then `PUT`s changed `.pd` / `config.txt` only and sends `RELOAD`.
+On connect the script **syncs the whole project tree** (all subfolders; patches,
+`config.txt`, and audio samples by default). Each file is one **`PUT`**: the device
+**skips** if the target already has that size/CRC (`+OK PUT skip`), otherwise
+receives bytes and **verifies after write** (retries on mismatch). Edit and save in
+Pure Data; the watcher then `PUT`s changed `.pd` / `config.txt` only and sends
+`RELOAD`. Use `--patches-only` to omit samples from sync/watch.
 
 ```bash
 python3 scripts/espd_sync.py -p '/dev/cu.usbmodem*' ~/my_pd_project

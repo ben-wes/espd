@@ -246,16 +246,14 @@ void pd_sendmsg(char *buf, int bufsize)
 extern float soundin[], soundout[];
 void  canvas_start_dsp( void);
 
-void pdmain_reload_patch(void)
+void pdmain_reload_patch_from(const char *dir)
 {
-    const char *dir = NULL;
     t_canvas *c;
 
-    if (!espd_storage_sdcard_ready()) {
-        pdmain_print("RELOAD failed: no SD card (/sdcard)\n");
+    if (!dir || !dir[0]) {
+        pdmain_print("RELOAD failed: no target directory\n");
         return;
     }
-    dir = ESPD_SDCARD_MOUNT;
 
     while ((c = pd_getcanvaslist()) != NULL)
         pd_free((t_pd *)c);
@@ -265,10 +263,17 @@ void pdmain_reload_patch(void)
         t_pd *loaded = glob_evalfile(0, gensym("main.pd"), gensym(dir));
         espd_main_pd_loaded_from_store = 1;
         espd_main_pd_loaded_dir = dir;
-        if (loaded && *loaded == canvas_class)
+        if (loaded && *loaded == canvas_class) {
+            espd_pdcontrol_sync_cwd();
             canvas_update_dsp();
+        }
     }
     pdmain_print("RELOAD done: main.pd\n");
+}
+
+void pdmain_reload_patch(void)
+{
+    pdmain_reload_patch_from(ESPD_SDCARD_MOUNT);
 }
 
 void pdmain_init( void)
@@ -290,10 +295,12 @@ void pdmain_init( void)
             espd_add_patch_dir_to_searchpath(dir);
             espd_print_pd_paths("pd");
             loaded = glob_evalfile(0, gensym("main.pd"), gensym(dir));
-            espd_main_pd_loaded_from_store = 1;
-            espd_main_pd_loaded_dir = dir;
-            if (loaded && *loaded == canvas_class)
+            if (loaded && *loaded == canvas_class) {
+                espd_main_pd_loaded_from_store = 1;
+                espd_main_pd_loaded_dir = dir;
+                espd_pdcontrol_sync_cwd();
                 canvas_update_dsp();
+            }
         }
     }
 #ifdef ESPD_INCLUDEPATCH

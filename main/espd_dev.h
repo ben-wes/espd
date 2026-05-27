@@ -1,5 +1,5 @@
 /*
- * CDC dev protocol: PUT files to /sdcard, RELOAD main.pd (rapid dev, SD required).
+ * CDC dev protocol: PUT files to active local target (/sdcard or /storage), RELOAD main.pd.
  */
 
 #pragma once
@@ -16,3 +16,4 @@ void espd_dev_cdc_rx_cb(int itf, cdcacm_event_t *event);
 void espd_dev_init(void);
 bool espd_dev_reload_pending(void);
 void espd_dev_clear_reload_pending(void);
+const char *espd_dev_reload_dir(void);

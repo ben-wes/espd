@@ -1,15 +1,24 @@
 #include "../pd/src/m_pd.h"
 #include "espd.h"
+#include "espd_storage.h"
 
 #include <stdio.h>
 #include <string.h>
 
 static char s_espd_pd_cwd[MAXPDSTRING];
 
+static const char *espd_pd_default_cwd(void)
+{
+    const char *dir = espd_storage_main_pd_mount_dir();
+    if (dir && dir[0])
+        return dir;
+    return ESPD_SDCARD_MOUNT;
+}
+
 static const char *espd_pd_get_cwd(void)
 {
     if (!s_espd_pd_cwd[0]) {
-        strncpy(s_espd_pd_cwd, ESPD_SDCARD_MOUNT, sizeof(s_espd_pd_cwd));
+        strncpy(s_espd_pd_cwd, espd_pd_default_cwd(), sizeof(s_espd_pd_cwd));
         s_espd_pd_cwd[sizeof(s_espd_pd_cwd) - 1] = '\0';
     }
     return s_espd_pd_cwd;
@@ -27,6 +36,11 @@ static void espd_pd_set_cwd(const char *path)
         s_espd_pd_cwd[n - 1] = '\0';
         n--;
     }
+}
+
+void espd_pdcontrol_sync_cwd(void)
+{
+    espd_pd_set_cwd(espd_pd_default_cwd());
 }
 
 typedef struct _espd_pdcontrol {

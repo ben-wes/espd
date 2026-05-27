@@ -1,5 +1,6 @@
 /*
- * Local patch/config storage: SD first, USB MSC (/storage) second, SPIFFS last.
+ * Local patch/config storage priority (by mounted medium, not file presence):
+ *   SD card (if built and mounted) → internal flash /storage → SPIFFS.
  */
 
 #pragma once
@@ -7,16 +8,16 @@
 #include <stdbool.h>
 #include "esp_err.h"
 
-/** Mount SPIFFS patch store and resolve config.txt / main.pd (SD not mounted yet). */
+/** Mount SPIFFS and resolve active store (SD mount may not exist yet). */
 void espd_storage_init(void);
 
-/** Mount SD card (if enabled) and re-probe config.txt / main.pd paths. Idempotent. */
+/** Mount SD card (if enabled) and re-resolve active store. Idempotent. */
 esp_err_t espd_storage_mount_sdcard(void);
 
-/** Path to the first existing config.txt, or NULL (SD → USB MSC → SPIFFS). */
+/** config.txt on the active store only, or NULL if none there. */
 const char *espd_storage_config_path(void);
 
-/** Mount dir containing main.pd (e.g. /sdcard), or NULL if not found. */
+/** Active patch directory (/sdcard, /storage, or SPIFFS), or NULL. */
 const char *espd_storage_main_pd_mount_dir(void);
 
 bool espd_storage_spiffs_mounted(void);
@@ -27,8 +28,8 @@ bool espd_patch_store_main_pd_exists(void);
 bool espd_sdcard_main_pd_exists(void);
 bool espd_storage_main_pd_exists(void);
 
-/** Re-probe config.txt / main.pd after files change on SD (e.g. CDC PUT). */
+/** Re-resolve after mount changes or CDC PUT. */
 void espd_storage_refresh_paths(void);
 
-/** True when the SD card VFS mount is present. */
 bool espd_storage_sdcard_ready(void);
+bool espd_storage_flash_ready(void);

@@ -128,24 +128,14 @@ menu "USB device (OTG)"
 
         config ESPD_DEV_CDC_SYNC
             bool "Patch sync over OTG CDC (espd_sync)"
-            depends on ESPD_USE_SDCARD
+            depends on ESPD_USE_SDCARD || ESPD_USE_USB_MSC
             default y
             help
-                PUT/RELOAD/PING/RESET on the OTG serial port; writes to /sdcard
-                only. Needs "Enable SD card" in ESPD Configuration. With SD
-                support off or no card mounted, sync commands return an error.
-                Serial (printf, ESP_LOG) still works when this is off.
+                PUT/RELOAD/PING/RESET on the OTG serial port. Target is /sdcard
+                (normal) or /storage (MODE MSC_SYNC). Needs SD and/or internal
+                flash MSC enabled. Serial (printf, ESP_LOG) still works when off.
 
                 See docs/DEV_SYNC.md.
-
-        config ESPD_MSC_VOLUME_LABEL
-            string "Internal flash MSC volume label (Finder name)"
-            depends on ESPD_USE_USB_MSC && FATFS_USE_LABEL
-            default "ESPD"
-            help
-                FAT volume label for the USB mass-storage partition (max 11
-                characters). This is the disk name shown in Finder/macOS, not the
-                TinyUSB product string (see Component config → TinyUSB for that).
 
     endif
 

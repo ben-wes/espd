@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Watch a local Pure Data project folder and sync to the ESP32 SD card over CDC.
+Watch a local Pure Data project folder and sync to ESP local storage over CDC.
 
 Requires: pip install pyserial
 
@@ -10,7 +10,7 @@ Usage:
 PORT is the OTG CDC serial device (pyserial): e.g. /dev/cu.usbmodem* (macOS),
 /dev/ttyACM0 (Linux), COM3 (Windows). See docs/DEV_SYNC.md.
 
-The ESP must have CONFIG_ESPD_DEV_CDC_SYNC (OTG + SD) for dev sync; microSD at /sdcard.
+The ESP must have CONFIG_ESPD_DEV_CDC_SYNC for dev sync.
 Do not run idf.py monitor on the same port at the same time.
 """
 
@@ -52,6 +52,14 @@ _STYLES = {
 _ANSI_RE = re.compile(rb"\x1b\[[0-9;]*m")
 _ESP_LOG_RE = re.compile(rb"^[IWEDV] \([^)]+\) [^:\n]+: ")
 _PUT_DONE_RE = re.compile(rb"^\+OK PUT done ([0-9a-fA-F]{8})$")
+_PING_INFO_RE = re.compile(
+    rb"^\+OK PING target=(sd|msc) mounted=(yes|no) mode=(normal|msc_sync)$"
+)
+
+# USB CDC ignores baud; pace payload so TinyUSB/SD can drain without resetting the port.
+_PUT_STREAM_BPS = 200000.0
+_PUT_STREAM_CHUNK = 1024
+_SERIAL_BAUD = 921600
 
 
 def _strip_ansi(line: bytes) -> bytes:
@@ -144,12 +152,73 @@ def wait_for_port(pattern: str) -> str:
             time.sleep(0.5)
 
 
-class EspdCdc:
-    def __init__(self, port: str):
-        import serial
+def _serial_open_retry(port: str, timeout: float):
+    import serial
+    import serial.serialutil
 
+    deadline = time.monotonic() + timeout
+    last_err: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            return serial.Serial(port, _SERIAL_BAUD, timeout=0.05)
+        except (serial.serialutil.SerialException, OSError) as e:
+            last_err = e
+            msg = str(e).lower()
+            errno = getattr(e, "errno", None)
+            if (
+                errno in (2, 6, 16)
+                or "not configured" in msg
+                or "resource busy" in msg
+            ):
+                time.sleep(0.4)
+                continue
+            raise
+    raise EspdDisconnected(
+        f"serial port not ready after {timeout:.0f}s: {port} ({last_err})"
+    )
+
+
+def wait_port_gone(pattern: str, timeout: float = 20.0) -> None:
+    """After reboot, wait until the old CDC device node disappears (macOS re-enumerate)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            port = resolve_port(pattern)
+        except EspdDisconnected:
+            return
+        if not os.path.exists(port):
+            return
+        time.sleep(0.2)
+    log_script("note: CDC port still present; continuing anyway")
+
+
+def wait_serial_ready(pattern: str, timeout: float = 45.0) -> str:
+    """Wait until the CDC port exists and accepts an open (post-reboot re-enumeration)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            port = resolve_port(pattern)
+        except EspdDisconnected:
+            time.sleep(0.3)
+            continue
+        try:
+            ser = _serial_open_retry(port, min(8.0, remaining))
+            ser.dtr = True
+            ser.rts = True
+            ser.close()
+            return port
+        except EspdDisconnected:
+            time.sleep(0.4)
+    raise TimeoutError(f"CDC port not ready within {timeout:.0f}s ({pattern!r})")
+
+
+class EspdCdc:
+    def __init__(self, port: str, open_timeout: float = 8.0):
         self.port = port
-        self._ser = serial.Serial(port, 115200, timeout=0.05)
+        self._ser = _serial_open_retry(port, open_timeout)
         self._ser.dtr = True
         self._ser.rts = True
 
@@ -159,6 +228,8 @@ class EspdCdc:
         self._reply_event = threading.Event()
         self._stop = threading.Event()
         self._disconnected = threading.Event()
+        self._put_active = False
+        self._dev_ready = threading.Event()
         self._thread = threading.Thread(target=self._reader, daemon=True)
         self._thread.start()
 
@@ -205,6 +276,15 @@ class EspdCdc:
                 line = raw.strip(b"\r")
                 if not line:
                     continue
+                if line.startswith(b"+OK dev ready"):
+                    self._dev_ready.set()
+                if self._put_active:
+                    if line.startswith(b"+OK PUT done") or line.startswith(b"-ERR"):
+                        with self._lock:
+                            self._reply = line
+                        self._reply_event.set()
+                        log_dev_rx(line)
+                    continue
                 if line.startswith(b"+") or line.startswith(b"-ERR"):
                     with self._lock:
                         self._reply = line
@@ -216,6 +296,16 @@ class EspdCdc:
     def _check_alive(self) -> None:
         if not self.alive:
             raise EspdDisconnected("serial port closed")
+
+    def wait_dev_ready(self, timeout: float) -> bool:
+        """Wait for USB stack + espd_dev after port open (avoids PING during enumeration)."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            self._check_alive()
+            if self._dev_ready.is_set():
+                return True
+            time.sleep(0.05)
+        return False
 
     def _wait_reply(self, timeout: float) -> bytes:
         if not self._reply_event.wait(timeout):
@@ -258,29 +348,36 @@ class EspdCdc:
             if line.startswith(b"-ERR"):
                 raise RuntimeError(line.decode(errors="replace"))
             raise RuntimeError(f"unexpected PUT reply: {line.decode(errors='replace')}")
-        if nbytes > 32768:
-            chunk, delay = 256, 0.012
-        elif nbytes > 8192:
-            chunk, delay = 384, 0.006
-        else:
-            chunk, delay = 512, 0.002
         try:
             with self._cmd_lock:
-                for off in range(0, len(data), chunk):
-                    self._ser.write(data[off : off + chunk])
-                    time.sleep(delay)
+                self._reply_event.clear()
+                with self._lock:
+                    self._reply = None
+                self._put_active = True
+                next_send = time.monotonic()
+                for off in range(0, len(data), _PUT_STREAM_CHUNK):
+                    part = data[off : off + _PUT_STREAM_CHUNK]
+                    self._ser.write(part)
+                    next_send += len(part) / _PUT_STREAM_BPS
+                    sleep_for = next_send - time.monotonic()
+                    if sleep_for > 0:
+                        time.sleep(sleep_for)
                 self._ser.flush()
         except OSError as e:
+            self._put_active = False
             self._mark_disconnected(str(e))
             raise EspdDisconnected(str(e)) from e
-        while True:
-            line = self._wait_reply(done_timeout)
-            m = _PUT_DONE_RE.match(line.strip())
-            if m and int(m.group(1), 16) == crc:
-                return True
-            if line.startswith(b"-ERR"):
-                raise RuntimeError(line.decode(errors="replace"))
-            raise RuntimeError(f"unexpected PUT reply: {line.decode(errors='replace')}")
+        try:
+            while True:
+                line = self._wait_reply(done_timeout)
+                m = _PUT_DONE_RE.match(line.strip())
+                if m and int(m.group(1), 16) == crc:
+                    return True
+                if line.startswith(b"-ERR"):
+                    raise RuntimeError(line.decode(errors="replace"))
+                raise RuntimeError(f"unexpected PUT reply: {line.decode(errors='replace')}")
+        finally:
+            self._put_active = False
 
     def reload(self) -> None:
         self.command("RELOAD", timeout=30.0)
@@ -288,20 +385,132 @@ class EspdCdc:
     def reset_device(self) -> None:
         self.command("RESET", timeout=2.0)
 
+    def set_mode(self, mode: str) -> None:
+        try:
+            self.command(f"MODE {mode}", timeout=3.0)
+        except (EspdDisconnected, TimeoutError):
+            pass  # reboot disconnects CDC — expected
 
-def connect_cdc(port_pattern: str) -> EspdCdc:
-    port = wait_for_port(port_pattern)
-    log_script(f"port: {port}")
-    cdc = EspdCdc(port)
-    time.sleep(0.25)  # let DTR / +OK dev ready clear before the first command
-    last = b""
-    for _ in range(5):
-        last = cdc.command("PING", timeout=10.0)
-        if last.startswith(b"+OK PING"):
-            log_script(f"connected ({port}): {last.decode(errors='replace')}")
-            return cdc
-        time.sleep(0.2)
-    raise TimeoutError(f"PING failed: {last.decode(errors='replace')}")
+    def ping(self) -> bytes:
+        return self.command("PING", timeout=10.0)
+
+
+def parse_ping_info(line: bytes) -> dict[str, str]:
+    m = _PING_INFO_RE.match(line.strip())
+    if not m:
+        raise RuntimeError(f"unexpected PING reply: {line.decode(errors='replace')}")
+    return {
+        "target": m.group(1).decode(),
+        "mounted": m.group(2).decode(),
+        "mode": m.group(3).decode(),
+    }
+
+
+def ensure_msc_sync_for_write(cdc: EspdCdc, port: str) -> EspdCdc:
+    """Switch to msc_sync only when about to PUT to internal flash."""
+    info = parse_ping_info(cdc.ping())
+    if info["target"] != "msc":
+        return cdc
+    if info["mode"] == "msc_sync":
+        if info["mounted"] == "no":
+            log_script("waiting for /storage mount…")
+            for _ in range(30):
+                time.sleep(0.5)
+                info = parse_ping_info(cdc.ping())
+                if info["mounted"] == "yes":
+                    break
+        if info["mounted"] != "yes":
+            raise RuntimeError("/storage not mounted (msc_sync); check boot log on CDC")
+        return cdc
+
+    log_script("switching to msc_sync for flash write (device will reboot)")
+    cdc.set_mode("MSC_SYNC")
+    cdc.close()
+    time.sleep(0.5)
+    wait_port_gone(port, timeout=25.0)
+    time.sleep(2.0)
+    log_script("waiting for CDC after reboot (up to 60s)…")
+    cdc = connect_cdc(port, ready_timeout=60.0)
+    for attempt in range(60):
+        try:
+            info = parse_ping_info(cdc.ping())
+        except EspdDisconnected:
+            log_script("CDC dropped during mode wait — reconnecting…")
+            cdc.close()
+            cdc = connect_cdc(port, ready_timeout=60.0)
+            continue
+        if info["mode"] == "msc_sync" and info["mounted"] == "yes":
+            break
+        if info["mode"] == "msc_sync" and info["mounted"] == "no":
+            if attempt == 0 or attempt % 10 == 0:
+                log_script("waiting for /storage mount…")
+        time.sleep(0.5)
+    else:
+        info = parse_ping_info(cdc.ping())
+    if info["mode"] != "msc_sync" or info["mounted"] != "yes":
+        raise RuntimeError(
+            f"msc_sync failed: mode={info['mode']} mounted={info['mounted']}"
+        )
+    return cdc
+
+
+def connect_cdc(port_pattern: str, ready_timeout: float = 8.0) -> EspdCdc:
+    import serial.serialutil
+
+    deadline = time.monotonic() + ready_timeout
+    last_err = ""
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        cdc: EspdCdc | None = None
+        try:
+            port = wait_serial_ready(port_pattern, timeout=remaining)
+            log_script(f"port: {port}")
+            cdc = EspdCdc(port)
+            if not cdc.wait_dev_ready(min(20.0, remaining)):
+                last_err = "device USB not ready (+OK dev ready timeout)"
+                continue
+            time.sleep(0.25)
+            for _ in range(15):
+                try:
+                    last = cdc.ping()
+                    if last.startswith(b"+OK PING"):
+                        log_script(f"connected ({port}): {last.decode(errors='replace')}")
+                        connected = cdc
+                        cdc = None
+                        return connected
+                    if last.startswith(b"-ERR"):
+                        time.sleep(0.25)
+                        continue
+                except EspdDisconnected as e:
+                    last_err = str(e)
+                    break
+                time.sleep(0.4)
+        except (TimeoutError, EspdDisconnected, serial.serialutil.SerialException, OSError) as e:
+            last_err = str(e)
+        finally:
+            if cdc is not None:
+                cdc.close()
+        time.sleep(0.5)
+    raise TimeoutError(
+        f"CDC connect failed within {ready_timeout:.0f}s"
+        + (f" ({last_err})" if last_err else "")
+    )
+
+
+def connect_and_prepare(
+    port_pattern: str, *, exit_on_fail: bool = False
+) -> EspdCdc:
+    """Connect over CDC (no mode switch — msc_sync only when syncing to flash)."""
+    while True:
+        try:
+            return connect_cdc(port_pattern, ready_timeout=60.0)
+        except (TimeoutError, EspdDisconnected, RuntimeError, OSError) as e:
+            log_script(f"waiting for device ({e})…")
+            if exit_on_fail:
+                raise
+            time.sleep(1.5)
 
 
 def local_file_hash(path: str) -> tuple[int, int]:
@@ -316,13 +525,18 @@ def local_file_hash(path: str) -> tuple[int, int]:
 
 
 def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str], port: str) -> EspdCdc:
+    cdc = ensure_msc_sync_for_write(cdc, port)
     pd_changed = False
     uploaded = 0
     skipped = 0
     t0 = time.time()
 
     def _sync_order(rel: str) -> tuple[int, str]:
-        return (1 if rel == "main.pd" else 0, rel)
+        if rel == "main.pd":
+            return (2, rel)
+        if rel.endswith(".pd") or rel == "config.txt":
+            return (1, rel)
+        return (0, rel)  # samples/assets before patches
 
     for rel in sorted(rels, key=_sync_order):
         local = os.path.join(watch_dir, rel.replace("/", os.sep))
@@ -335,6 +549,7 @@ def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str], port: str) -> Espd
                 log_script(f"reconnect during PUT {rel}…")
                 cdc.close()
                 cdc = connect_cdc(port)
+                cdc = ensure_msc_sync_for_write(cdc, port)
                 continue
             except RuntimeError as e:
                 if "crc mismatch" in str(e) or "crc exp" in str(e):
@@ -391,7 +606,7 @@ def collect_files(root: str, include_assets: bool = False) -> dict[str, float]:
 
 def main() -> int:
     _need_serial()
-    ap = argparse.ArgumentParser(description="ESPD SD-card rapid sync over CDC")
+    ap = argparse.ArgumentParser(description="ESPD rapid sync over CDC")
     ap.add_argument("-p", "--port", required=True, help="CDC serial port path")
     ap.add_argument("watch_dir", help="Local folder to watch (contains main.pd)")
     ap.add_argument("--debounce", type=float, default=0.35, help="seconds after save")
@@ -436,12 +651,6 @@ def main() -> int:
 
     cdc: EspdCdc | None = None
     try:
-        try:
-            cdc = connect_cdc(args.port)
-        except (TimeoutError, EspdDisconnected) as e:
-            log_script(f"connect failed: {e}")
-            return 1
-
         include_assets = not args.patches_only
 
         def run_sync(label: str) -> None:
@@ -454,26 +663,37 @@ def main() -> int:
             cdc = sync_files(cdc, watch_dir, rels, args.port)
 
         if args.reset:
-            cdc.reset_device()
-            cdc.close()
+            try:
+                cdc = connect_cdc(args.port, ready_timeout=30.0)
+                cdc.reset_device()
+            except (TimeoutError, EspdDisconnected):
+                pass
             cdc = None
             if args.no_reconnect:
                 return 0
-            log_script("waiting for device…")
-            cdc = connect_cdc(args.port)
+            cdc = connect_and_prepare(args.port)
             if not args.no_initial_sync:
                 run_sync("sync after reset")
             return 0
 
         if args.ping:
+            cdc = connect_cdc(args.port, ready_timeout=30.0)
+            info = parse_ping_info(cdc.ping())
+            log_script(
+                f"device: mode={info['mode']} target={info['target']} mounted={info['mounted']}"
+            )
             return 0
+
+        cdc = connect_and_prepare(args.port)
+        ping = parse_ping_info(cdc.ping())
+        store = "/sdcard" if ping["target"] == "sd" else "/storage"
 
         if not args.no_initial_sync:
             run_sync("sync")
 
         mtimes = collect_files(watch_dir, include_assets=False)
         log_script(
-            f"watching {watch_dir} ({len(mtimes)} patches) — save in Pd to sync"
+            f"watching {watch_dir} ({len(mtimes)} patches) — sync to {store}"
         )
 
         while True:
@@ -483,11 +703,11 @@ def main() -> int:
                     return 1
                 cdc.close()
                 cdc = None
-                log_script("waiting for device…")
                 try:
-                    cdc = connect_cdc(args.port)
-                except (TimeoutError, EspdDisconnected) as e:
+                    cdc = connect_and_prepare(args.port)
+                except (TimeoutError, EspdDisconnected, RuntimeError) as e:
                     log_script(str(e))
+                    time.sleep(1.0)
                     continue
                 if args.resync_on_reconnect and not args.no_initial_sync:
                     run_sync("resync after reconnect")

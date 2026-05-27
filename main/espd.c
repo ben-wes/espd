@@ -29,6 +29,7 @@
 
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_system.h"
 #include "esp_pthread.h"
 #include "esp_task_wdt.h"
 #include "esp_heap_caps.h"
@@ -43,12 +44,9 @@
 #endif
 #if CONFIG_ESPD_USE_USB_OTG
 #include "esp_partition.h"
+#include "esp_vfs_fat.h"
 #include "freertos/semphr.h"
 #include "wear_levelling.h"
-#if CONFIG_FATFS_USE_LABEL
-#include "diskio/diskio_wl.h"
-#include "ff.h"
-#endif
 #include "tinyusb.h"
 #include "tinyusb_msc.h"
 #include "tinyusb_cdc_acm.h"
@@ -69,6 +67,10 @@ static const char *TAG = "ESPD";
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
 static wl_handle_t wl_handle = WL_INVALID_HANDLE;
 static tinyusb_msc_storage_handle_t msc_handle = NULL;
+RTC_NOINIT_ATTR static uint32_t s_usb_mode_magic_a;
+RTC_NOINIT_ATTR static uint32_t s_usb_mode_magic_b;
+#define ESPD_USB_MODE_MAGIC_A 0x45535044u /* "ESPD" */
+#define ESPD_USB_MODE_MAGIC_B 0x4d534331u /* "MSC1" */
 #endif
 
 #if defined(ESPD_USE_AOUT)
@@ -861,11 +863,10 @@ static void espd_wifi_try_load_config(void)
     {
         espd_wifi_ssid[0] = '\0';
         espd_wifi_password[0] = '\0';
-        ESP_LOGI(TAG, "wifi: no wifi_ssid in %s — STA off", config_path);
     }
-    ESP_LOGI(TAG, "wifi: %s (ssid=%s, sta_ok=%d, log_port=%d)",
+    ESP_LOGI(TAG, "wifi: %s (ssid=%s, sta=%s, log_port=%d)",
         config_path, espd_wifi_ssid[0] ? espd_wifi_ssid : "(none)",
-        s_wifi_credentials_in_config_txt, espd_log_broadcast_port);
+        s_wifi_credentials_in_config_txt ? "on" : "off", espd_log_broadcast_port);
 }
 #endif /* ESPD_USE_WIFI */
 
@@ -1547,71 +1548,122 @@ static void espd_touch_poll(void)
 #define ESPD_USB_INIT_TASK_PRIO     2
 #define ESPD_USB_DEVICE_TASK_PRIO   4  /* step 2: drain MSC FIFO during host writes */
 
-#if CONFIG_ESPD_USE_USB_MSC && CONFIG_FATFS_USE_LABEL
-static void espd_usb_apply_msc_volume_label(void)
+#if CONFIG_ESPD_USE_USB_MSC
+bool espd_usb_msc_sync_mode_active(void)
 {
-    const char *label = CONFIG_ESPD_MSC_VOLUME_LABEL;
-    unsigned char pdrv;
-    char spec[16];
-    FRESULT fr;
-
-    if (!label || !label[0])
-        return;
-    pdrv = ff_diskio_get_pdrv_wl(wl_handle);
-    if (pdrv == 0xff)
-        return;
-    snprintf(spec, sizeof(spec), "%u:%.11s", (unsigned)pdrv, label);
-    fr = f_setlabel(spec);
-    if (fr != FR_OK)
-        ESP_LOGW(TAG, "USB: volume label '%s' failed (%d)", label, (int)fr);
-    else
-        ESP_LOGI(TAG, "USB: MSC volume label '%.11s'", label);
+    return s_usb_mode_magic_a == ESPD_USB_MODE_MAGIC_A
+        && s_usb_mode_magic_b == ESPD_USB_MODE_MAGIC_B;
 }
+
+void espd_usb_msc_sync_mode_set(bool active)
+{
+    if (active) {
+        s_usb_mode_magic_a = ESPD_USB_MODE_MAGIC_A;
+        s_usb_mode_magic_b = ESPD_USB_MODE_MAGIC_B;
+    } else {
+        s_usb_mode_magic_a = 0;
+        s_usb_mode_magic_b = 0;
+    }
+}
+
+/* RTC survives esp_restart(); power-on / reset button must return to normal (Finder). */
+static void espd_usb_msc_sync_clear_unless_sw_reset(void)
+{
+    if (esp_reset_reason() != ESP_RST_SW) {
+        s_usb_mode_magic_a = 0;
+        s_usb_mode_magic_b = 0;
+    }
+}
+
 #else
-static void espd_usb_apply_msc_volume_label(void) {}
+bool espd_usb_msc_sync_mode_active(void) { return false; }
+void espd_usb_msc_sync_mode_set(bool active) { (void)active; }
+#endif
+
+static void espd_usb_apply_msc_volume_label_when_ready(void)
+{
+    /* Keep default FAT volume label behavior (typically "NO NAME"). */
+}
+
+#if CONFIG_ESPD_USE_USB_MSC
+/* Mount /storage for pdmain before TinyUSB (no host enumeration). Idempotent. */
+static esp_err_t espd_usb_mount_storage_app(bool msc_sync_mode)
+{
+    const esp_partition_t *data_partition;
+    esp_err_t err;
+
+    if (msc_handle != NULL) {
+        return ESP_OK;
+    }
+
+    data_partition = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "storage");
+    if (!data_partition) {
+        ESP_LOGE(TAG, "USB: 'storage' partition not found");
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    {
+        tinyusb_msc_driver_config_t msc_drv_cfg = {
+            /* msc_sync: app owns FAT; normal: expose MSC to host (Finder). */
+            .user_flags.auto_mount_off = msc_sync_mode ? 1 : 0,
+        };
+        err = tinyusb_msc_install_driver(&msc_drv_cfg);
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "USB: MSC driver install: %s", esp_err_to_name(err));
+        }
+    }
+
+    if (wl_handle == WL_INVALID_HANDLE) {
+        err = wl_mount(data_partition, &wl_handle);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "USB: wear levelling failed: %s", esp_err_to_name(err));
+            return err;
+        }
+    }
+
+    {
+        tinyusb_msc_storage_config_t msc_storage_cfg = {
+            .medium.wl_handle = wl_handle,
+            .fat_fs = {
+                .base_path = ESPD_STORAGE_MOUNT,
+                .config = {
+                    .max_files = 64,
+                    .format_if_mount_failed = false,
+                    .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
+                },
+                .do_not_format = true,
+                .format_flags = FM_FAT,
+            },
+            .mount_point = TINYUSB_MSC_STORAGE_MOUNT_APP,
+        };
+        err = tinyusb_msc_new_storage_spiflash(&msc_storage_cfg, &msc_handle);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "USB: MSC storage failed: %s", esp_err_to_name(err));
+            return err;
+        }
+    }
+
+    espd_storage_refresh_paths();
+    if (msc_sync_mode) {
+        ESP_LOGI(TAG, "USB: msc_sync — %s for app (MSC not exposed to host)",
+            ESPD_STORAGE_MOUNT);
+    } else {
+        ESP_LOGI(TAG, "USB: MSC at %s (partition storage)", ESPD_STORAGE_MOUNT);
+    }
+    espd_usb_apply_msc_volume_label_when_ready();
+    return ESP_OK;
+}
 #endif
 
 static void usb_init_on_core0(void)
 {
     esp_err_t err;
     tinyusb_config_t tusb_cfg;
+    bool msc_sync_mode = false;
 
 #if CONFIG_ESPD_USE_USB_MSC
-    const esp_partition_t *data_partition = esp_partition_find_first(
-        ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "storage");
-
-    if (!data_partition) {
-        ESP_LOGE(TAG, "USB: 'storage' partition not found");
-        return;
-    }
-
-    err = wl_mount(data_partition, &wl_handle);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "USB: wear levelling failed: %s", esp_err_to_name(err));
-        return;
-    }
-
-    tinyusb_msc_storage_config_t msc_storage_cfg = {
-        .medium.wl_handle = wl_handle,
-        .fat_fs = {
-            .base_path = ESPD_STORAGE_MOUNT,
-            .config = {
-                .max_files = 64,
-                .format_if_mount_failed = true,
-                .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
-            },
-            .do_not_format = false,
-            .format_flags = FM_FAT,
-        },
-        .mount_point = TINYUSB_MSC_STORAGE_MOUNT_APP,
-    };
-    err = tinyusb_msc_new_storage_spiflash(&msc_storage_cfg, &msc_handle);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "USB: MSC storage failed: %s", esp_err_to_name(err));
-        return;
-    }
-    ESP_LOGI(TAG, "USB: MSC at %s (partition storage)", ESPD_STORAGE_MOUNT);
-    espd_usb_apply_msc_volume_label();
+    msc_sync_mode = espd_usb_msc_sync_mode_active();
 #endif
 
     tusb_cfg = TINYUSB_DEFAULT_CONFIG();
@@ -1647,7 +1699,10 @@ static void usb_init_on_core0(void)
         ESP_LOGW(TAG, "USB: CDC console: %s", esp_err_to_name(err));
     } else {
 #if CONFIG_ESPD_USE_USB_MSC
-        ESP_LOGI(TAG, "USB: logs on CDC (cu.usbmodem*); MSC on same cable");
+        if (msc_sync_mode)
+            ESP_LOGI(TAG, "USB: logs on CDC (cu.usbmodem*) — msc_sync mode (MSC hidden)");
+        else
+            ESP_LOGI(TAG, "USB: logs on CDC (cu.usbmodem*); MSC on same cable");
 #else
         ESP_LOGI(TAG, "USB: logs on CDC (cu.usbmodem*) — MSC disabled");
 #endif
@@ -1655,34 +1710,33 @@ static void usb_init_on_core0(void)
 #elif CONFIG_ESPD_USE_USB_MSC
     ESP_LOGW(TAG, "USB: MSC only — enable OTG CDC for serial logs");
 #endif
+
+#if CONFIG_ESPD_USE_USB_MSC
+    if (msc_handle == NULL) {
+        (void)espd_usb_mount_storage_app(msc_sync_mode);
+    }
+#endif
 }
 
 static void usb_init_worker(void *arg)
 {
-    SemaphoreHandle_t done = (SemaphoreHandle_t)arg;
+    (void)arg;
     usb_init_on_core0();
-    xSemaphoreGive(done);
     vTaskDelete(NULL);
 }
 
 static void usb_init(void)
 {
-    SemaphoreHandle_t done = xSemaphoreCreateBinary();
-    if (!done) {
-        ESP_LOGE(TAG, "USB: init semaphore failed");
-        return;
-    }
-    if (xTaskCreatePinnedToCore(usb_init_worker, "usb_init", 8192, done,
+    if (xTaskCreatePinnedToCore(usb_init_worker, "usb_init", 8192, NULL,
             ESPD_USB_INIT_TASK_PRIO, NULL, ESPD_USB_TASK_CORE) != pdPASS) {
         ESP_LOGE(TAG, "USB: init task create failed");
-        vSemaphoreDelete(done);
-        return;
     }
-    if (xSemaphoreTake(done, pdMS_TO_TICKS(120000)) != pdTRUE) {
-        ESP_LOGE(TAG, "USB: init timed out (format still running?)");
-    }
-    vSemaphoreDelete(done);
 }
+#endif
+
+#if !CONFIG_ESPD_USE_USB_OTG
+bool espd_usb_msc_sync_mode_active(void) { return false; }
+void espd_usb_msc_sync_mode_set(bool active) { (void)active; }
 #endif
 
 
@@ -2032,15 +2086,16 @@ void app_main(void)
             ESP_LOGW(TAG, "esp_pthread_set_cfg failed; using IDF defaults");
     }
 
-#if CONFIG_ESPD_USE_USB_OTG
-    usb_init();
-#endif
-
     espd_board_early_init();
     espd_storage_init();
 
 #ifdef ESPD_USE_SDCARD
     espd_storage_mount_sdcard();
+#endif
+#if CONFIG_ESPD_USE_USB_MSC
+    espd_usb_msc_sync_clear_unless_sw_reset();
+    /* Mount before config.txt / main.pd so flash-only builds see /storage early. */
+    (void)espd_usb_mount_storage_app(espd_usb_msc_sync_mode_active());
 #endif
 
 #ifdef ESPD_USE_AOUT
@@ -2065,10 +2120,7 @@ void app_main(void)
 
 #ifdef ESPD_USE_WIFI
     if (!espd_wifi_config_txt_allows_sta())
-    {
         espd_wifi_net_enabled = 0;
-        ESP_LOGI(TAG, "wifi: STA off (set wifi_ssid= in config.txt to connect)");
-    }
 #endif
 
 #ifdef ESPD_USE_WIFI
@@ -2098,6 +2150,7 @@ void app_main(void)
      * idempotent and a no-op if wifi_init() already ran above. */
     espd_netif_ensure_init();
 #endif
+
     pdmain_init();
 
 #ifdef ESPD_USE_AIN
@@ -2107,15 +2160,8 @@ void app_main(void)
     espd_touch_init();
 #endif
 
-#ifdef ESPD_USE_SDCARD
-    sd_init();
-#endif
 #ifdef ESPD_USE_WIFI
-    if (!espd_wifi_net_enabled)
-    {
-        ESP_LOGI(TAG, "wifi: STA off — not starting network or legacy patch transport");
-    }
-    else
+    if (espd_wifi_net_enabled)
     {
         if (!espd_wifi_started) {
             ESP_LOGI(TAG, "[ 1a ] start network");
@@ -2132,6 +2178,11 @@ void app_main(void)
 #endif
 #ifdef ESPD_USE_CONSOLE
     console_init();
+#endif
+
+#if CONFIG_ESPD_USE_USB_OTG
+    /* After storage + Pd load so a connected host cannot stall boot for 120s. */
+    usb_init();
 #endif
 
     ESP_LOGI(TAG, "entering audio block loop");
@@ -2166,7 +2217,7 @@ void app_main(void)
 
 #if CONFIG_ESPD_DEV_CDC_SYNC
         if (espd_dev_reload_pending()) {
-            pdmain_reload_patch();
+            pdmain_reload_patch_from(espd_dev_reload_dir());
             espd_dev_clear_reload_pending();
         }
 #endif
