@@ -145,10 +145,18 @@ Remote reboot:
 python3 scripts/espd_sync.py -p '/dev/cu.usbmodem*' --reset ~/my_pd_project
 ```
 
-## Boot probe order (unchanged)
+## Boot: where `main.pd` comes from
 
-SD → SPIFFS → internal `/storage`. With SD present and `main.pd` on the card, Pd
-loads from `/sdcard` at boot.
+Firmware picks the **first** existing `main.pd` (same order for `config.txt`):
+
+1. **microSD** — `/sdcard` (rapid dev; `espd_sync.py` writes here only)
+2. **USB MSC volume** — `/storage` (Finder drag-and-drop; only if MSC is enabled)
+3. **On-chip SPIFFS** — `/espd_pd` (`pdstore`; last resort — not host-accessible today)
+
+If nothing matches, an optional **embedded test patch** (menuconfig **Embed fallback
+test patch**) is compiled into the firmware — not SPIFFS.
+
+`RELOAD` over CDC always reloads from `/sdcard` (needs a mounted card).
 
 ## Without USB OTG (fully off)
 

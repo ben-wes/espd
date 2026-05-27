@@ -1,4 +1,4 @@
-# Example config.txt — copy to /sdcard or /espd_pd and edit before use.
+# Example config.txt — copy to microSD (/sdcard) or USB MSC (/storage).
 # wifi_ssid=MyNetwork
 # wifi_password=secret
 # ain_pins=1             # GPIO(s) for espd/ain/0.. (requires ESPD_USE_AIN)

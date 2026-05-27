@@ -54,12 +54,12 @@ static const char *espd_storage_probe_config(void)
     if (espd_storage_file_exists(ESPD_SDCARD_CONFIG_PATH))
         return ESPD_SDCARD_CONFIG_PATH;
 #endif
-    if (s_spiffs_mounted && espd_storage_file_exists(ESPD_PATCH_STORE_CONFIG_PATH))
-        return ESPD_PATCH_STORE_CONFIG_PATH;
 #if CONFIG_ESPD_USE_USB_MSC
     if (espd_storage_file_exists(ESPD_STORAGE_CONFIG_PATH))
         return ESPD_STORAGE_CONFIG_PATH;
 #endif
+    if (s_spiffs_mounted && espd_storage_file_exists(ESPD_PATCH_STORE_CONFIG_PATH))
+        return ESPD_PATCH_STORE_CONFIG_PATH;
     return NULL;
 }
 
@@ -69,12 +69,12 @@ static const char *espd_storage_probe_main_pd(void)
     if (espd_storage_file_exists(ESPD_SDCARD_MAIN_PD_PATH))
         return ESPD_SDCARD_MOUNT;
 #endif
-    if (s_spiffs_mounted && espd_storage_file_exists(ESPD_MAIN_PD_PATH))
-        return ESPD_PATCH_STORE_MOUNT;
 #if CONFIG_ESPD_USE_USB_MSC
     if (espd_storage_file_exists(ESPD_STORAGE_MAIN_PD_PATH))
         return ESPD_STORAGE_MOUNT;
 #endif
+    if (s_spiffs_mounted && espd_storage_file_exists(ESPD_MAIN_PD_PATH))
+        return ESPD_PATCH_STORE_MOUNT;
     return NULL;
 }
 

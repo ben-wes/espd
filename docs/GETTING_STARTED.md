@@ -46,7 +46,7 @@ ESPD splits configuration by *when* it applies:
 |-------|--------|------|----------|
 | **Board profile** | `boards/*.yaml` → generated `sdkconfig.defaults` | CMake configure / first build | PSRAM, flash size, codec drivers, CPU affinity |
 | **Compile-time** | `idf.py menuconfig` → **ESPD Configuration** | Build time (rebuild to change) | Target board, WiFi compiled in, `espd/ain` support, sample rate default |
-| **Runtime** | `config.txt` on SD or SPIFFS | Every boot | `wifi_ssid=`, `ain_pins=`, `audio_sample_rate=` |
+| **Runtime** | `config.txt` on SD (or MSC `/storage`) | Every boot | `wifi_ssid=`, `ain_pins=`, `audio_sample_rate=` |
 
 **menuconfig** shows compile-time options only. Board YAML **`features.imply`**
 turns many menuconfig options on automatically when you pick a kit (e.g. Waveshare
@@ -100,8 +100,13 @@ Switching boards: change **Target board** in menuconfig → Save → `idf.py bui
 
 | File | Search order | Purpose |
 |------|--------------|---------|
-| `main.pd` | `/sdcard` → `/espd_pd` (SPIFFS) | Patch loaded at boot |
+| `main.pd` | `/sdcard` → `/storage`* → `/espd_pd` | Patch loaded at boot |
 | `config.txt` | same | Runtime tuning (WiFi, GPIO I/O, audio DMA) |
+
+\* `/storage` = USB MSC (Finder) when **USB mass storage** is on. `/espd_pd` = on-chip
+SPIFFS, probed last; no host upload in this project (would need a build-time SPIFFS
+image to pre-fill). Else menuconfig **Embed fallback test patch** (compiled-in demo).
+`espd_sync.py` only writes `/sdcard`.
 
 Copy examples from [test-patch/](../test-patch/). Without `main.pd`, an embedded
 test patch runs only if **Embed fallback test patch** is enabled in menuconfig
@@ -215,7 +220,8 @@ users — check what's enabled after selecting your board.
 
 ### Runtime options (`config.txt`)
 
-Loaded from SD or SPIFFS at boot. Does **not** appear in menuconfig.
+Loaded from the first matching `config.txt` on the boot search path (usually
+microSD). Does **not** appear in menuconfig.
 
 | Key | Purpose |
 |-----|---------|

@@ -1,5 +1,5 @@
 /*
- * Local patch/config storage: SD card first, internal SPIFFS second, USB MSC third.
+ * Local patch/config storage: SD first, USB MSC (/storage) second, SPIFFS last.
  */
 
 #pragma once
@@ -13,7 +13,7 @@ void espd_storage_init(void);
 /** Mount SD card (if enabled) and re-probe config.txt / main.pd paths. Idempotent. */
 esp_err_t espd_storage_mount_sdcard(void);
 
-/** Path to the first existing config.txt, or NULL (SD → SPIFFS → USB MSC). */
+/** Path to the first existing config.txt, or NULL (SD → USB MSC → SPIFFS). */
 const char *espd_storage_config_path(void);
 
 /** Mount dir containing main.pd (e.g. /sdcard), or NULL if not found. */

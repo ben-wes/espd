@@ -213,10 +213,10 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #ifndef ESPD_SDCARD_MOUNT
 #define ESPD_SDCARD_MOUNT "/sdcard"
 #endif
-/** If present on the mounted SD card, loaded before SPIFFS (see pdmain_init). */
+/** If present on the mounted SD card, highest boot priority (see pdmain_init). */
 #define ESPD_SDCARD_MAIN_PD_PATH ESPD_SDCARD_MOUNT "/main.pd"
 #define ESPD_SDCARD_CONFIG_PATH ESPD_SDCARD_MOUNT "/config.txt"
-/** Internal flash (SPIFFS) fallback when SD has no main.pd / config.txt. */
+/** On-chip SPIFFS; last resort after SD and USB MSC (if enabled). */
 #define ESPD_PATCH_STORE_CONFIG_PATH ESPD_PATCH_STORE_MOUNT "/config.txt"
 #if CONFIG_ESPD_USE_USB_MSC
 /** VFS path where USB MSC storage is mounted (flash "storage" partition). */
@@ -227,7 +227,7 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #define ESPD_STORAGE_CONFIG_PATH ESPD_STORAGE_MOUNT "/config.txt"
 #endif
 /* config.txt optional keys (key=value, # comment). Search order: SD card,
- * then SPIFFS at ESPD_PATCH_STORE_MOUNT, then USB MSC (if enabled).
+ * then USB MSC at ESPD_STORAGE_MOUNT (if enabled), then SPIFFS at ESPD_PATCH_STORE_MOUNT.
  * WiFi (when ESPD_USE_WIFI): STA starts when config.txt has a non-empty wifi_ssid=
  *   (wifi_password optional). Missing config.txt → with ESPD_USE_SDCARD, STA stays
  *   off; otherwise Kconfig/locale defaults apply.

@@ -82,7 +82,7 @@ config ESPD_INCLUDEPATCH
     bool "Embed fallback test patch at build time"
     default n
     help
-        Used when no main.pd is found on SD or SPIFFS at boot.
+        Used when no main.pd is found on SD, USB MSC, or SPIFFS at boot.
 
 menu "USB device (OTG)"
     depends on SOC_USB_OTG_SUPPORTED
