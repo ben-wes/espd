@@ -807,8 +807,7 @@ static void espd_wifi_try_load_config(void)
         espd_wifi_ssid[0] = '\0';
         espd_wifi_password[0] = '\0';
 #ifdef ESPD_USE_SDCARD
-        ESP_LOGI(TAG, "wifi: no config.txt on SD or %s",
-            ESPD_PATCH_STORE_MOUNT);
+        ESP_LOGI(TAG, "wifi: no config.txt on SD or local flash");
 #endif
         return;
     }
@@ -883,7 +882,7 @@ static int espd_touch_report_every_n_blocks = ESPD_TOUCH_REPORT_EVERY_N_BLOCKS;
 #endif
 
 #if defined(ESPD_USE_AIN)
-/* Parsed from config.txt (SD or SPIFFS) before espd_ain_init. */
+/* Parsed from config.txt (SD or /storage) before espd_ain_init. */
 static int s_analog_cfg_have_pins;
 static int s_analog_cfg_n;
 static int s_analog_cfg_pins[8];
@@ -978,7 +977,7 @@ static void espd_ain_load_config(void)
 #endif
 
 #if defined(ESPD_USE_TOUCH)
-/* Parsed from config.txt (SD or SPIFFS) before espd_touch_init. */
+/* Parsed from config.txt (SD or /storage) before espd_touch_init. */
 static int s_touch_cfg_have_pins;
 static int s_touch_cfg_n;
 static int s_touch_cfg_pins[8];

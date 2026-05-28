@@ -100,12 +100,11 @@ Switching boards: change **Target board** in menuconfig → Save → `idf.py bui
 
 | File | Search order | Purpose |
 |------|--------------|---------|
-| `main.pd` | `/sdcard` → `/storage`* → `/espd_pd` | Patch loaded at boot |
+| `main.pd` | `/sdcard` → `/storage`* | Patch loaded at boot |
 | `config.txt` | same | Runtime tuning (WiFi, GPIO I/O, audio DMA) |
 
-\* `/storage` = USB MSC (Finder) when **USB mass storage** is on. `/espd_pd` = on-chip
-SPIFFS, probed last; no host upload in this project (would need a build-time SPIFFS
-image to pre-fill). Else menuconfig **Embed fallback test patch** (compiled-in demo).
+\* `/storage` = USB MSC (Finder) when **USB mass storage** is on.
+Else menuconfig **Embed fallback test patch** provides a compiled-in demo.
 `espd_sync.py` only writes `/sdcard`.
 
 Copy examples from [test-patch/](../test-patch/). Without `main.pd`, an embedded

@@ -5,13 +5,11 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_spiffs.h"
 #include <sys/stat.h>
 #include <string.h>
 
 static const char *TAG = "espd_storage";
 
-static bool s_spiffs_mounted;
 static const char *s_config_path;
 static const char *s_main_pd_mount;
 #ifdef ESPD_USE_SDCARD
@@ -27,29 +25,6 @@ static int espd_storage_file_exists(const char *path)
     if (stat(path, &st) != 0)
         return 0;
     return S_ISREG(st.st_mode);
-}
-
-static void espd_storage_mount_spiffs(void)
-{
-    s_spiffs_mounted = false;
-
-    esp_vfs_spiffs_conf_t cfg = {
-        .base_path = ESPD_PATCH_STORE_MOUNT,
-        .partition_label = ESPD_PATCH_SPIFFS_PARTITION_LABEL,
-        .max_files = 5,
-        .format_if_mount_failed = true,
-    };
-    esp_err_t err = esp_vfs_spiffs_register(&cfg);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "SPIFFS mount (%s @ %s) failed: %s",
-            ESPD_PATCH_SPIFFS_PARTITION_LABEL, ESPD_PATCH_STORE_MOUNT,
-            esp_err_to_name(err));
-        return;
-    }
-
-    s_spiffs_mounted = true;
-    ESP_LOGI(TAG, "SPIFFS mounted at %s (partition %s)", ESPD_PATCH_STORE_MOUNT,
-        ESPD_PATCH_SPIFFS_PARTITION_LABEL);
 }
 
 bool espd_storage_sdcard_ready(void)
@@ -76,7 +51,7 @@ bool espd_storage_flash_ready(void)
 #endif
 }
 
-/* Active local patch store: SD if mounted, else internal flash, else SPIFFS. */
+/* Active local patch store: SD if mounted, else internal flash. */
 static const char *espd_storage_active_mount(void)
 {
 #ifdef ESPD_USE_SDCARD
@@ -87,8 +62,6 @@ static const char *espd_storage_active_mount(void)
     if (espd_storage_flash_ready())
         return ESPD_STORAGE_MOUNT;
 #endif
-    if (s_spiffs_mounted)
-        return ESPD_PATCH_STORE_MOUNT;
     return NULL;
 }
 
@@ -109,7 +82,7 @@ static const char *espd_storage_main_pd_path_for_mount(const char *mount)
     if (espd_storage_mount_is(mount, ESPD_STORAGE_MOUNT))
         return ESPD_STORAGE_MAIN_PD_PATH;
 #endif
-    return ESPD_MAIN_PD_PATH;
+    return NULL;
 }
 
 static const char *espd_storage_config_on_mount(const char *mount)
@@ -130,10 +103,6 @@ static const char *espd_storage_config_on_mount(const char *mount)
         return NULL;
     }
 #endif
-    if (espd_storage_mount_is(mount, ESPD_PATCH_STORE_MOUNT)
-            && espd_storage_file_exists(ESPD_PATCH_STORE_CONFIG_PATH)) {
-        return ESPD_PATCH_STORE_CONFIG_PATH;
-    }
     return NULL;
 }
 
@@ -150,7 +119,6 @@ void espd_storage_init(void)
     s_config_path = NULL;
     s_main_pd_mount = NULL;
 
-    espd_storage_mount_spiffs();
     espd_storage_resolve_paths();
 
     if (s_config_path)
@@ -208,19 +176,14 @@ const char *espd_storage_main_pd_mount_dir(void)
     return s_main_pd_mount;
 }
 
-bool espd_storage_spiffs_mounted(void)
-{
-    return s_spiffs_mounted;
-}
-
 bool espd_patch_store_is_mounted(void)
 {
-    return s_spiffs_mounted;
+    return false;
 }
 
 bool espd_patch_store_main_pd_exists(void)
 {
-    return s_spiffs_mounted && espd_storage_file_exists(ESPD_MAIN_PD_PATH);
+    return false;
 }
 
 bool espd_sdcard_main_pd_exists(void)

@@ -181,7 +181,7 @@ Activate IDF v6.0.1 per [README.md](../README.md).
 
 ## Local storage (main.pd, config.txt)
 
-**[espd_storage_init()](../main/espd_storage.c)** mounts SPIFFS at **/espd_pd**
+**[espd_storage_init()](../main/espd_storage.c)** resolves active local storage
 and probes paths. SD mounts once via
 **[espd_storage_mount_sdcard()](../main/espd_storage.c)** (before **config.txt**
 is read), then codec init runs in **[initdacs()](../main/espd.c)**.

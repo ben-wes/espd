@@ -200,12 +200,6 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #define ESPD_DIN_GPIO_TASK_CORE 0
 #endif
 
-#ifndef ESPD_PATCH_STORE_MOUNT
-#define ESPD_PATCH_STORE_MOUNT "/espd_pd"
-#endif
-#ifndef ESPD_PATCH_SPIFFS_PARTITION_LABEL
-#define ESPD_PATCH_SPIFFS_PARTITION_LABEL "pdstore"
-#endif
 /* 1 = start legacy espd TCP/UDP transport tasks; 0 = WiFi only for Pd objects. */
 #ifndef ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
 #define ESPD_ENABLE_LEGACY_WIFI_TRANSPORT 1
@@ -217,8 +211,6 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 /** SD card patch store when the card is mounted (see pdmain_init). */
 #define ESPD_SDCARD_MAIN_PD_PATH ESPD_SDCARD_MOUNT "/main.pd"
 #define ESPD_SDCARD_CONFIG_PATH ESPD_SDCARD_MOUNT "/config.txt"
-/** On-chip SPIFFS; last resort after SD and USB MSC (if enabled). */
-#define ESPD_PATCH_STORE_CONFIG_PATH ESPD_PATCH_STORE_MOUNT "/config.txt"
 #if CONFIG_ESPD_USE_USB_MSC
 /** VFS path where USB MSC storage is mounted (flash "storage" partition). */
 #ifndef ESPD_STORAGE_MOUNT
@@ -228,7 +220,7 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
 #define ESPD_STORAGE_CONFIG_PATH ESPD_STORAGE_MOUNT "/config.txt"
 #endif
 /* config.txt optional keys (key=value, # comment). Active store: mounted SD,
- * else mounted internal flash (/storage), else SPIFFS — not mixed by file presence.
+ * else mounted internal flash (/storage) — not mixed by file presence.
  * WiFi (when ESPD_USE_WIFI): STA starts when config.txt has a non-empty wifi_ssid=
  *   (wifi_password optional). Missing config.txt → with ESPD_USE_SDCARD, STA stays
  *   off; otherwise Kconfig/locale defaults apply.
@@ -288,8 +280,6 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
  */
 /* [pdcontrol] message "ip" → list of four float octets 0..255, or symbol "noip" when unavailable. */
 void espd_pdcontrol_sync_cwd(void);
-#define ESPD_MAIN_PD_PATH ESPD_PATCH_STORE_MOUNT "/main.pd"
-
 #include "espd_storage.h"
 
 void pdmain_reload_patch(void);
@@ -301,7 +291,7 @@ bool espd_usb_msc_sync_mode_active(void);
 void espd_usb_msc_sync_mode_set(bool active);
 
 extern int espd_main_pd_loaded_from_store;
-/** If a local main.pd was opened, which directory it was loaded from (e.g. /sdcard or /espd_pd). */
+/** If a local main.pd was opened, which directory it was loaded from (e.g. /sdcard or /storage). */
 extern const char *espd_main_pd_loaded_dir;
 #ifdef ESPD_USE_WIFI
 extern int espd_wifi_net_enabled;

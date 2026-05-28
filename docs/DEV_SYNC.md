@@ -15,7 +15,7 @@ Examples below use macOS device names; substitute `/dev/ttyACM0`, `COM3`, etc.
 | **microSD** (`/sdcard`) | Rapid dev when a card is **mounted** — `espd_sync.py` (default) |
 | **Internal flash** (`/storage`) | Used only when SD is absent or not mounted |
 
-Boot and CDC sync pick the store by **what is mounted** (SD → flash → SPIFFS), not
+Boot and CDC sync pick the store by **what is mounted** (SD → flash), not
 by which volume happens to contain `main.pd`. The host script follows the device
 `PING` reply — no `--target` flag.
 
@@ -30,7 +30,7 @@ While `espd_sync` is watching flash, the device stays in **msc_sync** (Finder
 hidden). Quit the script and **power-cycle or hard-reset** the board to return to
 **normal** mode and show the USB volume again. `msc_sync` is kept only across
 `esp_restart()` from `MODE MSC_SYNC`, not across power-on or the reset button.
-On connect the script does not force `msc_sync` until it actually PUTs files.
+On connect the script enters `msc_sync` immediately when target storage is flash.
 
 ## Firmware / menuconfig
 
@@ -158,14 +158,13 @@ python3 scripts/espd_sync.py -p '/dev/cu.usbmodem*' --reset ~/my_pd_project
 
 ## Boot: where `main.pd` comes from
 
-Firmware picks the **first** existing `main.pd` (same order for `config.txt`):
+Firmware picks the active mounted store for `main.pd` and `config.txt`:
 
 1. **microSD** — `/sdcard` (rapid dev; `espd_sync.py` writes here only)
 2. **USB MSC volume** — `/storage` (Finder drag-and-drop; only if MSC is enabled)
-3. **On-chip SPIFFS** — `/espd_pd` (`pdstore`; last resort — not host-accessible today)
 
 If nothing matches, an optional **embedded test patch** (menuconfig **Embed fallback
-test patch**) is compiled into the firmware — not SPIFFS.
+test patch**) is compiled into the firmware.
 
 `RELOAD` over CDC always reloads from `/sdcard` (needs a mounted card).
 
@@ -175,4 +174,4 @@ Disable **Enable TinyUSB device stack** to return to the pre-USB-device workflow
 
 - **Flash / monitor:** USB-Serial-JTAG (or UART) — usually one port, auto-reset on flash.
 - **ESP_LOG:** IDF default console (not the CDC hook).
-- **Patches:** SD, SPIFFS, etc. — not `espd_sync.py`.
+- **Patches:** SD and/or `/storage` — not `espd_sync.py`.

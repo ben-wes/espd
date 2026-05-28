@@ -82,7 +82,7 @@ config ESPD_INCLUDEPATCH
     bool "Embed fallback test patch at build time"
     default n
     help
-        Used when no main.pd is found on SD, USB MSC, or SPIFFS at boot.
+        Used when no main.pd is found on SD or USB MSC storage at boot.
 
 menu "USB device (OTG)"
     depends on SOC_USB_OTG_SUPPORTED
@@ -179,7 +179,7 @@ config ESPD_USE_AIN
     default n
     help
         Links espd/ain code into the firmware. Sampling starts only when
-        config.txt lists GPIOs: ain_pins=3,4 (SD or SPIFFS). No config.txt,
+        config.txt lists GPIOs: ain_pins=3,4 (SD or /storage). No config.txt,
         no ain_pins= key, or empty ain_pins= → espd/ain stays off (same idea
         as wifi_ssid= gating WiFi). Optional tuning: ain_task_period_ms,
         ain_deadband, ain_report_every_n_blocks.
@@ -189,7 +189,7 @@ config ESPD_USE_TOUCH
     default n
     help
         Links ESP32 touch-sensor / espd/touch code into the firmware. Sampling
-        starts only when config.txt lists GPIOs: touch_pins=4,5 (SD or SPIFFS).
+        starts only when config.txt lists GPIOs: touch_pins=4,5 (SD or /storage).
         No touch_pins= key or empty list → no touch task, no polling (same idea
         as ain_pins= and wifi_ssid=). Optional tuning in config.txt:
         touch_task_period_ms, touch_report_every_n_blocks.
@@ -199,7 +199,7 @@ config ESPD_USE_AOUT
     default n
     help
         Links LEDC PWM / espd/aout code into the firmware. Channels start only
-        when config.txt lists GPIOs: aout_pins=8,9 (SD or SPIFFS). No
+        when config.txt lists GPIOs: aout_pins=8,9 (SD or /storage). No
         aout_pins= key or empty list → no LEDC setup. Updates only when the Pd
         patch sends floats (no background polling). Optional in config.txt:
         aout_pwm_freq_hz=20000.
