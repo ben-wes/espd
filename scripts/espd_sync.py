@@ -55,6 +55,7 @@ _PUT_DONE_RE = re.compile(rb"^\+OK PUT done ([0-9a-fA-F]{8})$")
 _PING_INFO_RE = re.compile(
     rb"^\+OK PING target=(sd|msc) mounted=(yes|no) mode=(normal|msc_sync)$"
 )
+_LAST_PORT_LOGGED: str | None = None
 
 # USB CDC ignores baud; pace payload so TinyUSB/SD can drain without resetting the port.
 _PUT_STREAM_BPS = 200000.0
@@ -144,14 +145,6 @@ def resolve_port(pattern: str) -> str:
     return pattern
 
 
-def wait_for_port(pattern: str) -> str:
-    while True:
-        try:
-            return resolve_port(pattern)
-        except EspdDisconnected:
-            time.sleep(0.5)
-
-
 def _serial_open_retry(port: str, timeout: float):
     import serial
     import serial.serialutil
@@ -229,7 +222,6 @@ class EspdCdc:
         self._stop = threading.Event()
         self._disconnected = threading.Event()
         self._put_active = False
-        self._dev_ready = threading.Event()
         self._thread = threading.Thread(target=self._reader, daemon=True)
         self._thread.start()
 
@@ -242,7 +234,11 @@ class EspdCdc:
             return
         self._disconnected.set()
         self._reply_event.set()
-        log_script(f"disconnected: {reason}")
+        reason_l = reason.lower()
+        if "not configured" in reason_l:
+            log_script(f"disconnected (USB re-enumeration): {reason}")
+        else:
+            log_script(f"disconnected: {reason}")
 
     def close(self) -> None:
         self._stop.set()
@@ -276,8 +272,6 @@ class EspdCdc:
                 line = raw.strip(b"\r")
                 if not line:
                     continue
-                if line.startswith(b"+OK dev ready"):
-                    self._dev_ready.set()
                 if self._put_active:
                     if line.startswith(b"+OK PUT done") or line.startswith(b"-ERR"):
                         with self._lock:
@@ -296,16 +290,6 @@ class EspdCdc:
     def _check_alive(self) -> None:
         if not self.alive:
             raise EspdDisconnected("serial port closed")
-
-    def wait_dev_ready(self, timeout: float) -> bool:
-        """Wait for USB stack + espd_dev after port open (avoids PING during enumeration)."""
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            self._check_alive()
-            if self._dev_ready.is_set():
-                return True
-            time.sleep(0.05)
-        return False
 
     def _wait_reply(self, timeout: float) -> bytes:
         if not self._reply_event.wait(timeout):
@@ -348,6 +332,7 @@ class EspdCdc:
             if line.startswith(b"-ERR"):
                 raise RuntimeError(line.decode(errors="replace"))
             raise RuntimeError(f"unexpected PUT reply: {line.decode(errors='replace')}")
+        log_script(f"sending {nbytes} bytes for {rel_path}")
         try:
             with self._cmd_lock:
                 self._reply_event.clear()
@@ -407,7 +392,7 @@ def parse_ping_info(line: bytes) -> dict[str, str]:
 
 
 def ensure_msc_sync_for_write(cdc: EspdCdc, port: str) -> EspdCdc:
-    """Switch to msc_sync only when about to PUT to internal flash."""
+    """Ensure msc target is in msc_sync mode and mounted."""
     info = parse_ping_info(cdc.ping())
     if info["target"] != "msc":
         return cdc
@@ -456,6 +441,7 @@ def ensure_msc_sync_for_write(cdc: EspdCdc, port: str) -> EspdCdc:
 
 def connect_cdc(port_pattern: str, ready_timeout: float = 8.0) -> EspdCdc:
     import serial.serialutil
+    global _LAST_PORT_LOGGED
 
     deadline = time.monotonic() + ready_timeout
     last_err = ""
@@ -466,11 +452,10 @@ def connect_cdc(port_pattern: str, ready_timeout: float = 8.0) -> EspdCdc:
         cdc: EspdCdc | None = None
         try:
             port = wait_serial_ready(port_pattern, timeout=remaining)
-            log_script(f"port: {port}")
+            if port != _LAST_PORT_LOGGED:
+                log_script(f"port: {port}")
+                _LAST_PORT_LOGGED = port
             cdc = EspdCdc(port)
-            if not cdc.wait_dev_ready(min(20.0, remaining)):
-                last_err = "device USB not ready (+OK dev ready timeout)"
-                continue
             time.sleep(0.25)
             for _ in range(15):
                 try:
@@ -502,10 +487,18 @@ def connect_cdc(port_pattern: str, ready_timeout: float = 8.0) -> EspdCdc:
 def connect_and_prepare(
     port_pattern: str, *, exit_on_fail: bool = False
 ) -> EspdCdc:
-    """Connect over CDC (no mode switch — msc_sync only when syncing to flash)."""
+    """Connect over CDC and pre-enter msc_sync when target storage is internal flash."""
     while True:
         try:
-            return connect_cdc(port_pattern, ready_timeout=60.0)
+            cdc = connect_cdc(port_pattern, ready_timeout=60.0)
+            try:
+                info = parse_ping_info(cdc.ping())
+            except Exception:
+                cdc.close()
+                raise
+            if info["target"] == "msc" and info["mode"] != "msc_sync":
+                cdc = ensure_msc_sync_for_write(cdc, port_pattern)
+            return cdc
         except (TimeoutError, EspdDisconnected, RuntimeError, OSError) as e:
             log_script(f"waiting for device ({e})…")
             if exit_on_fail:
@@ -525,8 +518,7 @@ def local_file_hash(path: str) -> tuple[int, int]:
 
 
 def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str], port: str) -> EspdCdc:
-    cdc = ensure_msc_sync_for_write(cdc, port)
-    pd_changed = False
+    reload_needed = False
     uploaded = 0
     skipped = 0
     t0 = time.time()
@@ -542,14 +534,12 @@ def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str], port: str) -> Espd
         local = os.path.join(watch_dir, rel.replace("/", os.sep))
         _size, crc = local_file_hash(local)
         while True:
-            log_script(f"PUT {rel}")
             try:
                 sent = cdc.put_file(local, rel, crc)
             except EspdDisconnected:
                 log_script(f"reconnect during PUT {rel}…")
                 cdc.close()
-                cdc = connect_cdc(port)
-                cdc = ensure_msc_sync_for_write(cdc, port)
+                cdc = connect_and_prepare(port, exit_on_fail=True)
                 continue
             except RuntimeError as e:
                 if "crc mismatch" in str(e) or "crc exp" in str(e):
@@ -558,13 +548,12 @@ def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str], port: str) -> Espd
                 raise
             if sent:
                 uploaded += 1
-                if rel == "main.pd" or rel.endswith(".pd"):
-                    pd_changed = True
+                reload_needed = True
             else:
                 log_script(f"skip {rel} (unchanged)")
                 skipped += 1
             break
-    if pd_changed:
+    if reload_needed:
         log_script("RELOAD")
         try:
             cdc.reload()
@@ -691,9 +680,10 @@ def main() -> int:
         if not args.no_initial_sync:
             run_sync("sync")
 
-        mtimes = collect_files(watch_dir, include_assets=False)
+        mtimes = collect_files(watch_dir, include_assets=include_assets)
+        watch_kind = "patches" if args.patches_only else "files"
         log_script(
-            f"watching {watch_dir} ({len(mtimes)} patches) — sync to {store}"
+            f"watching {watch_dir} ({len(mtimes)} {watch_kind}) — sync to {store}"
         )
 
         while True:
@@ -711,16 +701,16 @@ def main() -> int:
                     continue
                 if args.resync_on_reconnect and not args.no_initial_sync:
                     run_sync("resync after reconnect")
-                    mtimes = collect_files(watch_dir, include_assets=False)
+                    mtimes = collect_files(watch_dir, include_assets=include_assets)
 
             time.sleep(0.2)
             try:
-                now = collect_files(watch_dir, include_assets=False)
+                now = collect_files(watch_dir, include_assets=include_assets)
                 changed = [rel for rel in now if rel not in mtimes or now[rel] != mtimes[rel]]
                 if not changed:
                     continue
                 time.sleep(args.debounce)
-                now2 = collect_files(watch_dir, include_assets=False)
+                now2 = collect_files(watch_dir, include_assets=include_assets)
                 changed = [
                     rel for rel in now2 if rel not in mtimes or now2[rel] != mtimes[rel]
                 ]

@@ -158,29 +158,6 @@ void espd_dev_cdc_rx_cb(int itf, cdcacm_event_t *event)
         xTaskNotifyGive(s_dev_task);
 }
 
-static bool s_host_dtr;
-
-static void dev_cdc_line_cb(int itf, cdcacm_event_t *event)
-{
-    int dtr;
-
-    if (itf != TINYUSB_CDC_ACM_0 || !event)
-        return;
-    if (event->type != CDC_EVENT_LINE_STATE_CHANGED)
-        return;
-    dtr = event->line_state_changed_data.dtr;
-    if (!dtr) {
-        s_host_dtr = false;
-        return;
-    }
-    /* One ready line per host attach (rising edge only). */
-    if (!s_host_dtr) {
-        dev_reply("+OK dev ready");
-        ESP_LOGI(TAG, "CDC host connected");
-    }
-    s_host_dtr = true;
-}
-
 static void dev_reply(const char *msg)
 {
     char line[192];
@@ -336,28 +313,39 @@ static int dev_put_commit(const char *final_full)
     return 0;
 }
 
-static void dev_mkdir_parents(const char *fullpath)
+static int dev_mkdir_parents(const char *fullpath)
 {
     char tmp[ESPD_DEV_PATH_MAX];
     char *p;
     struct stat st;
 
     if (strlen(fullpath) >= sizeof(tmp))
-        return;
+        return -1;
     strcpy(tmp, fullpath);
     for (p = tmp + 1; *p; p++) {
         if (*p != '/')
             continue;
         *p = '\0';
-        if (stat(tmp, &st) != 0 && mkdir(tmp, 0755) != 0)
+        if (stat(tmp, &st) == 0) {
+            if (!S_ISDIR(st.st_mode)) {
+                ESP_LOGW(TAG, "path component is not a directory: %s", tmp);
+                *p = '/';
+                return -1;
+            }
+        } else if (mkdir(tmp, 0755) != 0) {
             ESP_LOGW(TAG, "mkdir %s failed (%d)", tmp, errno);
+            *p = '/';
+            return -1;
+        }
         *p = '/';
     }
+    return 0;
 }
 
 static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
 {
     char full[ESPD_DEV_PATH_MAX];
+    int open_errno = 0;
     size_t on_disk = 0;
     uint32_t disk_crc = 0;
     int err;
@@ -390,24 +378,43 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     dev_rx_flush();
     dev_drain_cdc_hw();
 
-    dev_mkdir_parents(full);
+    if (dev_mkdir_parents(full) != 0) {
+        dev_reply("-ERR invalid parent path");
+        return;
+    }
     dev_put_cleanup_temp();
     if (snprintf(s_put_tmp, sizeof(s_put_tmp), "%s.tmp", full) >= (int)sizeof(s_put_tmp)) {
         dev_reply("-ERR path too long");
         return;
     }
+    /* Parent creation for tmp path too (handles reconnect/mount races). */
+    if (dev_mkdir_parents(s_put_tmp) != 0) {
+        dev_reply("-ERR invalid parent path");
+        s_put_tmp[0] = '\0';
+        return;
+    }
     /* Drop a partial temp from an earlier attempt; keep s_put_tmp for fopen. */
     unlink(s_put_tmp);
     s_put_fp = fopen(s_put_tmp, "wb");
+    if (!s_put_fp && errno == ENOENT) {
+        /* Deterministic fallback: ensure parent exists, then retry once. */
+        if (dev_mkdir_parents(s_put_tmp) != 0) {
+            dev_reply("-ERR invalid parent path");
+            s_put_tmp[0] = '\0';
+            return;
+        }
+        s_put_fp = fopen(s_put_tmp, "wb");
+    }
     if (s_put_fp) {
         static char put_io_buf[ESPD_DEV_PUT_FILEBUF];
         setvbuf(s_put_fp, put_io_buf, _IOFBF, sizeof(put_io_buf));
     }
     if (!s_put_fp) {
         char msg[80];
-        snprintf(msg, sizeof(msg), "-ERR open failed (%d)", errno);
+        open_errno = errno;
+        snprintf(msg, sizeof(msg), "-ERR open failed (%d)", open_errno);
         dev_reply(msg);
-        ESP_LOGW(TAG, "PUT open %s failed (%d)", s_put_tmp, errno);
+        ESP_LOGW(TAG, "PUT open %s failed (%d)", s_put_tmp, open_errno);
         s_put_tmp[0] = '\0';
         return;
     }
@@ -698,8 +705,6 @@ static void espd_dev_task(void *arg)
 
 void espd_dev_init(void)
 {
-    esp_err_t err;
-
     if (s_dev_task)
         return;
     s_cmd = DEV_CMD_NONE;
@@ -711,13 +716,6 @@ void espd_dev_init(void)
         s_put_mux = xSemaphoreCreateMutex();
     s_target = dev_default_target();
 
-    if (tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0)) {
-        err = tinyusb_cdcacm_register_callback(TINYUSB_CDC_ACM_0,
-                CDC_EVENT_LINE_STATE_CHANGED, dev_cdc_line_cb);
-        if (err != ESP_OK)
-            ESP_LOGW(TAG, "CDC line callback register failed: %s", esp_err_to_name(err));
-    }
-
     if (xTaskCreatePinnedToCore(espd_dev_task, "espd_dev", 6144, NULL,
             ESPD_DEV_TASK_PRIO, &s_dev_task, ESPD_DEV_TASK_CORE) != pdPASS) {
         ESP_LOGW(TAG, "dev CDC task create failed");
@@ -727,9 +725,6 @@ void espd_dev_init(void)
     ESP_LOGI(TAG, "CDC dev sync: PUT/RELOAD -> %s (%s mode)",
         dev_target_mount(s_target),
         espd_usb_msc_sync_mode_active() ? "msc_sync" : "normal");
-    /* Host may assert DTR before espd_dev_init (early espd_sync attach). */
-    if (s_host_dtr)
-        dev_reply("+OK dev ready");
 }
 
 bool espd_dev_reload_pending(void)

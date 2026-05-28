@@ -1750,6 +1750,29 @@ static void espd_nvs_flash_init(void)
     ESP_ERROR_CHECK(ret);
 }
 
+static const char *espd_reset_reason_name(esp_reset_reason_t reason)
+{
+    switch (reason) {
+    case ESP_RST_UNKNOWN:   return "unknown";
+    case ESP_RST_POWERON:   return "poweron";
+    case ESP_RST_EXT:       return "external";
+    case ESP_RST_SW:        return "software";
+    case ESP_RST_PANIC:     return "panic";
+    case ESP_RST_INT_WDT:   return "int_wdt";
+    case ESP_RST_TASK_WDT:  return "task_wdt";
+    case ESP_RST_WDT:       return "wdt";
+    case ESP_RST_DEEPSLEEP: return "deepsleep";
+    case ESP_RST_BROWNOUT:  return "brownout";
+    case ESP_RST_SDIO:      return "sdio";
+    case ESP_RST_USB:       return "usb";
+    case ESP_RST_JTAG:      return "jtag";
+    case ESP_RST_EFUSE:     return "efuse";
+    case ESP_RST_PWR_GLITCH:return "pwr_glitch";
+    case ESP_RST_CPU_LOCKUP:return "cpu_lockup";
+    default:                return "other";
+    }
+}
+
 extern void pdmain_tick( void);
 void pdmain_init( void);
 
@@ -2046,12 +2069,15 @@ unsigned int espd_cputime_get(void)
 
 void app_main(void)
 {
+    esp_reset_reason_t reset_reason = esp_reset_reason();
 #if CONFIG_ESPD_USB_CONSOLE_CDC && CONFIG_ESPD_USE_CONSOLE
     esp_log_level_set("*", ESP_LOG_INFO);
 #else
     esp_log_level_set("*", ESP_LOG_WARN);
 #endif
     esp_log_level_set(TAG, ESP_LOG_INFO);
+    ESP_LOGI(TAG, "reset reason: %s (%d)",
+        espd_reset_reason_name(reset_reason), (int)reset_reason);
 
 #if CONFIG_ESP_MAIN_TASK_STACK_SIZE < 16384
     ESP_LOGW(TAG,
