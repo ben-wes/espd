@@ -5,7 +5,7 @@ Watch a local Pure Data project folder and sync to ESP local storage over CDC.
 Requires: pip install pyserial
 
 Usage:
-  python3 scripts/espd_sync.py -p PORT ./my_patch
+  python3 scripts/espd_sync.py [-p PORT] [./my_patch]
 
 PORT is the OTG CDC serial device (pyserial): e.g. /dev/cu.usbmodem* (macOS),
 /dev/ttyACM0 (Linux), COM3 (Windows). See docs/DEV_SYNC.md.
@@ -145,6 +145,69 @@ def resolve_port(pattern: str) -> str:
     return pattern
 
 
+def autodetect_port() -> str:
+    """Best-effort cross-platform CDC port detection."""
+    from serial.tools import list_ports
+
+    ports = list(list_ports.comports())
+    if not ports:
+        raise EspdDisconnected("no serial ports found")
+
+    def _score(p) -> tuple[int, int]:
+        dev = (p.device or "").lower()
+        desc = (p.description or "").lower()
+        hwid = (p.hwid or "").lower()
+        s = 0
+        if "esp" in desc or "esp" in hwid:
+            s += 100
+        if "cdc" in desc or "usb" in desc:
+            s += 40
+        if "usbmodem" in dev or "ttyacm" in dev or "ttyusb" in dev:
+            s += 30
+        if dev.startswith("com"):
+            s += 20
+        if p.vid is not None and p.pid is not None:
+            s += 10
+        # Prefer stable ordering if scores tie.
+        return (s, -len(dev))
+
+    ranked = sorted(ports, key=_score, reverse=True)
+    best = ranked[0]
+    best_score = _score(best)[0]
+    if best_score <= 0:
+        names = ", ".join(p.device for p in ports)
+        raise EspdDisconnected(f"could not infer CDC port from: {names}")
+
+    # If multiple candidates are similarly good, require explicit port.
+    top = [p for p in ranked if _score(p)[0] == best_score]
+    if len(top) > 1:
+        choices = "\n".join(
+            f"  {p.device} ({p.description or 'unknown'})" for p in top
+        )
+        raise EspdDisconnected(
+            "multiple likely CDC ports found; pass --port explicitly:\n" + choices
+        )
+    return best.device
+
+
+def confirm_watch_dir_has_main(watch_dir: str, *, yes: bool) -> None:
+    main_pd = os.path.join(watch_dir, "main.pd")
+    if os.path.isfile(main_pd):
+        return
+    log_script(f"warning: no main.pd in {watch_dir}")
+    if yes:
+        log_script("continuing without main.pd (--yes)")
+        return
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        sys.exit("aborting: no main.pd (use --yes to continue non-interactively)")
+    try:
+        answer = input("Continue sync anyway? [y/N]: ").strip().lower()
+    except EOFError:
+        answer = ""
+    if answer not in ("y", "yes"):
+        sys.exit("aborted")
+
+
 def _serial_open_retry(port: str, timeout: float):
     import serial
     import serial.serialutil
@@ -211,6 +274,7 @@ def wait_serial_ready(pattern: str, timeout: float = 45.0) -> str:
 class EspdCdc:
     def __init__(self, port: str, open_timeout: float = 8.0):
         self.port = port
+        self.last_ping: bytes | None = None
         self._ser = _serial_open_retry(port, open_timeout)
         self._ser.dtr = True
         self._ser.rts = True
@@ -463,6 +527,7 @@ def connect_cdc(port_pattern: str, ready_timeout: float = 8.0) -> EspdCdc:
                     if last.startswith(b"+OK PING"):
                         log_script(f"connected ({port}): {last.decode(errors='replace')}")
                         connected = cdc
+                        connected.last_ping = last
                         cdc = None
                         return connected
                     if last.startswith(b"-ERR"):
@@ -492,7 +557,10 @@ def connect_and_prepare(
         try:
             cdc = connect_cdc(port_pattern, ready_timeout=60.0)
             try:
-                info = parse_ping_info(cdc.ping())
+                if cdc.last_ping and cdc.last_ping.startswith(b"+OK PING"):
+                    info = parse_ping_info(cdc.last_ping)
+                else:
+                    info = parse_ping_info(cdc.ping())
             except Exception:
                 cdc.close()
                 raise
@@ -596,8 +664,19 @@ def collect_files(root: str, include_assets: bool = False) -> dict[str, float]:
 def main() -> int:
     _need_serial()
     ap = argparse.ArgumentParser(description="ESPD rapid sync over CDC")
-    ap.add_argument("-p", "--port", required=True, help="CDC serial port path")
-    ap.add_argument("watch_dir", help="Local folder to watch (contains main.pd)")
+    ap.add_argument("-p", "--port", help="CDC serial port path (auto-detect if omitted)")
+    ap.add_argument(
+        "watch_dir",
+        nargs="?",
+        default=".",
+        help="Local folder to watch (default: current directory)",
+    )
+    ap.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="continue even when watch folder has no main.pd",
+    )
     ap.add_argument("--debounce", type=float, default=0.35, help="seconds after save")
     ap.add_argument("--ping", action="store_true", help="PING and exit")
     ap.add_argument("--reset", action="store_true", help="RESET device over CDC and exit")
@@ -635,8 +714,15 @@ def main() -> int:
     watch_dir = os.path.abspath(args.watch_dir)
     if not os.path.isdir(watch_dir):
         sys.exit(f"not a directory: {watch_dir}")
-    if not os.path.isfile(os.path.join(watch_dir, "main.pd")):
-        log_script(f"warning: no main.pd in {watch_dir}")
+    confirm_watch_dir_has_main(watch_dir, yes=args.yes)
+
+    port_pattern = args.port
+    if not port_pattern:
+        try:
+            port_pattern = autodetect_port()
+        except EspdDisconnected as e:
+            sys.exit(f"auto port detect failed: {e}")
+        log_script(f"auto port: {port_pattern}")
 
     cdc: EspdCdc | None = None
     try:
@@ -649,32 +735,35 @@ def main() -> int:
                 log_script(f"{label}: nothing to send")
                 return
             log_script(f"{label} ({len(rels)} files)")
-            cdc = sync_files(cdc, watch_dir, rels, args.port)
+            cdc = sync_files(cdc, watch_dir, rels, port_pattern)
 
         if args.reset:
             try:
-                cdc = connect_cdc(args.port, ready_timeout=30.0)
+                cdc = connect_cdc(port_pattern, ready_timeout=30.0)
                 cdc.reset_device()
             except (TimeoutError, EspdDisconnected):
                 pass
             cdc = None
             if args.no_reconnect:
                 return 0
-            cdc = connect_and_prepare(args.port)
+            cdc = connect_and_prepare(port_pattern)
             if not args.no_initial_sync:
                 run_sync("sync after reset")
             return 0
 
         if args.ping:
-            cdc = connect_cdc(args.port, ready_timeout=30.0)
+            cdc = connect_cdc(port_pattern, ready_timeout=30.0)
             info = parse_ping_info(cdc.ping())
             log_script(
                 f"device: mode={info['mode']} target={info['target']} mounted={info['mounted']}"
             )
             return 0
 
-        cdc = connect_and_prepare(args.port)
-        ping = parse_ping_info(cdc.ping())
+        cdc = connect_and_prepare(port_pattern)
+        if cdc.last_ping and cdc.last_ping.startswith(b"+OK PING"):
+            ping = parse_ping_info(cdc.last_ping)
+        else:
+            ping = parse_ping_info(cdc.ping())
         store = "/sdcard" if ping["target"] == "sd" else "/storage"
 
         if not args.no_initial_sync:
@@ -694,7 +783,7 @@ def main() -> int:
                 cdc.close()
                 cdc = None
                 try:
-                    cdc = connect_and_prepare(args.port)
+                    cdc = connect_and_prepare(port_pattern)
                 except (TimeoutError, EspdDisconnected, RuntimeError) as e:
                     log_script(str(e))
                     time.sleep(1.0)
@@ -716,7 +805,7 @@ def main() -> int:
                 ]
                 if not changed:
                     continue
-                cdc = sync_files(cdc, watch_dir, changed, args.port)
+                cdc = sync_files(cdc, watch_dir, changed, port_pattern)
                 mtimes = now2
             except EspdDisconnected:
                 continue
