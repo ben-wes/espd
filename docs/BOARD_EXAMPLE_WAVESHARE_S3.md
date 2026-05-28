@@ -1,8 +1,7 @@
 # Worked example: Waveshare ESP32-S3-AUDIO
 
 End-user setup (features, buttons, config layers):
-**[GETTING_STARTED.md](GETTING_STARTED.md)**. This page is the Waveshare-specific
-build shortcut.
+**[README.md](../README.md)**. This page is the Waveshare-specific build shortcut.
 
 One YAML file defines the board integration:
 

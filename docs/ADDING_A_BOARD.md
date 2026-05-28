@@ -1,7 +1,7 @@
 # Adding a board to ESPD
 
 Integrator guide. End-user setup and full feature list:
-**[GETTING_STARTED.md](GETTING_STARTED.md)**.
+**[README.md](../README.md)**.
 
 ESPD core firmware is board-neutral. Out of the box only **Generic I2S** is
 shipped (manual GPIO pins, no codec driver). Every other kit is an **esp-bsp**
@@ -98,11 +98,10 @@ policy:
 | `bsp_*` init / mount APIs | `io.buttons` → `espd/din/N` map (optional) |
 | IDF / API updates for new IDF releases | Help text, `target:` |
 
-**Worked examples:** [boards/waveshare_s3.yaml](../boards/waveshare_s3.yaml) and
-[boards/waveshare_p4_nano.yaml](../boards/waveshare_p4_nano.yaml) pull
+**Worked example:** [boards/waveshare_s3.yaml](../boards/waveshare_s3.yaml) pulls
 [`ben-wes/esp-bsp@waveshare-s3-p4`](https://github.com/ben-wes/esp-bsp/tree/waveshare-s3-p4)
-(`bsp/waveshare_esp32_s3_audio`, `bsp/esp32_p4_nano`). Hardware deps and IDF 6
-fixes live in that fork, not in espd.
+(`bsp/waveshare_esp32_s3_audio`). Hardware deps and IDF 6 fixes live in that fork,
+not in espd.
 
 ## YAML schema
 
