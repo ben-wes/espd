@@ -2,7 +2,7 @@
  * Host dev sync over TinyUSB CDC (rapid patching to local storage target).
  *
  * Protocol (host -> device):
- *   PING
+ *   STATUS
  *   PUT <relpath> <nbytes> <crc32hex>
  *       -> +OK PUT skip (file already matches) or +OK PUT ready then <nbytes>
  *          raw bytes -> +OK PUT done <crc> (writes to <path>.tmp, rename on success)
@@ -52,7 +52,7 @@ typedef enum {
     DEV_CMD_NONE = 0,
     DEV_CMD_PUT,
     DEV_CMD_RELOAD,
-    DEV_CMD_PING,
+    DEV_CMD_STATUS,
 } dev_cmd_t;
 
 typedef enum {
@@ -205,17 +205,42 @@ static const char *dev_target_name(dev_target_t target)
     return "sd";
 }
 
+static int dev_sdcard_available(void)
+{
+#ifdef ESPD_USE_SDCARD
+    return espd_storage_sdcard_ready() ? 1 : 0;
+#else
+    return 0;
+#endif
+}
+
+static int dev_flash_available(void)
+{
+#if CONFIG_ESPD_USE_USB_MSC
+    return espd_storage_flash_ready() ? 1 : 0;
+#else
+    return 0;
+#endif
+}
+
 static dev_target_t dev_default_target(void)
 {
 #ifdef ESPD_USE_SDCARD
-    if (espd_storage_sdcard_ready())
+    if (dev_sdcard_available())
         return DEV_TARGET_SD;
 #endif
 #if CONFIG_ESPD_USE_USB_MSC
-    if (espd_storage_flash_ready())
-        return DEV_TARGET_MSC;
+    return DEV_TARGET_MSC;
 #endif
+#ifdef ESPD_USE_SDCARD
     return DEV_TARGET_SD;
+#endif
+    return DEV_TARGET_MSC;
+}
+
+static void dev_refresh_target(void)
+{
+    s_target = dev_default_target();
 }
 
 static int dev_target_ready(dev_target_t target)
@@ -350,6 +375,7 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     uint32_t disk_crc = 0;
     int err;
 
+    dev_refresh_target();
     if (!dev_target_ready(s_target)) {
         char msg[96];
         snprintf(msg, sizeof(msg), "-ERR target %s not mounted", dev_target_name(s_target));
@@ -500,6 +526,7 @@ static void dev_put_data(const uint8_t *data, size_t len)
 
 static void dev_do_reload(void)
 {
+    dev_refresh_target();
     if (!dev_target_ready(s_target)) {
         char msg[96];
         snprintf(msg, sizeof(msg), "-ERR target %s not mounted", dev_target_name(s_target));
@@ -594,11 +621,12 @@ static void dev_handle_line(char *line)
     if (!line[0])
         return;
 
-    if (!strcmp(line, "PING")) {
+    if (!strcmp(line, "STATUS")) {
         char reply[128];
-        snprintf(reply, sizeof(reply), "+OK PING target=%s mounted=%s mode=%s",
-            dev_target_name(s_target),
-            dev_target_ready(s_target) ? "yes" : "no",
+        dev_refresh_target();
+        snprintf(reply, sizeof(reply), "+OK STATUS sdcard=%s internal=%s mode=%s",
+            dev_sdcard_available() ? "yes" : "no",
+            dev_flash_available() ? "yes" : "no",
             espd_usb_msc_sync_mode_active() ? "msc_sync" : "normal");
         dev_reply(reply);
         return;
@@ -714,7 +742,7 @@ void espd_dev_init(void)
     s_put_tmp[0] = '\0';
     if (!s_put_mux)
         s_put_mux = xSemaphoreCreateMutex();
-    s_target = dev_default_target();
+    dev_refresh_target();
 
     if (xTaskCreatePinnedToCore(espd_dev_task, "espd_dev", 6144, NULL,
             ESPD_DEV_TASK_PRIO, &s_dev_task, ESPD_DEV_TASK_CORE) != pdPASS) {

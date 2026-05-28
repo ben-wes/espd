@@ -17,7 +17,7 @@ Examples below use macOS device names; substitute `/dev/ttyACM0`, `COM3`, etc.
 
 Boot and CDC sync pick the store by **what is mounted** (SD → flash), not
 by which volume happens to contain `main.pd`. The host script follows the device
-`PING` reply — no `--target` flag.
+`STATUS` reply — no `--target` flag.
 
 Insert a **microSD card** in the board. Put `main.pd` (and abstractions) on the card
 via the sync script, not by pulling the card for each edit.
@@ -40,7 +40,7 @@ On connect the script enters `msc_sync` immediately when target storage is flash
 |--------|---------|
 | **Enable TinyUSB device stack** | OTG USB device + CDC serial (`print`, ESP_LOG on `cu.usbmodem*`) |
 | **USB mass storage** | Internal-flash drive in Finder (default on; uncheck to omit) |
-| **Patch sync over OTG CDC** | `espd_sync` PUT/RELOAD/PING — SD and/or internal flash MSC |
+| **Patch sync over OTG CDC** | `espd_sync` PUT/RELOAD/STATUS — SD and/or internal flash MSC |
 
 **Logs on OTG CDC:** `tinyusb_console_init` sends both Pd `print:` and `ESP_LOG`
 (`I (…) tag:`) to `cu.usbmodem…`. Boot `ESP_LOG` is mostly gone by the time
@@ -63,7 +63,7 @@ if you only need serial, not `espd_sync`.
 
 CDC commands (host → device):
 
-- `PING` — check connection; replies `+OK PING sdcard mounted` or `sdcard not mounted`
+- `STATUS` — query storage/mode; replies `+OK STATUS sdcard=yes|no internal=yes|no mode=normal|msc_sync` (`internal` = `/storage` mounted **on the device** for read/write, not whether the host shows a USB MSC volume)
 - `PUT <relpath> <nbytes> <crc32hex>` — `relpath` may contain spaces (e.g.
   `no_voice/Tools/NH Tools 14.wav`); size and CRC are the last two fields. Device
   replies `+OK PUT skip` if SD already matches, else `+OK PUT ready` then raw bytes;
@@ -92,7 +92,7 @@ python3 scripts/espd_sync.py -p /dev/cu.usbmodem1234561 ~/my_pd_project
 ```
 
 If several serial devices appear, pass the **OTG CDC** port explicitly (the one that
-answers `PING` after a normal **RESET**). On macOS, `ls /dev/cu.usb*`; on Linux,
+answers `STATUS` after a normal **RESET**). On macOS, `ls /dev/cu.usb*`; on Linux,
 `ls /dev/ttyACM* /dev/ttyUSB*`.
 
 On connect the script **syncs the whole project tree** (all subfolders; patches,
@@ -125,7 +125,7 @@ run monitor and `espd_sync` on the same port at once.
 
 | Stream | Pattern | Meaning |
 |--------|---------|---------|
-| stderr `→ …` | host → device | dev sync (PUT / PING / RELOAD) |
+| stderr `→ …` | host → device | dev sync (PUT / STATUS / RELOAD) |
 | stderr `← …` | device → host | `+OK` / `-ERR` replies (host adds `←`; wire is `+OK` only) |
 | stderr `skip … (unchanged)` | host | `+OK PUT skip` from device |
 | stderr `RELOAD done: …` / `RELOAD failed: …` | firmware status | patch reload finished (after `→ RELOAD` / `← +OK RELOAD pending`) |
@@ -138,12 +138,12 @@ bright white Pd, dim ESP). Use `--no-color` or `--no-esp-log` to tone it down.
 Quick check (after `idf.py flash` and board **RESET**):
 
 ```bash
-python3 scripts/espd_sync.py -p '/dev/cu.usbmodem*' --ping ~/my_pd_project
+python3 scripts/espd_sync.py -p '/dev/cu.usbmodem*' --status ~/my_pd_project
 ```
 
-On success, **stderr** shows `+OK PING sdcard mounted` then
-`connected (...): +OK PING sdcard mounted`.
-Stdout may keep printing `cpu:` — that is normal. If PING fails, reflash; do not use an old image without `espd_dev` CDC RX.
+On success, **stderr** shows `+OK STATUS sdcard=… internal=…` then
+`connected (...): +OK STATUS …`.
+Stdout may keep printing `cpu:` — that is normal. If STATUS fails, reflash; do not use an old image without `espd_dev` CDC RX.
 
 **Disconnect / reset:** By default the watcher waits for the CDC port and keeps
 watching; it does **not** re-sync on reconnect until you opt in.

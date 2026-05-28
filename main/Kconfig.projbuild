@@ -131,7 +131,7 @@ menu "USB device (OTG)"
             depends on ESPD_USE_SDCARD || ESPD_USE_USB_MSC
             default y
             help
-                PUT/RELOAD/PING/RESET on the OTG serial port. Target is /sdcard
+                PUT/RELOAD/STATUS/RESET on the OTG serial port. Target is /sdcard
                 (normal) or /storage (MODE MSC_SYNC). Needs SD and/or internal
                 flash MSC enabled. Serial (printf, ESP_LOG) still works when off.
 

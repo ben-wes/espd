@@ -52,8 +52,8 @@ _STYLES = {
 _ANSI_RE = re.compile(rb"\x1b\[[0-9;]*m")
 _ESP_LOG_RE = re.compile(rb"^[IWEDV] \([^)]+\) [^:\n]+: ")
 _PUT_DONE_RE = re.compile(rb"^\+OK PUT done ([0-9a-fA-F]{8})$")
-_PING_INFO_RE = re.compile(
-    rb"^\+OK PING target=(sd|msc) mounted=(yes|no) mode=(normal|msc_sync)$"
+_STATUS_INFO_RE = re.compile(
+    rb"^\+OK STATUS sdcard=(yes|no) internal=(yes|no) mode=(normal|msc_sync)$"
 )
 _LAST_PORT_LOGGED: str | None = None
 
@@ -274,7 +274,7 @@ def wait_serial_ready(pattern: str, timeout: float = 45.0) -> str:
 class EspdCdc:
     def __init__(self, port: str, open_timeout: float = 8.0):
         self.port = port
-        self.last_ping: bytes | None = None
+        self.last_status: bytes | None = None
         self._ser = _serial_open_retry(port, open_timeout)
         self._ser.dtr = True
         self._ser.rts = True
@@ -387,9 +387,21 @@ class EspdCdc:
         data = open(local_path, "rb").read()
         rel_path = rel_path.replace(os.sep, "/")
         nbytes = len(data)
-        probe_timeout = max(10.0, nbytes / 80000.0)
+        probe_timeout = max(20.0, nbytes / 50000.0)
         done_timeout = max(60.0, nbytes / 8000.0)
-        line = self.command(f"PUT {rel_path} {nbytes} {crc:08x}", timeout=probe_timeout)
+        line = b""
+        for attempt in range(2):
+            try:
+                line = self.command(
+                    f"PUT {rel_path} {nbytes} {crc:08x}", timeout=probe_timeout
+                )
+                break
+            except TimeoutError:
+                if attempt == 0:
+                    log_script(f"PUT {rel_path}: no reply, retrying…")
+                    self._reply_event.clear()
+                    continue
+                raise
         if line.startswith(b"+OK PUT skip"):
             return False
         if not line.startswith(b"+OK PUT ready"):
@@ -440,35 +452,97 @@ class EspdCdc:
         except (EspdDisconnected, TimeoutError):
             pass  # reboot disconnects CDC — expected
 
-    def ping(self) -> bytes:
-        return self.command("PING", timeout=10.0)
+    def status(self) -> bytes:
+        return self.command("STATUS", timeout=10.0)
 
 
-def parse_ping_info(line: bytes) -> dict[str, str]:
-    m = _PING_INFO_RE.match(line.strip())
+def parse_status_info(line: bytes) -> dict[str, str]:
+    m = _STATUS_INFO_RE.match(line.strip())
     if not m:
-        raise RuntimeError(f"unexpected PING reply: {line.decode(errors='replace')}")
+        raise RuntimeError(f"unexpected STATUS reply: {line.decode(errors='replace')}")
     return {
-        "target": m.group(1).decode(),
-        "mounted": m.group(2).decode(),
+        "sdcard": m.group(1).decode(),
+        "internal": m.group(2).decode(),
         "mode": m.group(3).decode(),
     }
 
 
-def ensure_msc_sync_for_write(cdc: EspdCdc, port: str) -> EspdCdc:
-    """Ensure msc target is in msc_sync mode and mounted."""
-    info = parse_ping_info(cdc.ping())
-    if info["target"] != "msc":
-        return cdc
+def explain_status(info: dict[str, str]) -> str | None:
+    """Human note when internal=no (not the same as USB MSC visible on the host)."""
+    if info["internal"] == "yes":
+        return None
+    if info["mode"] == "normal":
+        return (
+            "note: /storage not mounted on device (USB MSC may still be visible on "
+            "the host; espd_sync uses msc_sync to mount /storage for writes)"
+        )
     if info["mode"] == "msc_sync":
-        if info["mounted"] == "no":
-            log_script("waiting for /storage mount…")
+        return "note: /storage not mounted on device yet"
+    return "note: /storage not available on device"
+
+
+def resolve_port_pattern(port_arg: str | None) -> str:
+    """Return port path or glob; log once when auto-detected."""
+    global _LAST_PORT_LOGGED
+    if port_arg:
+        return port_arg
+    port = autodetect_port()
+    if port != _LAST_PORT_LOGGED:
+        log_script(f"port: {port}")
+        _LAST_PORT_LOGGED = port
+    return port
+
+
+def device_status(cdc: EspdCdc) -> dict[str, str]:
+    if cdc.last_status and cdc.last_status.startswith(b"+OK STATUS"):
+        return parse_status_info(cdc.last_status)
+    return parse_status_info(cdc.status())
+
+
+def sync_store_path(info: dict[str, str]) -> str:
+    return "/sdcard" if info["sdcard"] == "yes" else "/storage"
+
+
+def leave_msc_sync(cdc: EspdCdc, port: str) -> EspdCdc:
+    """Reboot to normal mode so SD is used instead of exclusive /storage sync."""
+    log_script("leaving msc_sync (device will reboot)")
+    cdc.set_mode("NORMAL")
+    cdc.close()
+    time.sleep(0.5)
+    wait_port_gone(port, timeout=25.0)
+    time.sleep(2.0)
+    log_script("waiting for CDC after reboot (up to 60s)…")
+    return connect_cdc(port, ready_timeout=60.0)
+
+
+def prepare_for_sync(cdc: EspdCdc, port: str) -> EspdCdc:
+    """SD when a card is mounted; otherwise sync to internal flash (/storage)."""
+    info = device_status(cdc)
+    if info["sdcard"] == "yes":
+        if info["mode"] == "msc_sync":
+            log_script("SD card available — using /sdcard")
+            cdc = leave_msc_sync(cdc, port)
+        return cdc
+    if info["internal"] != "yes" and info["mode"] != "msc_sync":
+        log_script("no SD card — using /storage on device")
+        note = explain_status(info)
+        if note:
+            log_script(note)
+    return ensure_msc_sync_for_write(cdc, port)
+
+
+def ensure_msc_sync_for_write(cdc: EspdCdc, port: str) -> EspdCdc:
+    """Enter msc_sync and wait until /storage is mounted for PUT."""
+    info = device_status(cdc)
+    if info["mode"] == "msc_sync":
+        if info["internal"] == "no":
+            log_script("waiting for /storage mount on device…")
             for _ in range(30):
-                time.sleep(0.5)
-                info = parse_ping_info(cdc.ping())
-                if info["mounted"] == "yes":
+                if info["internal"] == "yes":
                     break
-        if info["mounted"] != "yes":
+                time.sleep(0.5)
+                info = parse_status_info(cdc.status())
+        if info["internal"] != "yes":
             raise RuntimeError("/storage not mounted (msc_sync); check boot log on CDC")
         return cdc
 
@@ -480,25 +554,24 @@ def ensure_msc_sync_for_write(cdc: EspdCdc, port: str) -> EspdCdc:
     time.sleep(2.0)
     log_script("waiting for CDC after reboot (up to 60s)…")
     cdc = connect_cdc(port, ready_timeout=60.0)
+    info = device_status(cdc)
     for attempt in range(60):
+        if info["mode"] == "msc_sync" and info["internal"] == "yes":
+            break
+        if info["mode"] == "msc_sync" and info["internal"] == "no":
+            if attempt == 0 or attempt % 10 == 0:
+                log_script("waiting for /storage mount on device…")
         try:
-            info = parse_ping_info(cdc.ping())
+            time.sleep(0.5)
+            info = parse_status_info(cdc.status())
         except EspdDisconnected:
             log_script("CDC dropped during mode wait — reconnecting…")
             cdc.close()
             cdc = connect_cdc(port, ready_timeout=60.0)
-            continue
-        if info["mode"] == "msc_sync" and info["mounted"] == "yes":
-            break
-        if info["mode"] == "msc_sync" and info["mounted"] == "no":
-            if attempt == 0 or attempt % 10 == 0:
-                log_script("waiting for /storage mount…")
-        time.sleep(0.5)
-    else:
-        info = parse_ping_info(cdc.ping())
-    if info["mode"] != "msc_sync" or info["mounted"] != "yes":
+            info = device_status(cdc)
+    if info["mode"] != "msc_sync" or info["internal"] != "yes":
         raise RuntimeError(
-            f"msc_sync failed: mode={info['mode']} mounted={info['mounted']}"
+            f"msc_sync failed: mode={info['mode']} internal={info['internal']}"
         )
     return cdc
 
@@ -523,11 +596,11 @@ def connect_cdc(port_pattern: str, ready_timeout: float = 8.0) -> EspdCdc:
             time.sleep(0.25)
             for _ in range(15):
                 try:
-                    last = cdc.ping()
-                    if last.startswith(b"+OK PING"):
+                    last = cdc.status()
+                    if last.startswith(b"+OK STATUS"):
                         log_script(f"connected ({port}): {last.decode(errors='replace')}")
                         connected = cdc
-                        connected.last_ping = last
+                        connected.last_status = last
                         cdc = None
                         return connected
                     if last.startswith(b"-ERR"):
@@ -552,26 +625,15 @@ def connect_cdc(port_pattern: str, ready_timeout: float = 8.0) -> EspdCdc:
 def connect_and_prepare(
     port_pattern: str, *, exit_on_fail: bool = False
 ) -> EspdCdc:
-    """Connect over CDC and pre-enter msc_sync when target storage is internal flash."""
+    """Connect over CDC and prepare SD or internal-flash sync path."""
     while True:
         try:
             cdc = connect_cdc(port_pattern, ready_timeout=60.0)
             try:
-                if cdc.last_ping and cdc.last_ping.startswith(b"+OK PING"):
-                    info = parse_ping_info(cdc.last_ping)
-                else:
-                    info = parse_ping_info(cdc.ping())
+                return prepare_for_sync(cdc, port_pattern)
             except Exception:
                 cdc.close()
                 raise
-            # If SD is selected but not mounted, prefer flash sync path (/storage).
-            if info["target"] == "sd" and info["mounted"] == "no":
-                log_script("sd target not mounted; switching to msc_sync for flash sync")
-                cdc = ensure_msc_sync_for_write(cdc, port_pattern)
-                return cdc
-            if info["target"] == "msc" and info["mode"] != "msc_sync":
-                cdc = ensure_msc_sync_for_write(cdc, port_pattern)
-            return cdc
         except (TimeoutError, EspdDisconnected, RuntimeError, OSError) as e:
             log_script(f"waiting for device ({e})…")
             if exit_on_fail:
@@ -609,17 +671,23 @@ def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str], port: str) -> Espd
         while True:
             try:
                 sent = cdc.put_file(local, rel, crc)
-            except EspdDisconnected:
-                log_script(f"reconnect during PUT {rel}…")
+            except (EspdDisconnected, TimeoutError) as e:
+                kind = "timeout" if isinstance(e, TimeoutError) else "disconnect"
+                log_script(f"{kind} during PUT {rel}; reconnecting…")
                 cdc.close()
-                cdc = connect_and_prepare(port, exit_on_fail=True)
+                try:
+                    cdc = connect_and_prepare(port, exit_on_fail=True)
+                except (TimeoutError, EspdDisconnected, RuntimeError) as re_err:
+                    log_script(f"reconnect failed during PUT {rel}: {re_err}")
+                    time.sleep(1.0)
+                    continue
                 continue
             except RuntimeError as e:
                 if "crc mismatch" in str(e) or "crc exp" in str(e):
                     log_script(f"PUT verify failed for {rel}, retrying…")
                     continue
-                if "target sd not mounted" in str(e):
-                    log_script("sd target not mounted during PUT; reconnecting for flash sync…")
+                if "not mounted" in str(e):
+                    log_script("storage not ready during PUT; reconnecting…")
                     cdc.close()
                     cdc = connect_and_prepare(port, exit_on_fail=True)
                     continue
@@ -635,8 +703,8 @@ def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str], port: str) -> Espd
         log_script("RELOAD")
         try:
             cdc.reload()
-        except EspdDisconnected:
-            log_script("disconnected during RELOAD (patch may still reload on device)")
+        except (EspdDisconnected, TimeoutError):
+            log_script("timeout/disconnect during RELOAD (patch may still reload on device)")
     log_script(
         f"sync done in {time.time() - t0:.2f}s "
         f"({uploaded} uploaded, {skipped} unchanged)"
@@ -688,7 +756,7 @@ def main() -> int:
         help="continue even when watch folder has no main.pd",
     )
     ap.add_argument("--debounce", type=float, default=0.35, help="seconds after save")
-    ap.add_argument("--ping", action="store_true", help="PING and exit")
+    ap.add_argument("--status", action="store_true", help="STATUS and exit")
     ap.add_argument("--reset", action="store_true", help="RESET device over CDC and exit")
     ap.add_argument("--no-color", action="store_true", help="disable ANSI colors")
     ap.add_argument(
@@ -726,13 +794,10 @@ def main() -> int:
         sys.exit(f"not a directory: {watch_dir}")
     confirm_watch_dir_has_main(watch_dir, yes=args.yes)
 
-    port_pattern = args.port
-    if not port_pattern:
-        try:
-            port_pattern = autodetect_port()
-        except EspdDisconnected as e:
-            sys.exit(f"auto port detect failed: {e}")
-        log_script(f"auto port: {port_pattern}")
+    try:
+        port_pattern = resolve_port_pattern(args.port)
+    except EspdDisconnected as e:
+        sys.exit(f"port detect failed: {e}")
 
     cdc: EspdCdc | None = None
     try:
@@ -761,20 +826,15 @@ def main() -> int:
                 run_sync("sync after reset")
             return 0
 
-        if args.ping:
+        if args.status:
             cdc = connect_cdc(port_pattern, ready_timeout=30.0)
-            info = parse_ping_info(cdc.ping())
-            log_script(
-                f"device: mode={info['mode']} target={info['target']} mounted={info['mounted']}"
-            )
+            note = explain_status(device_status(cdc))
+            if note:
+                log_script(note)
             return 0
 
         cdc = connect_and_prepare(port_pattern)
-        if cdc.last_ping and cdc.last_ping.startswith(b"+OK PING"):
-            ping = parse_ping_info(cdc.last_ping)
-        else:
-            ping = parse_ping_info(cdc.ping())
-        store = "/sdcard" if ping["target"] == "sd" else "/storage"
+        store = sync_store_path(device_status(cdc))
 
         if not args.no_initial_sync:
             run_sync("sync")
@@ -786,19 +846,26 @@ def main() -> int:
         )
 
         while True:
-            if not cdc.alive:
+            if cdc is None or not cdc.alive:
                 if args.no_reconnect:
                     log_script("device disconnected — exiting")
                     return 1
                 cdc.close()
                 cdc = None
+                prev_store = store
                 try:
                     cdc = connect_and_prepare(port_pattern)
                 except (TimeoutError, EspdDisconnected, RuntimeError) as e:
                     log_script(str(e))
                     time.sleep(1.0)
                     continue
-                if args.resync_on_reconnect and not args.no_initial_sync:
+                store = sync_store_path(device_status(cdc))
+                if store != prev_store:
+                    log_script(f"sync target: {store}")
+                    if not args.no_initial_sync:
+                        run_sync("sync after reconnect")
+                    mtimes = collect_files(watch_dir, include_assets=include_assets)
+                elif args.resync_on_reconnect and not args.no_initial_sync:
                     run_sync("resync after reconnect")
                     mtimes = collect_files(watch_dir, include_assets=include_assets)
 
@@ -817,7 +884,21 @@ def main() -> int:
                     continue
                 cdc = sync_files(cdc, watch_dir, changed, port_pattern)
                 mtimes = now2
-            except EspdDisconnected:
+            except (EspdDisconnected, TimeoutError):
+                log_script("timeout/disconnect during watch sync; staying in watch mode")
+                try:
+                    cdc.close()
+                except Exception:
+                    pass
+                cdc = None
+                continue
+            except RuntimeError as e:
+                log_script(f"sync error: {e}; staying in watch mode")
+                try:
+                    cdc.close()
+                except Exception:
+                    pass
+                cdc = None
                 continue
 
     except KeyboardInterrupt:
