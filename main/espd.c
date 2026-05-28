@@ -1628,10 +1628,11 @@ static esp_err_t espd_usb_mount_storage_app(bool msc_sync_mode)
                 .base_path = ESPD_STORAGE_MOUNT,
                 .config = {
                     .max_files = 64,
-                    .format_if_mount_failed = false,
+                    /* Recover automatically after partition-layout changes. */
+                    .format_if_mount_failed = true,
                     .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
                 },
-                .do_not_format = true,
+                .do_not_format = false,
                 .format_flags = FM_FAT,
             },
             .mount_point = TINYUSB_MSC_STORAGE_MOUNT_APP,

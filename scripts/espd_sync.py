@@ -564,6 +564,11 @@ def connect_and_prepare(
             except Exception:
                 cdc.close()
                 raise
+            # If SD is selected but not mounted, prefer flash sync path (/storage).
+            if info["target"] == "sd" and info["mounted"] == "no":
+                log_script("sd target not mounted; switching to msc_sync for flash sync")
+                cdc = ensure_msc_sync_for_write(cdc, port_pattern)
+                return cdc
             if info["target"] == "msc" and info["mode"] != "msc_sync":
                 cdc = ensure_msc_sync_for_write(cdc, port_pattern)
             return cdc
@@ -612,6 +617,11 @@ def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str], port: str) -> Espd
             except RuntimeError as e:
                 if "crc mismatch" in str(e) or "crc exp" in str(e):
                     log_script(f"PUT verify failed for {rel}, retrying…")
+                    continue
+                if "target sd not mounted" in str(e):
+                    log_script("sd target not mounted during PUT; reconnecting for flash sync…")
+                    cdc.close()
+                    cdc = connect_and_prepare(port, exit_on_fail=True)
                     continue
                 raise
             if sent:
