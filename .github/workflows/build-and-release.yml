@@ -3,14 +3,12 @@ name: Build ESPD firmware
 on:
   push:
     branches:
-      - main
       - master
-      - feature/ci
+      - bsp
     tags:
       - '**'
   pull_request:
     branches:
-      - main
       - master
 
 jobs:
