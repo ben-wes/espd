@@ -16,6 +16,7 @@
  */
 
 #include "espd_dev.h"
+#include <stddef.h>
 
 #if CONFIG_ESPD_DEV_CDC_SYNC
 
