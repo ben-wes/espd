@@ -24,17 +24,36 @@ CMAKE_GLUE = """\
 # Auto-generated from {src} — do not edit.
 
 if(CONFIG_ESPD_BOARD_ESP_BSP_GLUE)
-    set(_espd_glue "${{CMAKE_CURRENT_LIST_DIR}}/../espd_integration")
     idf_component_register(
         SRCS
-            "${{_espd_glue}}/espd_bsp_esp_bsp_audio.c"
-            "${{_espd_glue}}/espd_bsp_esp_bsp_io.c"
+            "espd_bsp_audio_glue.c"
+            "espd_bsp_io_glue.c"
         INCLUDE_DIRS "." "${{CMAKE_CURRENT_LIST_DIR}}"
         REQUIRES espd_integration {bsp_component}
     )
 else()
     idf_component_register()
 endif()
+"""
+
+AUDIO_GLUE_C = """\
+/*
+ * Auto-generated from {src} — do not edit.
+ *
+ * Board-owned glue TU to keep component source ownership clean while
+ * reusing shared espd_integration implementation.
+ */
+#include "../espd_integration/espd_bsp_esp_bsp_audio.c"
+"""
+
+IO_GLUE_C = """\
+/*
+ * Auto-generated from {src} — do not edit.
+ *
+ * Board-owned glue TU to keep component source ownership clean while
+ * reusing shared espd_integration implementation.
+ */
+#include "../espd_integration/espd_bsp_esp_bsp_io.c"
 """
 
 
@@ -186,6 +205,8 @@ def _generate_board(repo: Path, yaml_path: Path) -> Path:
         out_dir / "CMakeLists.txt",
         CMAKE_GLUE.format(src=rel_src, bsp_component=data["bsp"]["component"]),
     )
+    _write_if_changed(out_dir / "espd_bsp_audio_glue.c", AUDIO_GLUE_C.format(src=rel_src))
+    _write_if_changed(out_dir / "espd_bsp_io_glue.c", IO_GLUE_C.format(src=rel_src))
     _write_if_changed(out_dir / "sdkconfig.defaults", _gen_sdkconfig_defaults(data, rel_src))
 
     io_cfg = _gen_io_config(data, rel_src)
