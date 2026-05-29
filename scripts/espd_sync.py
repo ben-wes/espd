@@ -57,9 +57,10 @@ _STATUS_INFO_RE = re.compile(
 )
 _LAST_PORT_LOGGED: str | None = None
 
-# USB CDC ignores baud; pace payload so TinyUSB/SD can drain without resetting the port.
-_PUT_STREAM_BPS = 200000.0
-_PUT_STREAM_CHUNK = 1024
+# USB CDC ignores baud. Pace payload so TinyUSB can drain (raise if stable on your port).
+# ~800k BPS helps SD a lot; MSC bulk is usually limited by flash write/fsync on device.
+_PUT_STREAM_BPS = 800000.0
+_PUT_STREAM_CHUNK = 4096
 _SERIAL_BAUD = 921600
 
 
