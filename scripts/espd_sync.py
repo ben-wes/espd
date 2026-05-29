@@ -655,6 +655,7 @@ def local_file_hash(path: str) -> tuple[int, int]:
 
 def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str], port: str) -> EspdCdc:
     reload_needed = False
+    reset_needed = False
     uploaded = 0
     skipped = 0
     t0 = time.time()
@@ -695,12 +696,30 @@ def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str], port: str) -> Espd
                 raise
             if sent:
                 uploaded += 1
-                reload_needed = True
+                if rel == "config.txt":
+                    reset_needed = True
+                elif rel.endswith(".pd"):
+                    reload_needed = True
             else:
                 log_script(f"skip {rel} (unchanged)")
                 skipped += 1
             break
-    if reload_needed:
+    if reset_needed:
+        log_script("RESET (config.txt applies on boot)")
+        try:
+            cdc.reset_device()
+        except (EspdDisconnected, TimeoutError):
+            pass
+        try:
+            cdc.close()
+        except Exception:
+            pass
+        try:
+            cdc = connect_and_prepare(port, exit_on_fail=False)
+        except (TimeoutError, EspdDisconnected, RuntimeError) as e:
+            log_script(f"reconnect after RESET: {e}")
+            cdc = None
+    elif reload_needed:
         log_script("RELOAD")
         try:
             cdc.reload()

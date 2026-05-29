@@ -94,8 +94,8 @@ Host → device:
 
 - `STATUS` — `+OK STATUS sdcard=yes|no internal=yes|no mode=normal|msc_sync` (`internal` = `/storage` mounted on the **device** for I/O, not whether Finder shows a disk)
 - `PUT <relpath> <nbytes> <crc32hex>` — path may contain spaces; `+OK PUT skip` if unchanged
-- `RELOAD` — reload `main.pd` from the active sync target
-- `RESET` — `+OK RESET` then reboot
+- `RELOAD` — reload `main.pd` from the active sync target (`.pd` only; not enough for `config.txt`)
+- `RESET` — `+OK RESET` then reboot (host sends this after uploading `config.txt`)
 
 Replies: one line each, `+OK ...` or `-ERR ...`.
 
@@ -109,7 +109,7 @@ python3 scripts/espd_sync.py
 
 Optional: `-p /dev/cu.usbmodem1234561` (or `/dev/ttyACM0`, `COM3`, …) if auto-detect fails.
 
-On connect the script **syncs the project tree** (patches, `config.txt`, samples by default). Unchanged files are skipped via CRC. Saving in Pure Data triggers `PUT` + `RELOAD` for changed `.pd` / `config.txt`.
+On connect the script **syncs the project tree** (patches, `config.txt`, samples by default). Unchanged files are skipped via CRC. Saving a `.pd` triggers `PUT` + `RELOAD`. Saving **`config.txt`** triggers `PUT` + **`RESET`** (Wi‑Fi, GPIO, audio rate, etc. are read only at boot).
 
 | Flag | Purpose |
 |------|---------|
