@@ -1,5 +1,22 @@
-# ESP32-S3 — pre-select Waveshare S3 Audio after set-target (override in menuconfig).
+# ESP32-S3 — dual-core layout, internal-flash MSC tuning, optional board pre-select.
+# Board hardware (PSRAM, flash size, codecs): boards/*.yaml → espd_board_*.
+
 CONFIG_ESPD_BOARD_WAVESHARE_S3=y
 
-# Pd main-task stack. Flash/PSRAM: espd_board_waveshare_s3/sdkconfig.defaults.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536
+
+# Audio loop on CPU1; USB/WiFi/pthread workers on CPU0 (see main/espd.c, espd_dev.c).
+CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y
+CONFIG_ESP_MAIN_TASK_AFFINITY="0x1"
+CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_0=y
+CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0=y
+CONFIG_LWIP_TCPIP_TASK_AFFINITY="0x0"
+CONFIG_ESP_TIMER_TASK_AFFINITY="0x0"
+CONFIG_ESP_TIMER_TASK_AFFINITY_CPU0=y
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
+CONFIG_PTHREAD_TASK_PRIO_DEFAULT=5
+CONFIG_PTHREAD_TASK_CORE_DEFAULT=0
+
+# Wear levelling + TinyUSB MSC (when enabled): 4 KiB sectors, bufsize >= sector.
+CONFIG_WL_SECTOR_SIZE_4096=y
+CONFIG_TINYUSB_MSC_BUFSIZE=8192
