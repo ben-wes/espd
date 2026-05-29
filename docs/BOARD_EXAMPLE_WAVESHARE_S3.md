@@ -35,9 +35,15 @@ idf.py build flash monitor
 
 First build downloads the BSP into **managed_components/** (network required).
 
-Board YAML turns on OTG (CDC + MSC + patch sync). Patches, flash, and
-`espd_sync.py`: **[DEV_SYNC.md](DEV_SYNC.md)**. First boot may format internal
-`storage` (quiet for a few seconds).
+Board YAML turns on OTG (CDC + MSC + patch sync). **ESP32-S3** chip defaults
+(`sdkconfig.defaults.esp32s3`) set 4 KiB wear-levelling and MSC buffer sizes for
+`/storage`. Patches, flash, and `espd_sync.py`: **[DEV_SYNC.md](DEV_SYNC.md)**.
+
+**After upgrading** from 512-byte WL: reformat `/storage` once — see
+**[DEV_SYNC.md — Reformat internal flash](DEV_SYNC.md#reformat-internal-flash-storage)**.
+
+**Flash clock (optional):** menuconfig → Serial flasher config → 120 MHz + HPM
+only if the module supports it; if the board fails to boot, revert to 80 MHz.
 
 ## Buttons
 

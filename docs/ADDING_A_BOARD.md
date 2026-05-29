@@ -142,6 +142,44 @@ profile:                           # sdkconfig.defaults sections
 Profile keys may omit the `CONFIG_` prefix. Values are `y`/`n`, numbers, or
 quoted strings (e.g. `'"/sdcard"'`, `"0x1"`).
 
+### Chip defaults (do not repeat in YAML)
+
+**`sdkconfig.defaults.<target>`** already sets ESPD-wide tuning for that SoC.
+On **ESP32-S3**, for example:
+
+- Dual-core layout (audio on CPU1, USB/WiFi/pthread on CPU0)
+- `WL_SECTOR_SIZE_4096` and `TINYUSB_MSC_BUFSIZE=8192` (paired for internal flash MSC)
+- `FATFS_IMMEDIATE_FSYNC=n` (project-wide)
+
+Classic **ESP32** keeps smaller flash partitions and IDF’s default 512-byte WL
+(see `sdkconfig.defaults.esp32`).
+
+### USB OTG + `/storage` (board YAML only)
+
+Copy from [boards/waveshare_s3.yaml](../boards/waveshare_s3.yaml) **only if**
+the kit has OTG, internal-flash MSC, and `espd_sync`:
+
+```yaml
+features:
+  imply:
+    - ESPD_USE_USB_OTG
+
+profile:
+  USB OTG:
+    ESPD_USE_USB_OTG: y
+    ESPD_USE_USB_MSC: y
+    TINYUSB_MSC_ENABLED: y
+    TINYUSB_CDC_ENABLED: y
+    ESPD_DEV_CDC_SYNC: y
+    ESP_CONSOLE_NONE: y   # when logs go to OTG CDC
+```
+
+Do **not** set `WL_SECTOR_SIZE_*` or `TINYUSB_MSC_BUFSIZE` in the board file —
+they live in **`sdkconfig.defaults.esp32s3`**. After changing WL sector size,
+reformat `/storage` once ([DEV_SYNC.md — Reformat internal flash](DEV_SYNC.md#reformat-internal-flash-storage)).
+
+SD-only kits: skip the USB OTG block; enable `ESPD_USE_SDCARD` only.
+
 SD-card expander detect (`BSP_SD_DET`) is handled automatically by the shared
 I/O glue when the esp-bsp header defines it.
 
