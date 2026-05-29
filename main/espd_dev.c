@@ -42,9 +42,12 @@ static const char *TAG = "espd_dev";
 #define ESPD_DEV_TASK_CORE          0
 /* Below TinyUSB device task (4) so CDC RX is not starved during PUT payload. */
 #define ESPD_DEV_TASK_PRIO          3
-#define ESPD_DEV_RX_CHUNK           2048
-#define ESPD_DEV_PUT_FILEBUF        8192
+#define ESPD_DEV_RX_CHUNK           4096
+#define ESPD_DEV_PUT_FILEBUF        16384
+#define ESPD_DEV_HASH_CHUNK         4096
 #define ESPD_DEV_RX_RING            16384
+/* fwrite/fsync + 4 KiB CDC read buffer; 6 KiB stack overflowed after RX_CHUNK bump. */
+#define ESPD_DEV_TASK_STACK         12288
 /* Room for PUT <path-with-spaces> <size> <crc> (path up to ESPD_DEV_PATH_MAX). */
 #define ESPD_DEV_LINE_MAX           256
 #define ESPD_DEV_PATH_MAX           384
@@ -77,6 +80,8 @@ static FILE *s_put_fp;
 static char s_put_tmp[ESPD_DEV_PATH_MAX];
 static SemaphoreHandle_t s_put_mux;
 static dev_target_t s_target = DEV_TARGET_SD;
+/* Single drain buffer (espd_dev task only — not re-entrant). */
+static uint8_t s_cdc_rx_buf[ESPD_DEV_RX_CHUNK];
 
 static void dev_reply(const char *msg);
 static void dev_put_data(const uint8_t *data, size_t len);
@@ -124,27 +129,28 @@ static size_t dev_rx_pop(uint8_t *out, size_t max)
 
 static void dev_drain_cdc_hw(void)
 {
-    uint8_t buf[ESPD_DEV_RX_CHUNK];
     size_t rx;
 
     if (!tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
         return;
 
-    while (tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, buf, sizeof(buf), &rx) == ESP_OK && rx > 0)
-        dev_rx_push(buf, rx);
+    while (tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, s_cdc_rx_buf, sizeof(s_cdc_rx_buf), &rx)
+               == ESP_OK
+           && rx > 0)
+        dev_rx_push(s_cdc_rx_buf, rx);
 }
 
 /* PUT payload bypasses the 16 KiB line ring (large files overflow it otherwise). */
 static void dev_drain_cdc_put(void)
 {
-    uint8_t buf[ESPD_DEV_RX_CHUNK];
     size_t rx;
 
     if (!tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
         return;
 
-    while (tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, buf, sizeof(buf), &rx) == ESP_OK && rx > 0)
-        dev_put_data(buf, rx);
+    while (tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, s_cdc_rx_buf, sizeof(s_cdc_rx_buf), &rx) == ESP_OK
+           && rx > 0)
+        dev_put_data(s_cdc_rx_buf, rx);
 }
 
 void espd_dev_cdc_rx_cb(int itf, cdcacm_event_t *event)
@@ -152,9 +158,8 @@ void espd_dev_cdc_rx_cb(int itf, cdcacm_event_t *event)
     (void)event;
     if (itf != TINYUSB_CDC_ACM_0)
         return;
-    /* PUT payload drained only on espd_dev task (avoids races with this callback). */
-    if (s_cmd != DEV_CMD_PUT || s_put_remain == 0)
-        dev_drain_cdc_hw();
+    /* All CDC reads run on espd_dev task (TinyUSB callback stack is too small for
+     * ESPD_DEV_RX_CHUNK drain loops; host probes the port even without espd_sync). */
     if (s_dev_task)
         xTaskNotifyGive(s_dev_task);
 }
@@ -285,8 +290,6 @@ static int dev_build_path(char *out, size_t outsz, const char *rel)
         return 0;
     return 1;
 }
-
-#define ESPD_DEV_HASH_CHUNK          1024
 
 /* CRC-32 (same polynomial as Python zlib.crc32). Runs on espd_dev task only. */
 static int dev_file_hash(const char *full, size_t *out_size, uint32_t *out_crc)
@@ -705,12 +708,11 @@ static void dev_feed_bytes(const uint8_t *buf, size_t rx, int line_mode)
 
 static void dev_poll_rx(void)
 {
-    uint8_t buf[ESPD_DEV_RX_CHUNK];
     size_t n;
 
     dev_drain_cdc_hw();
-    while ((n = dev_rx_pop(buf, sizeof(buf))) > 0)
-        dev_feed_bytes(buf, n, 1);
+    while ((n = dev_rx_pop(s_cdc_rx_buf, sizeof(s_cdc_rx_buf))) > 0)
+        dev_feed_bytes(s_cdc_rx_buf, n, 1);
 }
 
 static void dev_poll_put_payload(void)
@@ -745,7 +747,7 @@ void espd_dev_init(void)
         s_put_mux = xSemaphoreCreateMutex();
     dev_refresh_target();
 
-    if (xTaskCreatePinnedToCore(espd_dev_task, "espd_dev", 6144, NULL,
+    if (xTaskCreatePinnedToCore(espd_dev_task, "espd_dev", ESPD_DEV_TASK_STACK, NULL,
             ESPD_DEV_TASK_PRIO, &s_dev_task, ESPD_DEV_TASK_CORE) != pdPASS) {
         ESP_LOGW(TAG, "dev CDC task create failed");
         s_dev_task = NULL;

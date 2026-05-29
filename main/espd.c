@@ -1713,7 +1713,9 @@ static void usb_init_on_core0(void)
 
 #if CONFIG_ESPD_USE_USB_MSC
     if (msc_handle == NULL) {
-        (void)espd_usb_mount_storage_app(msc_sync_mode);
+        esp_err_t mnt = espd_usb_mount_storage_app(msc_sync_mode);
+        if (mnt != ESP_OK)
+            ESP_LOGW(TAG, "USB: /storage mount failed: %s", esp_err_to_name(mnt));
     }
 #endif
 }
@@ -2121,7 +2123,11 @@ void app_main(void)
 #if CONFIG_ESPD_USE_USB_MSC
     espd_usb_msc_sync_clear_unless_sw_reset();
     /* Mount before config.txt / main.pd so flash-only builds see /storage early. */
-    (void)espd_usb_mount_storage_app(espd_usb_msc_sync_mode_active());
+    {
+        esp_err_t mnt = espd_usb_mount_storage_app(espd_usb_msc_sync_mode_active());
+        if (mnt != ESP_OK)
+            ESP_LOGW(TAG, "USB: early /storage mount failed: %s", esp_err_to_name(mnt));
+    }
 #endif
 
 #ifdef ESPD_USE_AOUT
