@@ -444,6 +444,13 @@ class EspdCdc:
     def reload(self) -> None:
         self.command("RELOAD", timeout=30.0)
 
+    def send_pd(self, message: str) -> bytes:
+        """Send one Pd message (semicolon added on device if missing)."""
+        msg = message.strip()
+        if not msg:
+            raise ValueError("empty Pd message")
+        return self.command(f"MSG {msg}", timeout=5.0)
+
     def reset_device(self) -> None:
         self.command("RESET", timeout=2.0)
 
@@ -777,6 +784,11 @@ def main() -> int:
     )
     ap.add_argument("--debounce", type=float, default=0.35, help="seconds after save")
     ap.add_argument("--status", action="store_true", help="STATUS and exit")
+    ap.add_argument(
+        "--pd-msg",
+        metavar="TEXT",
+        help="send one MSG to Pd and exit (e.g. '; pd dsp 1' or 'print hello')",
+    )
     ap.add_argument("--reset", action="store_true", help="RESET device over CDC and exit")
     ap.add_argument("--no-color", action="store_true", help="disable ANSI colors")
     ap.add_argument(
@@ -851,6 +863,12 @@ def main() -> int:
             note = explain_status(device_status(cdc))
             if note:
                 log_script(note)
+            return 0
+
+        if args.pd_msg:
+            cdc = connect_cdc(port_pattern, ready_timeout=30.0)
+            line = cdc.send_pd(args.pd_msg)
+            log_script(line.decode(errors="replace").strip())
             return 0
 
         cdc = connect_and_prepare(port_pattern)

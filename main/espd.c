@@ -2252,6 +2252,18 @@ void app_main(void)
             pdmain_reload_patch_from(espd_dev_reload_dir());
             espd_dev_clear_reload_pending();
         }
+        {
+            char pdmsg[272];
+            if (espd_dev_pdmsg_take(pdmsg, sizeof(pdmsg))) {
+                size_t n = strlen(pdmsg);
+                if (n > 0 && pdmsg[n - 1] != ';' && n + 1 < sizeof(pdmsg)) {
+                    pdmsg[n++] = ';';
+                    pdmsg[n] = '\0';
+                }
+                if (n > 0)
+                    pd_sendmsg(pdmsg, (int)n);
+            }
+        }
 #endif
 
         pdmain_tick();

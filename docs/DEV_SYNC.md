@@ -95,6 +95,7 @@ Host → device:
 - `STATUS` — `+OK STATUS sdcard=yes|no internal=yes|no mode=normal|msc_sync` (`internal` = `/storage` mounted on the **device** for I/O, not whether Finder shows a disk)
 - `PUT <relpath> <nbytes> <crc32hex>` — path may contain spaces; `+OK PUT skip` if unchanged
 - `RELOAD` — reload `main.pd` from the active sync target (`.pd` only; not enough for `config.txt`)
+- `MSG <pd-message>` — queue one Pd message (`pd_sendmsg` on the audio thread; `;` appended if omitted)
 - `RESET` — `+OK RESET` then reboot (host sends this after uploading `config.txt`)
 
 Replies: one line each, `+OK ...` or `-ERR ...`.
@@ -116,6 +117,7 @@ On connect the script **syncs the project tree** (patches, `config.txt`, samples
 | `--patches-only` | Sync/watch without audio samples |
 | `--no-initial-sync` | Watch only |
 | `--status` | STATUS and exit |
+| `--pd-msg TEXT` | Send one `MSG` to Pd and exit (e.g. `'; pd dsp 1'` or `'print hello'`) |
 | `--reset` | Reboot device |
 | `--resync-on-reconnect` | Full sync after unplug/reset |
 | `--no-reconnect` | Exit when port goes away |

@@ -17,3 +17,5 @@ void espd_dev_init(void);
 bool espd_dev_reload_pending(void);
 void espd_dev_clear_reload_pending(void);
 const char *espd_dev_reload_dir(void);
+/** Copy one queued MSG line (audio thread only); clears pending. */
+bool espd_dev_pdmsg_take(char *out, size_t outsz);

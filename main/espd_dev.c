@@ -7,6 +7,7 @@
  *       -> +OK PUT skip (file already matches) or +OK PUT ready then <nbytes>
  *          raw bytes -> +OK PUT done <crc> (writes to <path>.tmp, rename on success)
  *   RELOAD
+ *   MSG <pd-message>  (queued; evaluated on audio thread via pd_sendmsg)
  *   MODE MSC_SYNC | MODE NORMAL
  *   RESET  (reboot ESP after reply)
  *
@@ -66,6 +67,8 @@ typedef enum {
 
 static TaskHandle_t s_dev_task;
 static volatile bool s_reload_pending;
+static volatile bool s_pdmsg_pending;
+static char s_pdmsg[ESPD_DEV_LINE_MAX];
 static portMUX_TYPE s_rx_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint8_t s_rx_ring[ESPD_DEV_RX_RING];
 static size_t s_rx_head;
@@ -528,6 +531,23 @@ static void dev_put_data(const uint8_t *data, size_t len)
     }
 }
 
+static void dev_queue_pdmsg(const char *text)
+{
+    size_t n;
+
+    if (!text || !text[0]) {
+        dev_reply("-ERR MSG empty");
+        return;
+    }
+    n = strlen(text);
+    if (n >= sizeof(s_pdmsg))
+        n = sizeof(s_pdmsg) - 1;
+    memcpy(s_pdmsg, text, n);
+    s_pdmsg[n] = '\0';
+    s_pdmsg_pending = true;
+    dev_reply("+OK MSG queued");
+}
+
 static void dev_do_reload(void)
 {
     dev_refresh_target();
@@ -645,6 +665,13 @@ static void dev_handle_line(char *line)
     }
     if (!strcmp(line, "RELOAD")) {
         dev_do_reload();
+        return;
+    }
+    if (!strncmp(line, "MSG ", 4)) {
+        const char *body = line + 4;
+        while (*body == ' ' || *body == '\t')
+            body++;
+        dev_queue_pdmsg(body);
         return;
     }
     if (!strcmp(line, "RESET")) {
@@ -773,11 +800,32 @@ const char *espd_dev_reload_dir(void)
     return dev_target_mount(s_target);
 }
 
+bool espd_dev_pdmsg_take(char *out, size_t outsz)
+{
+    size_t n;
+
+    if (!s_pdmsg_pending || !out || outsz == 0)
+        return false;
+    n = strlen(s_pdmsg);
+    if (n >= outsz)
+        n = outsz - 1;
+    memcpy(out, s_pdmsg, n);
+    out[n] = '\0';
+    s_pdmsg_pending = false;
+    return true;
+}
+
 #else /* !CONFIG_ESPD_DEV_CDC_SYNC */
 
 void espd_dev_init(void) {}
 bool espd_dev_reload_pending(void) { return false; }
 void espd_dev_clear_reload_pending(void) {}
 const char *espd_dev_reload_dir(void) { return NULL; }
+bool espd_dev_pdmsg_take(char *out, size_t outsz)
+{
+    (void)out;
+    (void)outsz;
+    return false;
+}
 
 #endif /* CONFIG_ESPD_DEV_CDC_SYNC */
