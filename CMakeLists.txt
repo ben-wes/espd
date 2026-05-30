@@ -9,6 +9,25 @@ cmake_minimum_required(VERSION 3.16...3.30)
 
 set(SDKCONFIG_DEFAULTS "${CMAKE_SOURCE_DIR}/sdkconfig.defaults")
 
+# Optional board/menu overlays (espd-kits, CI) — never commit into espd submodule.
+set(_espd_extra_defaults "")
+if(EXISTS "${CMAKE_SOURCE_DIR}/sdkconfig.defaults.espd-kits")
+    list(APPEND _espd_extra_defaults "${CMAKE_SOURCE_DIR}/sdkconfig.defaults.espd-kits")
+endif()
+if(DEFINED ENV{ESPD_SDKCONFIG_DEFAULTS} AND NOT "$ENV{ESPD_SDKCONFIG_DEFAULTS}" STREQUAL "")
+    string(REPLACE ":" ";" _espd_env_defaults "$ENV{ESPD_SDKCONFIG_DEFAULTS}")
+    foreach(_espd_defaults_file IN LISTS _espd_env_defaults)
+        if(EXISTS "${_espd_defaults_file}")
+            list(APPEND _espd_extra_defaults "${_espd_defaults_file}")
+        else()
+            message(WARNING "ESPD_SDKCONFIG_DEFAULTS: file not found: ${_espd_defaults_file}")
+        endif()
+    endforeach()
+endif()
+foreach(_espd_defaults_file IN LISTS _espd_extra_defaults)
+    list(APPEND SDKCONFIG_DEFAULTS "${_espd_defaults_file}")
+endforeach()
+
 # Read sdkconfig when present; otherwise scan sdkconfig.defaults (+ target file) so
 # board profile defaults apply before the first menuconfig / kconfgen run.
 function(_espd_collect_config_text _out_var)
@@ -20,6 +39,9 @@ function(_espd_collect_config_text _out_var)
         if(DEFINED ENV{IDF_TARGET} AND NOT "$ENV{IDF_TARGET}" STREQUAL "")
             list(APPEND _defaults_files
                 "${CMAKE_SOURCE_DIR}/sdkconfig.defaults.$ENV{IDF_TARGET}")
+        endif()
+        if(_espd_extra_defaults)
+            list(APPEND _defaults_files ${_espd_extra_defaults})
         endif()
         foreach(_defaults_file IN LISTS _defaults_files)
             if(EXISTS "${_defaults_file}")
@@ -117,9 +139,13 @@ else()
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     set(_espd_python "${Python3_EXECUTABLE}")
 endif()
+set(_espd_boards_dir "${CMAKE_SOURCE_DIR}/boards")
+if(DEFINED ENV{ESPD_BOARDS_DIR} AND NOT "$ENV{ESPD_BOARDS_DIR}" STREQUAL "")
+    set(_espd_boards_dir "$ENV{ESPD_BOARDS_DIR}")
+endif()
 execute_process(
     COMMAND "${_espd_python}" "${CMAKE_SOURCE_DIR}/scripts/gen_board_plugins.py"
-            "${CMAKE_SOURCE_DIR}"
+            "${CMAKE_SOURCE_DIR}" --boards-dir "${_espd_boards_dir}"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     RESULT_VARIABLE _espd_gen_boards_result
     OUTPUT_VARIABLE _espd_gen_boards_out

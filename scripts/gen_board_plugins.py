@@ -193,8 +193,11 @@ def _write_if_changed(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _generate_board(repo: Path, yaml_path: Path) -> Path:
-    rel_src = yaml_path.relative_to(repo).as_posix()
+def _generate_board(repo: Path, yaml_path: Path, boards_dir: Path) -> Path:
+    try:
+        rel_src = yaml_path.relative_to(repo).as_posix()
+    except ValueError:
+        rel_src = f"boards/{yaml_path.name}"
     data = _load_board(yaml_path)
     _validate_board(data, yaml_path)
 
@@ -219,19 +222,33 @@ def _generate_board(repo: Path, yaml_path: Path) -> Path:
     return out_dir
 
 
-def main(argv: list[str]) -> int:
+def _parse_args(argv: list[str]) -> tuple[Path, Path]:
     repo = Path(argv[1] if len(argv) > 1 else ".").resolve()
     boards_dir = repo / "boards"
+    i = 2
+    while i < len(argv):
+        if argv[i] == "--boards-dir" and i + 1 < len(argv):
+            boards_dir = Path(argv[i + 1]).resolve()
+            i += 2
+            continue
+        raise SystemExit(f"unknown argument: {argv[i]}")
+    return repo, boards_dir
+
+
+def main(argv: list[str]) -> int:
+    repo, boards_dir = _parse_args(argv)
     if not boards_dir.is_dir():
         return 0
 
-    yaml_files = sorted(boards_dir.glob("*.yaml"))
+    yaml_files = sorted(
+        p for p in boards_dir.glob("*.yaml") if p.name != "index.yaml"
+    )
     if not yaml_files:
         return 0
 
     for yaml_path in yaml_files:
-        out = _generate_board(repo, yaml_path)
-        print(f"gen_board_plugins: {yaml_path.name} -> {out.relative_to(repo)}")
+        out = _generate_board(repo, yaml_path, boards_dir)
+        print(f"gen_board_plugins: {yaml_path} -> {out.relative_to(repo)}")
 
     return 0
 

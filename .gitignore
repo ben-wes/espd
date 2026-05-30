@@ -5,6 +5,7 @@ managed_components
 main/locale.h
 sdkconfig
 sdkconfig.old
+sdkconfig.defaults.espd-kits
 .cache
 # Generated from boards/*.yaml (scripts/gen_board_plugins.py on CMake configure)
 components/espd_board_*/

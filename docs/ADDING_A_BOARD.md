@@ -198,9 +198,27 @@ idf.py set-target esp32s3 fullclean menuconfig build flash monitor
 ```
 
 Profile defaults merge from **main/boards/generic/** (Generic I2S) or the
-generated **components/espd_board_*/sdkconfig.defaults**. Pre-select a board
-by appending `CONFIG_ESPD_BOARD_MYKIT=y` to **sdkconfig.defaults.&lt;target&gt;**
-before the first menuconfig.
+generated **components/espd_board_*/sdkconfig.defaults**.
+
+### Pre-select a board (without menuconfig)
+
+Do **not** commit a board choice into **`sdkconfig.defaults.esp32s3`** (or other
+chip files) in the main tree — that file stays board-neutral.
+
+| Method | Use when |
+|--------|----------|
+| **menuconfig** | Local dev in `espd` |
+| **`sdkconfig.defaults.espd-kits`** in the build tree | Copy or symlink from [espd-kits](https://github.com/ben-wes/espd-kits) `config/boards/<id>.select` |
+| **`ESPD_SDKCONFIG_DEFAULTS`** | CI / kits: absolute path to a file containing `CONFIG_ESPD_BOARD_MYKIT=y` |
+
+```bash
+export ESPD_SDKCONFIG_DEFAULTS="/path/to/waveshare_s3.select"
+export ESPD_BOARDS_DIR="/path/to/espd-kits/boards"   # optional; default is ./boards
+idf.py set-target esp32s3 build
+```
+
+**espd-kits** keeps the catalog YAMLs and `.select` files; the **`espd` submodule
+is not modified** during kit builds.
 
 Activate IDF v6.0.1 per [README.md](../README.md).
 
