@@ -5,6 +5,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include "sdkconfig.h"
 
 #if CONFIG_ESPD_DEV_CDC_SYNC
