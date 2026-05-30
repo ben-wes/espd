@@ -1,5 +1,5 @@
 # ESP32-S3 — chip-wide tuning (no board pre-select; pick board in menuconfig or via
-# sdkconfig.defaults.espd-kits / ESPD_SDKCONFIG_DEFAULTS — see docs/ADDING_A_BOARD.md).
+# sdkconfig.defaults.local (or menuconfig) — see docs/ADDING_A_BOARD.md).
 # Board hardware (PSRAM, codecs, USB): boards/*.yaml → espd_board_*.
 
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536

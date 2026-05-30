@@ -9,10 +9,10 @@ cmake_minimum_required(VERSION 3.16...3.30)
 
 set(SDKCONFIG_DEFAULTS "${CMAKE_SOURCE_DIR}/sdkconfig.defaults")
 
-# Optional board/menu overlays (espd-kits, CI) — never commit into espd submodule.
+# Optional local overlay (menuconfig alternative) — gitignored; kits CI writes this file.
 set(_espd_extra_defaults "")
-if(EXISTS "${CMAKE_SOURCE_DIR}/sdkconfig.defaults.espd-kits")
-    list(APPEND _espd_extra_defaults "${CMAKE_SOURCE_DIR}/sdkconfig.defaults.espd-kits")
+if(EXISTS "${CMAKE_SOURCE_DIR}/sdkconfig.defaults.local")
+    list(APPEND _espd_extra_defaults "${CMAKE_SOURCE_DIR}/sdkconfig.defaults.local")
 endif()
 if(DEFINED ENV{ESPD_SDKCONFIG_DEFAULTS} AND NOT "$ENV{ESPD_SDKCONFIG_DEFAULTS}" STREQUAL "")
     string(REPLACE ":" ";" _espd_env_defaults "$ENV{ESPD_SDKCONFIG_DEFAULTS}")

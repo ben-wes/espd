@@ -208,17 +208,17 @@ chip files) in the main tree — that file stays board-neutral.
 | Method | Use when |
 |--------|----------|
 | **menuconfig** | Local dev in `espd` |
-| **`sdkconfig.defaults.espd-kits`** in the build tree | Copy or symlink from [espd-kits](https://github.com/ben-wes/espd-kits) `config/boards/<id>.select` |
-| **`ESPD_SDKCONFIG_DEFAULTS`** | CI / kits: absolute path to a file containing `CONFIG_ESPD_BOARD_MYKIT=y` |
+| **`sdkconfig.defaults.local`** | Non-interactive / CI: one file with `CONFIG_ESPD_BOARD_MYKIT=y` (gitignored) |
+| **`ESPD_SDKCONFIG_DEFAULTS`** | Optional env: path to the same content instead of `.local` |
+| **`ESPD_BOARDS_DIR`** | Optional env: external `boards/` tree (default `./boards`) |
 
 ```bash
-export ESPD_SDKCONFIG_DEFAULTS="/path/to/waveshare_s3.select"
-export ESPD_BOARDS_DIR="/path/to/espd-kits/boards"   # optional; default is ./boards
+echo 'CONFIG_ESPD_BOARD_WAVESHARE_S3=y' > sdkconfig.defaults.local
 idf.py set-target esp32s3 build
 ```
 
-**espd-kits** keeps the catalog YAMLs and `.select` files; the **`espd` submodule
-is not modified** during kit builds.
+**espd-kits** CI writes `espd/sdkconfig.defaults.local` and syncs board YAML into
+`espd/boards/` before build — the **`espd` submodule** is not committed with those changes.
 
 Activate IDF v6.0.1 per [README.md](../README.md).
 
