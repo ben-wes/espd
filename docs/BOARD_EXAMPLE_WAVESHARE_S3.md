@@ -25,6 +25,10 @@ architecture change.
 
 ## Build
 
+**Pick the Waveshare board in menuconfig** — `sdkconfig.defaults.esp32s3` only sets
+generic 4 MB smoke defaults until you do. The board profile then applies 16 MB flash
+and `partitions_pd.csv` from the YAML above.
+
 ```bash
 . $HOME/.espressif/v6.0.1/esp-idf/export.sh
 
@@ -33,11 +37,15 @@ idf.py menuconfig                # ESPD Configuration → Target board → Waves
 idf.py build flash monitor
 ```
 
+Check: `grep CONFIG_ESPD_BOARD_WAVESHARE_S3=y sdkconfig`
+
 First build downloads the BSP into **managed_components/** (network required).
 
-Board YAML turns on OTG (CDC + MSC + patch sync). **ESP32-S3** chip defaults
-(`sdkconfig.defaults.esp32s3`) set 4 KiB wear-levelling and MSC buffer sizes for
-`/storage`. Patches, flash, and `espd_sync.py`: **[DEV_SYNC.md](DEV_SYNC.md)**.
+Board YAML turns on OTG (CDC + MSC + patch sync). Chip defaults also set 4 KiB
+wear-levelling and MSC buffer sizes for `/storage`. Patches, flash, and
+`espd_sync.py`: **[DEV_SYNC.md](DEV_SYNC.md)**.
+
+Prebuilt firmware: **[espd-kits](https://github.com/ben-wes/espd-kits)** (optional).
 
 **After upgrading** from 512-byte WL: reformat `/storage` once — see
 **[DEV_SYNC.md — Reformat internal flash](DEV_SYNC.md#reformat-internal-flash-storage)**.

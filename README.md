@@ -68,9 +68,9 @@ idf.py menuconfig                # ESPD Configuration → Target board → Waves
 idf.py build flash monitor
 ```
 
-First build downloads esp-bsp into `managed_components/` (network required). Details: [docs/BOARD_EXAMPLE_WAVESHARE_S3.md](docs/BOARD_EXAMPLE_WAVESHARE_S3.md).
+First build downloads esp-bsp into `managed_components/` (network required). Details: [docs/BOARD_EXAMPLE_WAVESHARE_S3.md](docs/BOARD_EXAMPLE_WAVESHARE_S3.md). Prebuilt images: [espd-kits](https://github.com/ben-wes/espd-kits).
 
-Verify: `grep ESPD_BOARD sdkconfig` → `CONFIG_ESPD_BOARD_WAVESHARE_S3=y`. If wrong, delete `sdkconfig` and run `set-target` again.
+**Required:** choose **Waveshare** in menuconfig (S3 chip defaults are generic 4 MB until the board profile applies). Verify: `grep CONFIG_ESPD_BOARD_WAVESHARE_S3=y sdkconfig` — if wrong, delete `sdkconfig` and run `set-target` again.
 
 Later builds: `idf.py build flash monitor`. Switching boards: change **Target board** → Save → `idf.py build` (or `fullclean` if options look stale).
 
