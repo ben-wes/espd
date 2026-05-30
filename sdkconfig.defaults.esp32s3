@@ -1,6 +1,10 @@
-# ESP32-S3 — chip-wide tuning (no board pre-select; pick board in menuconfig or via
-# sdkconfig.defaults.local (or menuconfig) — see docs/ADDING_A_BOARD.md).
-# Board hardware (PSRAM, codecs, USB): boards/*.yaml → espd_board_*.
+# ESP32-S3 — chip-wide tuning (no board pre-select; pick board in menuconfig or
+# sdkconfig.defaults.local). Board YAML overrides flash/partitions (e.g. 16 MB).
+
+# Generic / CI smoke: 4 MB + partitions_pd_4mb.csv (same as sdkconfig.defaults.esp32).
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_pd_4mb.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_pd_4mb.csv"
 
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536
 
