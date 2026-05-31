@@ -91,7 +91,7 @@ Copy examples from [test-patch/](test-patch/). Path resolution is implemented in
 
 ## Rapid dev
 
-With **OTG USB** and firmware **Patch sync over OTG CDC** (Waveshare profile enables this), edit patches on the host and reload on the board without re-flashing. Sync target is **SD when mounted, else internal `/storage`** — the device reports which via `STATUS`; see [docs/DEV_SYNC.md](docs/DEV_SYNC.md) for protocol, MSC sync mode, ports, and troubleshooting.
+With **OTG USB** and firmware **Patch sync over OTG CDC** (Waveshare profile enables this), edit patches on the host and reload on the board without re-flashing. Sync target is **SD when mounted, else internal `/storage`** — the device reports which via `STATUS`. See [docs/DEV_SYNC.md](docs/DEV_SYNC.md) and [docs/USB_AND_WIFI.md](docs/USB_AND_WIFI.md) (OTG serial, boot order).
 
 ```bash
 pip install pyserial

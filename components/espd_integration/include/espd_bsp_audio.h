@@ -8,6 +8,7 @@
 #pragma once
 
 #include "esp_err.h"
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -37,4 +38,5 @@ esp_err_t espd_bsp_audio_codec_open(void *dev,
 esp_err_t espd_bsp_audio_codec_write(void *dev, const void *data, size_t bytes);
 esp_err_t espd_bsp_audio_codec_read(void *dev, void *data, size_t bytes);
 esp_err_t espd_bsp_audio_codec_set_out_vol(void *dev, int vol_pct);
+esp_err_t espd_bsp_audio_codec_set_out_mute(void *dev, bool mute);
 esp_err_t espd_bsp_audio_codec_set_in_gain(void *dev, float gain_db);

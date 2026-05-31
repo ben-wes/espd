@@ -67,18 +67,22 @@ esp_err_t espd_audio_init(espd_audio_t **out)
     a->spk = hw.spk;
     ESP_RETURN_ON_ERROR(espd_bsp_audio_codec_open(a->spk, &sample_cfg), TAG,
         "speaker open");
-    ESP_RETURN_ON_ERROR(espd_bsp_audio_codec_set_out_vol(a->spk, 100), TAG,
-        "speaker volume");
+    (void)espd_bsp_audio_codec_set_out_mute(a->spk, true);
 
     {
-        /* Flush DAC with digital zero before Pd may enable dsp~ output. */
-        enum { ESPD_AUDIO_BLOCK_SAMPLES = 64, ESPD_AUDIO_PREROLL_BLOCKS = 4 };
+        /* Mute, settle I2S with zeros, then unmute at target volume (no pop on reset). */
+        enum { ESPD_AUDIO_BLOCK_SAMPLES = 64, ESPD_AUDIO_PREROLL_BLOCKS = 16 };
         int16_t silence[ESPD_AUDIO_BLOCK_SAMPLES * IOCHANS];
 
         memset(silence, 0, sizeof(silence));
         for (int n = 0; n < ESPD_AUDIO_PREROLL_BLOCKS; n++)
             (void)espd_bsp_audio_codec_write(a->spk, silence, sizeof(silence));
     }
+
+    ESP_RETURN_ON_ERROR(espd_bsp_audio_codec_set_out_mute(a->spk, false), TAG,
+        "speaker unmute");
+    ESP_RETURN_ON_ERROR(espd_bsp_audio_codec_set_out_vol(a->spk, 100), TAG,
+        "speaker volume");
 
 #ifdef ESPD_USE_ADC
     a->mic = hw.mic;

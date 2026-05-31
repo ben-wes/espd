@@ -8,7 +8,7 @@
  *          raw bytes -> +OK PUT done <crc> (writes to <path>.tmp, rename on success)
  *   RELOAD
  *   MSG <pd-message>  (queued; evaluated on audio thread via pd_sendmsg)
- *   MODE MSC_SYNC | MODE NORMAL
+ *   MODE MSC_SYNC | MODE NORMAL (optional; hardware reset also clears msc_sync)
  *   RESET  (reboot ESP after reply)
  *
  * Device replies (one line each, prefixed for filtering):
@@ -171,31 +171,13 @@ static void dev_reply(const char *msg)
 {
     char line[192];
     int n;
-    size_t off;
-    TickType_t deadline;
 
-    if (!msg || !tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
+    if (!msg)
         return;
     n = snprintf(line, sizeof(line), "%s\r\n", msg);
     if (n <= 0)
         return;
-
-    off = 0;
-    deadline = xTaskGetTickCount() + pdMS_TO_TICKS(500);
-    while (off < (size_t)n) {
-        size_t w = tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0,
-                (const uint8_t *)line + off, (size_t)n - off);
-        off += w;
-        if (off < (size_t)n) {
-            tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, pdMS_TO_TICKS(20));
-            if (xTaskGetTickCount() >= deadline) {
-                ESP_LOGW(TAG, "reply truncated (TX busy): %s", msg);
-                return;
-            }
-            vTaskDelay(1);
-        }
-    }
-    tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, pdMS_TO_TICKS(200));
+    espd_usb_cdc_write(line, (size_t)n);
 }
 
 static const char *dev_target_mount(dev_target_t target)
@@ -226,7 +208,7 @@ static int dev_sdcard_available(void)
 static int dev_flash_available(void)
 {
 #if CONFIG_ESPD_USE_USB_MSC
-    return espd_storage_flash_ready() ? 1 : 0;
+    return espd_usb_msc_storage_present() ? 1 : 0;
 #else
     return 0;
 #endif
@@ -383,6 +365,15 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     int err;
 
     dev_refresh_target();
+#if CONFIG_ESPD_USE_USB_MSC
+    if (s_target == DEV_TARGET_MSC) {
+        esp_err_t mnt = espd_usb_ensure_msc_app_mount();
+        if (mnt != ESP_OK) {
+            dev_reply("-ERR reclaim /storage from host failed (eject USB volume on host)");
+            return;
+        }
+    }
+#endif
     if (!dev_target_ready(s_target)) {
         char msg[96];
         snprintf(msg, sizeof(msg), "-ERR target %s not mounted", dev_target_name(s_target));
@@ -528,6 +519,10 @@ static void dev_put_data(const uint8_t *data, size_t len)
         snprintf(reply, sizeof(reply), "+OK PUT done %08" PRIx32, s_put_crc);
         dev_reply(reply);
         espd_storage_refresh_paths();
+#if CONFIG_ESPD_USE_USB_MSC
+        if (s_target == DEV_TARGET_MSC && !espd_usb_msc_sync_mode_active())
+            (void)espd_usb_expose_msc_to_host();
+#endif
     }
 }
 
@@ -551,6 +546,15 @@ static void dev_queue_pdmsg(const char *text)
 static void dev_do_reload(void)
 {
     dev_refresh_target();
+#if CONFIG_ESPD_USE_USB_MSC
+    if (s_target == DEV_TARGET_MSC) {
+        esp_err_t mnt = espd_usb_ensure_msc_app_mount();
+        if (mnt != ESP_OK) {
+            dev_reply("-ERR reclaim /storage from host failed (eject USB volume on host)");
+            return;
+        }
+    }
+#endif
     if (!dev_target_ready(s_target)) {
         char msg[96];
         snprintf(msg, sizeof(msg), "-ERR target %s not mounted", dev_target_name(s_target));
@@ -620,6 +624,11 @@ static int dev_parse_put_line(char *line, char *rel, size_t relsz,
 static void dev_set_mode_msc_sync(void)
 {
 #if CONFIG_ESPD_USE_USB_MSC
+    if (espd_usb_msc_sync_mode_active()) {
+        dev_reply("+OK MODE msc_sync");
+        return;
+    }
+    /* Reboot: hide MSC from host so the host OS cannot race CDC PUT. */
     dev_reply("+OK MODE msc_sync rebooting");
     vTaskDelay(pdMS_TO_TICKS(250));
     espd_usb_msc_sync_mode_set(true);

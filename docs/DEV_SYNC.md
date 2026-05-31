@@ -8,6 +8,22 @@ General build and storage rules: **[README.md](../README.md)**.
 
 Works on **macOS, Linux, and Windows** — Python 3 + [pyserial](https://pyserial.readthedocs.io/).
 
+## Boot order (firmware)
+
+See **[USB_AND_WIFI.md](USB_AND_WIFI.md)** for the Waveshare OTG + Wi‑Fi sequence.
+Summary: **early `/storage`** → read **`config.txt`** → **Wi‑Fi PHY + CDC** → MSC **APP**
+mount (`msc_sync` hides host USB disk) →
+`wifi_start_sta` → **`wifi_wait_sta`** → **Pd**. Dev sync: `MODE MSC_SYNC` + reboot, then `PUT`.
+
+### Monitor (Waveshare S3 + OTG)
+
+```bash
+idf.py -p /dev/cu.usbmodem1234561 monitor
+python3 scripts/espd_sync.py -p /dev/cu.usbmodem1234561
+```
+
+Use **`1234561` only** for runtime. Flash on `101`, then close the port before reset.
+
 ## Active store
 
 Boot and CDC sync use the same rule as firmware storage ([espd_storage.c](../main/espd_storage.c)):
@@ -17,9 +33,17 @@ Boot and CDC sync use the same rule as firmware storage ([espd_storage.c](../mai
 | SD card | `/sdcard` | Preferred when present |
 | Internal flash | `/storage` | When SD is absent and MSC partition is mounted |
 
-The host script does **not** pick the store itself. On connect it sends `STATUS` and syncs to whatever the device reports (`sdcard=yes` → SD, else `internal=yes` → flash with **msc_sync**). If storage changes (e.g. SD inserted later), the script updates the target and can resync.
+The host script does **not** pick the store itself. On connect it sends `STATUS` and syncs to whatever the device reports (`sdcard=yes` → SD, else internal flash → **`MODE MSC_SYNC`** then **PUT**). SD does not need the mode switch.
 
-**Do not** open the internal flash volume in Finder while `espd_sync` is writing to flash (device enters **msc_sync** and hides the drive). Quit the script and reset the board to return to **normal** mode and show the USB volume again.
+### Flasher / Web Serial (dev mode UI)
+
+1. Open CDC (`cu.usbmodem*123456*1` on Waveshare).
+2. Internal flash, `mode=normal` + `internal=yes`: **PUT** directly (no reboot; host MSC stays hidden).
+3. Legacy / stuck boot: **`MODE MSC_SYNC`** (one reboot) then **PUT**; or power-cycle back to `normal`.
+4. On USB disconnect, re-request the serial port; do not share the port with `idf.py monitor`.
+5. Leaving dev: **reset or power-cycle** the board (or optional `MODE NORMAL` over CDC).
+
+**Do not** edit the same files on the host USB volume while `espd_sync` is **PUT**ting to `/storage` (risk corrupt FAT). In **normal** mode the mass-storage volume appears on the host after Pd boots; sync **reclaims** `/storage` for each `PUT` (eject/unmount on the host if reclaim fails). **`MODE MSC_SYNC`** is optional; power-cycle clears it.
 
 ## Reformat internal flash (`/storage`)
 
@@ -64,7 +88,7 @@ Then reset the board so firmware mounts and formats an empty FAT volume.
 1. Quit `espd_sync.py` (not in `msc_sync`).
 2. Reset the board; `python3 scripts/espd_sync.py --status` should show
    `mode=normal`.
-3. Erase/format the USB mass-storage volume in Finder or Disk Utility (FAT).
+3. Erase/format the USB mass-storage volume on the host (FAT).
 
 Then sync patches again with `espd_sync.py`.
 
@@ -92,7 +116,7 @@ USB product strings: **Component config → TinyUSB**.
 
 Host → device:
 
-- `STATUS` — `+OK STATUS sdcard=yes|no internal=yes|no mode=normal|msc_sync` (`internal` = `/storage` mounted on the **device** for I/O, not whether Finder shows a disk)
+- `STATUS` — `+OK STATUS sdcard=yes|no internal=yes|no mode=normal|msc_sync` (`internal` = internal flash available; in **normal** the host USB volume appears after Pd boot)
 - `PUT <relpath> <nbytes> <crc32hex>` — path may contain spaces; `+OK PUT skip` if unchanged
 - `RELOAD` — reload `main.pd` from the active sync target (`.pd` only; not enough for `config.txt`)
 - `MSG <pd-message>` — queue one Pd message (`pd_sendmsg` on the audio thread; `;` appended if omitted)

@@ -66,6 +66,17 @@ esp_err_t espd_bsp_audio_codec_set_out_vol(void *dev, int vol_pct)
     return ESP_OK;
 }
 
+esp_err_t espd_bsp_audio_codec_set_out_mute(void *dev, bool mute)
+{
+    if (!dev)
+        return ESP_ERR_INVALID_ARG;
+    if (esp_codec_dev_set_out_mute((esp_codec_dev_handle_t)dev, mute)
+        != ESP_CODEC_DEV_OK) {
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
 esp_err_t espd_bsp_audio_codec_set_in_gain(void *dev, float gain_db)
 {
     if (!dev)

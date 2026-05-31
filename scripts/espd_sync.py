@@ -344,11 +344,12 @@ class EspdCdc:
                         self._reply_event.set()
                         log_dev_rx(line)
                     continue
-                if line.startswith(b"+") or line.startswith(b"-ERR"):
+                proto = _extract_protocol_line(line)
+                if proto is not None:
                     with self._lock:
-                        self._reply = line
+                        self._reply = proto
                     self._reply_event.set()
-                    log_dev_rx(line)
+                    log_dev_rx(proto)
                 else:
                     log_device_line(line)
 
@@ -464,8 +465,20 @@ class EspdCdc:
         return self.command("STATUS", timeout=10.0)
 
 
+def _extract_protocol_line(line: bytes) -> bytes | None:
+    """Host line may be glued to a log prefix (e.g. b'I+OK STATUS ...')."""
+    if line.startswith(b"+") or line.startswith(b"-ERR"):
+        return line
+    for prefix in (b"+OK ", b"+OK", b"-ERR"):
+        idx = line.find(prefix)
+        if idx >= 0:
+            return line[idx:]
+    return None
+
+
 def parse_status_info(line: bytes) -> dict[str, str]:
-    m = _STATUS_INFO_RE.match(line.strip())
+    proto = _extract_protocol_line(line) or line
+    m = _STATUS_INFO_RE.match(proto.strip()) or _STATUS_INFO_RE.search(proto)
     if not m:
         raise RuntimeError(f"unexpected STATUS reply: {line.decode(errors='replace')}")
     return {
@@ -511,25 +524,14 @@ def sync_store_path(info: dict[str, str]) -> str:
     return "/sdcard" if info["sdcard"] == "yes" else "/storage"
 
 
-def leave_msc_sync(cdc: EspdCdc, port: str) -> EspdCdc:
-    """Reboot to normal mode so SD is used instead of exclusive /storage sync."""
-    log_script("leaving msc_sync (device will reboot)")
-    cdc.set_mode("NORMAL")
-    cdc.close()
-    time.sleep(0.5)
-    wait_port_gone(port, timeout=25.0)
-    time.sleep(2.0)
-    log_script("waiting for CDC after reboot (up to 60s)…")
-    return connect_cdc(port, ready_timeout=60.0)
-
-
 def prepare_for_sync(cdc: EspdCdc, port: str) -> EspdCdc:
     """SD when a card is mounted; otherwise sync to internal flash (/storage)."""
-    info = device_status(cdc)
+    info = wait_for_storage_ready(cdc)
     if info["sdcard"] == "yes":
-        if info["mode"] == "msc_sync":
-            log_script("SD card available — using /sdcard")
-            cdc = leave_msc_sync(cdc, port)
+        log_script("SD card available — using /sdcard")
+        return cdc
+    if info["internal"] == "yes" and info["mode"] == "normal":
+        log_script("internal flash — CDC PUT (host MSC hidden at boot)")
         return cdc
     if info["internal"] != "yes" and info["mode"] != "msc_sync":
         log_script("no SD card — using /storage on device")
@@ -539,9 +541,20 @@ def prepare_for_sync(cdc: EspdCdc, port: str) -> EspdCdc:
     return ensure_msc_sync_for_write(cdc, port)
 
 
+def wait_for_storage_ready(cdc: EspdCdc, timeout_s: float = 45.0) -> dict[str, str]:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        info = device_status(cdc)
+        if info["internal"] == "yes":
+            return info
+        log_script("waiting for /storage on device…")
+        time.sleep(0.5)
+    raise RuntimeError("/storage not ready on device (boot still in progress?)")
+
+
 def ensure_msc_sync_for_write(cdc: EspdCdc, port: str) -> EspdCdc:
-    """Enter msc_sync and wait until /storage is mounted for PUT."""
-    info = device_status(cdc)
+    """Enter msc_sync so the host cannot mount /storage during CDC PUT."""
+    info = wait_for_storage_ready(cdc)
     if info["mode"] == "msc_sync":
         if info["internal"] == "no":
             log_script("waiting for /storage mount on device…")
@@ -605,7 +618,7 @@ def connect_cdc(port_pattern: str, ready_timeout: float = 8.0) -> EspdCdc:
             for _ in range(15):
                 try:
                     last = cdc.status()
-                    if last.startswith(b"+OK STATUS"):
+                    if b"+OK STATUS" in last:
                         log_script(f"connected ({port}): {last.decode(errors='replace')}")
                         connected = cdc
                         connected.last_status = last

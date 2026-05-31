@@ -40,13 +40,22 @@
 #endif
 
 #include <sys/types.h>
+void pdmain_print(const char *s);
 void pd_sendmsg(char *buf, int bufsize);
 void pd_fromhost(char *data, size_t size);
 void espd_control_io_init(void);
 
+#if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_DEV_CDC_SYNC
+/** Serialized TinyUSB CDC TX (protocol replies + esp_log). */
+void espd_usb_cdc_write(const void *data, size_t len);
+#endif
+
 #ifdef ESPD_USE_WIFI
+#include "freertos/FreeRTOS.h"
 void espd_netif_ensure_init(void); /* wifi.c - idempotent lwIP/event-loop init */
-void wifi_init(void);   /* wifi.c - manage 802.11 connection */
+void wifi_prepare_phy(void);       /* wifi.c - esp_wifi_init only (before USB OTG) */
+void wifi_start_sta(void);         /* wifi.c - set STA config + start (after config.txt) */
+bool wifi_wait_sta(TickType_t ticks); /* pdMS_TO_TICKS(ms); 0 = poll once */
 void net_init( void);   /* init */
 void net_hello( void);  /* send initial TCP packet when connected */
 void net_alive( void);  /* send keep-alive packet if needed */
@@ -289,7 +298,16 @@ void pdmain_reload_patch_from(const char *dir);
  * active => keep MSC hidden from host and use /storage for CDC dev sync. */
 bool espd_usb_msc_sync_mode_active(void);
 void espd_usb_msc_sync_mode_set(bool active);
-
+#if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
+/** MSC storage instance exists (internal flash partition wired for USB). */
+bool espd_usb_msc_storage_present(void);
+/** True when internal flash FAT is owned by the USB host, not the app. */
+bool espd_usb_msc_host_mounted(void);
+/** Hand /storage to the USB host (mass-storage volume). */
+esp_err_t espd_usb_expose_msc_to_host(void);
+/** Take /storage back for app I/O (dev PUT/RELOAD); no-op if already on APP. */
+esp_err_t espd_usb_ensure_msc_app_mount(void);
+#endif
 extern int espd_main_pd_loaded_from_store;
 /** If a local main.pd was opened, which directory it was loaded from (e.g. /sdcard or /storage). */
 extern const char *espd_main_pd_loaded_dir;

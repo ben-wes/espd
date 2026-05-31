@@ -43,9 +43,10 @@ bool espd_storage_flash_ready(void)
 {
 #if CONFIG_ESPD_USE_USB_MSC
     struct stat st;
-    if (stat(ESPD_STORAGE_MOUNT, &st) != 0 || !S_ISDIR(st.st_mode))
-        return false;
-    return true;
+    if (stat(ESPD_STORAGE_MOUNT, &st) == 0 && S_ISDIR(st.st_mode))
+        return true;
+    /* Host may own FAT; partition still exists for STATUS / dev sync. */
+    return espd_usb_msc_storage_present();
 #else
     return false;
 #endif

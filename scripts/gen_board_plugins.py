@@ -64,13 +64,113 @@ def _config_key(key: str) -> str:
     return key
 
 
+def _kconfig_value(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        s = value.strip()
+        if s in ("y", "Y", "yes", "true"):
+            return True
+        if s in ("n", "N", "no", "false"):
+            return False
+        return s
+    return value
+
+
 def _config_line(key: str, value) -> str:
     k = _config_key(key)
+    value = _kconfig_value(value)
     if value is None or value == "":
         return f"CONFIG_{k}=\n"
     if isinstance(value, bool):
         return f"CONFIG_{k}={'y' if value else 'n'}\n"
+    if isinstance(value, str):
+        s = value.strip()
+        if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+            return f"CONFIG_{k}={s}\n"
+        return f'CONFIG_{k}="{s}"\n'
     return f"CONFIG_{k}={value}\n"
+
+
+def _feature_implied(data: dict, symbol: str) -> bool:
+    profile = data.get("profile") or {}
+    for options in profile.values():
+        if isinstance(options, dict):
+            val = options.get(symbol)
+            if val is not None:
+                return bool(_kconfig_value(val))
+    return symbol in (data.get("features") or {}).get("imply") or []
+
+
+def _profile_has_usb_otg(data: dict) -> bool:
+    return _feature_implied(data, "ESPD_USE_USB_OTG")
+
+
+def _profile_has_wifi(data: dict) -> bool:
+    return _feature_implied(data, "ESPD_USE_WIFI")
+
+
+_CONSOLE_PRIMARY_MEMBERS = {
+    "ESP_CONSOLE_UART_DEFAULT",
+    "ESP_CONSOLE_USB_CDC",
+    "ESP_CONSOLE_USB_SERIAL_JTAG",
+    "ESP_CONSOLE_UART_CUSTOM",
+    "ESP_CONSOLE_NONE",
+}
+_CONSOLE_SECONDARY_MEMBERS = {
+    "ESP_CONSOLE_SECONDARY_NONE",
+    "ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG",
+}
+
+
+def _otg_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str, object]]:
+    """Hand the shared USB PHY to OTG: console off, USB Serial/JTAG off.
+
+    These are console *choice* members and a driver toggle that Kconfig
+    ``select`` cannot set, so boards no longer list them — we derive them from
+    ESPD_USE_USB_OTG. A board can still override the primary/secondary console
+    by putting any ESP_CONSOLE_* member in its profile (e.g. keep a UART
+    primary on a board that exposes one), and the matching default is skipped.
+    """
+    if not _profile_has_usb_otg(data) or str(data.get("target")) not in (
+        "esp32s3",
+        "esp32c3",
+        "esp32c6",
+        "esp32h2",
+        "esp32c5",
+        "esp32p4",
+    ):
+        return []
+    extras: list[tuple[str, object]] = []
+    if not (profile_keys & _CONSOLE_PRIMARY_MEMBERS):
+        extras.append(("ESP_CONSOLE_NONE", True))
+    if not (profile_keys & _CONSOLE_SECONDARY_MEMBERS):
+        extras.append(("ESP_CONSOLE_SECONDARY_NONE", True))
+    usj_in_profile = "USJ_ENABLE_USB_SERIAL_JTAG" in profile_keys
+    if not usj_in_profile and (
+        "ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG" not in profile_keys
+        and "ESP_CONSOLE_USB_SERIAL_JTAG" not in profile_keys
+    ):
+        extras.append(("USJ_ENABLE_USB_SERIAL_JTAG", False))
+    return extras
+
+
+def _wifi_usb_coexist_extras(data: dict, profile_keys: set[str]) -> list[tuple[str, object]]:
+    """S3/C3: Wi-Fi PHY init disables USB unless ESP_PHY_ENABLE_USB (IDF default n
+    when console is not USB Serial/JTAG). Required for OTG CDC after esp_wifi_init()."""
+    if not _profile_has_usb_otg(data) or not _profile_has_wifi(data):
+        return []
+    if str(data.get("target")) not in (
+        "esp32s3",
+        "esp32c3",
+        "esp32c6",
+        "esp32h2",
+        "esp32c5",
+    ):
+        return []
+    if "ESP_PHY_ENABLE_USB" in profile_keys:
+        return []
+    return [("ESP_PHY_ENABLE_USB", True)]
 
 
 def _load_board(path: Path) -> dict:
@@ -154,6 +254,31 @@ def _gen_sdkconfig_defaults(data: dict, src: str) -> str:
     profile = data.get("profile") or {}
     if not isinstance(profile, dict):
         raise ValueError(f"{src}: profile must be a mapping")
+    profile_keys = {
+        _config_key(k)
+        for options in profile.values()
+        if isinstance(options, dict)
+        for k in options
+    }
+    imply_feats = (data.get("features") or {}).get("imply") or []
+    feat_defaults = [f for f in imply_feats if _config_key(f) not in profile_keys]
+    if feat_defaults:
+        lines.append("# --- ESPD features (from features.imply) ---\n\n")
+        for feat in feat_defaults:
+            lines.append(_config_line(feat, True))
+        lines.append("\n")
+    extras = _otg_sdkconfig_extras(data, profile_keys)
+    if extras:
+        lines.append("# --- USB OTG console handoff (auto) ---\n\n")
+        for key, value in extras:
+            lines.append(_config_line(key, value))
+        lines.append("\n")
+    coexist = _wifi_usb_coexist_extras(data, profile_keys)
+    if coexist:
+        lines.append("# --- Wi-Fi + OTG (auto) ---\n\n")
+        for key, value in coexist:
+            lines.append(_config_line(key, value))
+        lines.append("\n")
     for section, options in profile.items():
         lines.append(f"# --- {section} ---\n\n")
         if not isinstance(options, dict):
