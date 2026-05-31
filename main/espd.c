@@ -43,7 +43,7 @@
 #if CONFIG_ESPD_DEV_CDC_SYNC
 #include "espd_dev.h"
 #endif
-#if CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
+#if CONFIG_ESPD_USE_USB_OTG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
 #include "driver/usb_serial_jtag.h"
 #endif
 #if CONFIG_ESPD_USE_USB_OTG
@@ -1800,7 +1800,8 @@ static int espd_usb_cdc_log_vprintf(const char *fmt, va_list args)
 
 static void espd_usb_release_usj_for_otg(void)
 {
-#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED
+#if CONFIG_ESPD_USE_USB_OTG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED \
+        && CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED
     fflush(stdout);
     fflush(stderr);
     (void)usb_serial_jtag_driver_uninstall();
