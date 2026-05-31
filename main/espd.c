@@ -776,12 +776,10 @@ int espd_wifi_net_enabled = 1;
 static int espd_wifi_started;
 char espd_wifi_ssid[33];
 char espd_wifi_password[65];
-int espd_log_broadcast_port;
 static void espd_wifi_config_defaults(void)
 {
     snprintf(espd_wifi_ssid, sizeof(espd_wifi_ssid), "%s", CONFIG_ESP_WIFI_SSID);
     snprintf(espd_wifi_password, sizeof(espd_wifi_password), "%s", CONFIG_ESP_WIFI_PASSWORD);
-    espd_log_broadcast_port = 0;
 }
 
 static int s_wifi_credentials_in_config_txt;
@@ -851,14 +849,6 @@ static void espd_wifi_try_load_config(void)
         {
             snprintf(espd_wifi_password, sizeof(espd_wifi_password), "%s", v);
         }
-        else if (!strcmp(k, "log_broadcast_port"))
-        {
-            long p = strtol(v, NULL, 10);
-            if (p > 0 && p <= 65535)
-                espd_log_broadcast_port = (int)p;
-            else
-                espd_log_broadcast_port = 0;
-        }
     }
     fclose(f);
     s_wifi_credentials_in_config_txt = ssid_nonempty;
@@ -867,9 +857,9 @@ static void espd_wifi_try_load_config(void)
         espd_wifi_ssid[0] = '\0';
         espd_wifi_password[0] = '\0';
     }
-    ESP_LOGI(TAG, "wifi: %s (ssid=%s, sta=%s, log_port=%d)",
+    ESP_LOGI(TAG, "wifi: %s (ssid=%s, sta=%s)",
         config_path, espd_wifi_ssid[0] ? espd_wifi_ssid : "(none)",
-        s_wifi_credentials_in_config_txt ? "on" : "off", espd_log_broadcast_port);
+        s_wifi_credentials_in_config_txt ? "on" : "off");
 }
 #endif /* ESPD_USE_WIFI */
 
@@ -2191,12 +2181,7 @@ void pd_pollhost( void)
 void pdmain_print( const char *s)
 {
     char y[81];
-    int broadcast_only = 0;
-#ifdef ESPD_USE_WIFI
-    if (espd_log_broadcast_port > 0 && espd_wifi_net_enabled && wifi_ipaddr[0] != '\0')
-        broadcast_only = 1;
-#endif
-    if (s && *s && !broadcast_only) {
+    if (s && *s) {
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_DEV_CDC_SYNC
         if (tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
             espd_usb_cdc_write_bytes(s, strlen(s));
@@ -2209,12 +2194,8 @@ void pdmain_print( const char *s)
     strcat(y, ";");
 #if defined(ESPD_USE_WIFI) && ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     if (espd_wifi_net_enabled && wifi_ipaddr[0] != '\0') {
-        if (espd_log_broadcast_port > 0)
-            net_sendudp(y, strlen(y), espd_log_broadcast_port);
-        else {
-            net_sendudp(y, strlen(y), CONFIG_ESP_WIFI_SENDPORT);
-            net_sendtcp(y, strlen(y));
-        }
+        net_sendudp(y, strlen(y), CONFIG_ESP_WIFI_SENDPORT);
+        net_sendtcp(y, strlen(y));
     }
 #endif
 }

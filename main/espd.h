@@ -64,7 +64,6 @@ void net_sendtcp(void *msg, int len);
 extern char wifi_ipaddr[];
 extern char espd_wifi_ssid[33];
 extern char espd_wifi_password[65];
-extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 disables */
 #endif
 
 #ifndef PIN_BIT_CLOCK
@@ -233,9 +232,6 @@ extern int espd_log_broadcast_port; /* UDP port for Pd log/error broadcast; 0 di
  * WiFi (when ESPD_USE_WIFI): STA starts when config.txt has a non-empty wifi_ssid=
  *   (wifi_password optional). Missing config.txt → with ESPD_USE_SDCARD, STA stays
  *   off; otherwise Kconfig/locale defaults apply.
- *   log_broadcast_port=9001
- *     >0 enables UDP broadcast of Pd print/error output to this port
- *     (when WiFi/net is active); 0 or missing keeps default log routing.
  *   wifi_ssid=myap
  *   wifi_password=secret
  * Analog in (when ESPD_USE_AIN compiled in): espd/ain starts only if config.txt
