@@ -2236,6 +2236,11 @@ void app_main(void)
     }
 #endif
 
+#ifdef ESPD_USE_SDCARD
+    espd_storage_mount_sdcard();
+#endif
+    espd_storage_refresh_paths();
+
 #ifdef ESPD_USE_WIFI
     espd_wifi_config_defaults();
     espd_wifi_try_load_config();
@@ -2285,11 +2290,6 @@ void app_main(void)
         if (esp_pthread_set_cfg(&pth_cfg) != ESP_OK)
             ESP_LOGW(TAG, "esp_pthread_set_cfg failed; using IDF defaults");
     }
-
-#ifdef ESPD_USE_SDCARD
-    espd_storage_mount_sdcard();
-#endif
-    espd_storage_refresh_paths();
 
 #ifdef ESPD_USE_AOUT
     espd_aout_load_config();
