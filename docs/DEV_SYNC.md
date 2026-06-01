@@ -10,12 +10,12 @@ Works on **macOS, Linux, and Windows** — Python 3 + [pyserial](https://pyseria
 
 ## Boot order (firmware)
 
-See **[USB_AND_WIFI.md](USB_AND_WIFI.md)** for the Waveshare OTG + Wi‑Fi sequence.
+See **[USB_AND_WIFI.md](USB_AND_WIFI.md)** for OTG + Wi‑Fi boot order.
 Summary: **early `/storage`** → read **`config.txt`** → **Wi‑Fi PHY + CDC** → MSC **APP**
 mount (`msc_sync` hides host USB disk) →
 `wifi_start_sta` → **`wifi_wait_sta`** → **Pd**. Dev sync: `MODE MSC_SYNC` + reboot, then `PUT`.
 
-### Monitor (Waveshare S3 + OTG)
+### Monitor (OTG CDC kits)
 
 ```bash
 idf.py -p /dev/cu.usbmodem1234561 monitor
@@ -37,7 +37,7 @@ The host script does **not** pick the store itself. On connect it sends `STATUS`
 
 ### Flasher / Web Serial (dev mode UI)
 
-1. Open CDC (`cu.usbmodem*123456*1` on Waveshare).
+1. Open CDC (`cu.usbmodem*123456*1` on typical OTG BSP kits).
 2. Internal flash, `mode=normal` + `internal=yes`: **PUT** directly (no reboot; host MSC stays hidden).
 3. Legacy / stuck boot: **`MODE MSC_SYNC`** (one reboot) then **PUT**; or power-cycle back to `normal`.
 4. On USB disconnect, re-request the serial port; do not share the port with `idf.py monitor`.
@@ -102,7 +102,7 @@ Then sync patches again with `espd_sync.py`.
 | **USB mass storage** | Internal-flash drive on the cable |
 | **Patch sync over OTG CDC** | `espd_sync` PUT / RELOAD / STATUS |
 
-Waveshare S3 profile enables OTG, MSC, and patch sync by default.
+Board YAML profiles enable OTG, MSC, and patch sync per kit (see `boards/*.yaml`).
 
 ### Flashing
 

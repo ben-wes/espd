@@ -99,7 +99,7 @@ policy:
 | IDF / API updates for new IDF releases | Help text, `target:` |
 
 **Worked example:** [boards/waveshare_s3.yaml](../boards/waveshare_s3.yaml) pulls
-[`ben-wes/esp-bsp@waveshare-s3-p4`](https://github.com/ben-wes/esp-bsp/tree/waveshare-s3-p4)
+[`ben-wes/esp-bsp@espd-bsp`](https://github.com/ben-wes/esp-bsp/tree/espd-bsp)
 (`bsp/waveshare_esp32_s3_audio`). Hardware deps and IDF 6 fixes live in that fork,
 not in espd.
 

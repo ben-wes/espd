@@ -12,7 +12,7 @@ bsp:
   component: waveshare_esp32_s3_audio
   git: https://github.com/ben-wes/esp-bsp.git
   path: bsp/waveshare_esp32_s3_audio
-  version: waveshare-s3-p4
+  version: espd-bsp
 
 features:
   imply:
