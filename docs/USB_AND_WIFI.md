@@ -1,4 +1,4 @@
-# USB OTG and Wi‑Fi (Waveshare ESP32-S3-AUDIO)
+# USB OTG and Wi‑Fi
 
 ## Serial ports
 

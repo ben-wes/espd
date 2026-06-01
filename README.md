@@ -44,7 +44,7 @@ Activate IDF in every new shell:
 | **Compile-time** | `idf.py menuconfig` → **ESPD Configuration** | Rebuild to change | Target board, WiFi, `espd/ain`, sample rate |
 | **Runtime** | `config.txt` on the active store | Every boot | `wifi_ssid=`, `ain_pins=`, `audio_sample_rate=` |
 
-Board YAML **`features.imply`** turns on many menuconfig options when you pick a kit (e.g. Waveshare enables ADC, SD, CDC sync).
+Board YAML **`features.imply`** turns on many menuconfig options when you pick a kit (e.g. ADC, SD, CDC sync on OTG BSP boards).
 
 ## Build
 
@@ -60,17 +60,17 @@ idf.py build flash monitor
 
 Set **Generic board I2S pins** in menuconfig if wiring differs. SPH0645 microphones are known **not** to work on ESP32.
 
-### Waveshare ESP32-S3-AUDIO (or any `boards/*.yaml` kit)
+### Board kit (`boards/*.yaml`)
 
 ```bash
-idf.py set-target esp32s3
-idf.py menuconfig                # ESPD Configuration → Target board → Waveshare → Save
+idf.py set-target esp32s3        # or the YAML `target:`
+idf.py menuconfig                # ESPD Configuration → Target board → your kit → Save
 idf.py build flash monitor
 ```
 
-First build downloads esp-bsp into `managed_components/` (network required). Details: [docs/BOARD_EXAMPLE_WAVESHARE_S3.md](docs/BOARD_EXAMPLE_WAVESHARE_S3.md). Prebuilt images: [espd-kits](https://github.com/ben-wes/espd-kits).
+First build downloads esp-bsp into `managed_components/` (network required). Worked example: [docs/BOARD_EXAMPLE_WAVESHARE_S3.md](docs/BOARD_EXAMPLE_WAVESHARE_S3.md). Prebuilt images: [espd-kits](https://github.com/ben-wes/espd-kits).
 
-**Required:** choose **Waveshare** in menuconfig (S3 chip defaults are generic 4 MB until the board profile applies). Verify: `grep CONFIG_ESPD_BOARD_WAVESHARE_S3=y sdkconfig` — if wrong, delete `sdkconfig` and run `set-target` again.
+**Required:** pick the board in menuconfig (chip defaults stay generic until the profile applies). Verify: `grep CONFIG_ESPD_BOARD_ sdkconfig` matches your kit — if wrong, delete `sdkconfig` and run `set-target` again.
 
 Later builds: `idf.py build flash monitor`. Switching boards: change **Target board** → Save → `idf.py build` (or `fullclean` if options look stale).
 
@@ -91,7 +91,7 @@ Copy examples from [test-patch/](test-patch/). Path resolution is implemented in
 
 ## Rapid dev
 
-With **OTG USB** and firmware **Patch sync over OTG CDC** (Waveshare profile enables this), edit patches on the host and reload on the board without re-flashing. Sync target is **SD when mounted, else internal `/storage`** — the device reports which via `STATUS`. See [docs/DEV_SYNC.md](docs/DEV_SYNC.md) and [docs/USB_AND_WIFI.md](docs/USB_AND_WIFI.md) (OTG serial, boot order).
+With **OTG USB** and firmware **Patch sync over OTG CDC** (enabled by many board YAML profiles), edit patches on the host and reload on the board without re-flashing. Sync target is **SD when mounted, else internal `/storage`** — the device reports which via `STATUS`. See [docs/DEV_SYNC.md](docs/DEV_SYNC.md) and [docs/USB_AND_WIFI.md](docs/USB_AND_WIFI.md) (OTG serial, boot order).
 
 ```bash
 pip install pyserial
@@ -133,30 +133,30 @@ Bind with `[r espd/…]`. Indices are **numeric**.
 
 ### Buttons (BSP kits)
 
-Physical buttons map to **`espd/din/0`**, **`espd/din/1`**, … Order is `io.buttons:` in `boards/*.yaml` (Waveshare: `[VOLUP, PLAY, VOLDOWN]`). Boot log prints the din index map.
+Physical buttons map to **`espd/din/0`**, **`espd/din/1`**, … Order is `io.buttons:` in `boards/*.yaml`. Boot log prints the din index map.
 
 ### menuconfig (ESPD Configuration)
 
 | Option | Default (Generic) | Purpose |
 |--------|-------------------|---------|
-| **Target board** | Generic I2S | Generic vs Waveshare / other YAML boards |
+| **Target board** | Generic I2S | Generic vs YAML board kits |
 | **I/O channel count** | 2 | `dac~` / `adc~` channels |
 | **Default audio sample rate** | 48000 | Overridable via `config.txt` |
 | **Enable adc~ capture** | off (Generic) | Mic / codec input |
 | **Enable SD card** | off (Generic) | `/sdcard` |
-| **USB mass storage + serial** | off (Generic); on (Waveshare S3) | TinyUSB MSC + CDC |
-| **Patch sync over OTG CDC** | off (Generic); on (Waveshare S3) | `espd_sync.py` |
+| **USB mass storage + serial** | off (Generic); on (OTG BSP kits) | TinyUSB MSC + CDC |
+| **Patch sync over OTG CDC** | off (Generic); on (OTG BSP kits) | `espd_sync.py` |
 | **Embed fallback test patch** | off | If no `main.pd` on active store |
 | **Enable WiFi** | on | Pd net objects |
 | **Compile espd/ain**, **touch**, **aout**, **din GPIO**, **dout** | off | GPIO extras |
 
 Full `config.txt` keys: [main/espd.h](main/espd.h). Example: [test-patch/config.txt](test-patch/config.txt).
 
-## Typical Waveshare first boot
+## Typical BSP kit first boot
 
 1. Flash (build path above).
 2. Put `main.pd` on the active store — copy the SD card once, or use `espd_sync.py` (see [docs/DEV_SYNC.md](docs/DEV_SYNC.md)).
-3. Patch receives buttons on `espd/din/0..2`, LEDs on `espd/led/N`.
+3. Patch receives buttons on `espd/din/N`, LEDs on `espd/led/N` per your board YAML.
 
 Minimal test (play button → serial print):
 
@@ -172,7 +172,7 @@ Minimal test (play button → serial print):
 |---------|--------|
 | Wrong board / no codec | `grep ESPD_BOARD sdkconfig`; re-run menuconfig |
 | No WiFi | `wifi_ssid=` in `config.txt`; **Enable WiFi** in menuconfig |
-| No SD | **Enable SD card**; Waveshare profile enables it via YAML |
+| No SD | **Enable SD card**; many board YAML profiles enable it via `features.imply` |
 | `gen_board_plugins.py failed` | Use IDF export (PyYAML in IDF Python env) |
 | Dev sync / STATUS fails | [docs/DEV_SYNC.md](docs/DEV_SYNC.md); firmware must have **Patch sync over OTG CDC** |
 
