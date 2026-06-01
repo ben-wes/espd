@@ -68,7 +68,42 @@ config ESPD_AUDIO_BACKEND_BSP_CODEC
     bool "BSP codec (esp_codec_dev via bsp_audio_*)"
     depends on !ESPD_BOARD_GENERIC
 
+config ESPD_AUDIO_BACKEND_DAC
+    bool "Internal DAC (GPIO25/26)"
+    help
+        Uses ESP32 internal DAC channels for audio output. Converts int16 PCM
+        to 8-bit DAC output. No capture support (adc~ not available).
+
 endchoice
+
+menu "DAC channel configuration"
+    depends on ESPD_AUDIO_BACKEND_DAC
+
+choice ESPD_DAC_CHANNELS
+    prompt "DAC channels to use"
+    default ESPD_DAC_USE_BOTH_CHANNELS
+    help
+        Select which DAC channels to use for audio output.
+        CH0 = GPIO25, CH1 = GPIO26. Using both channels enables true stereo output.
+
+config ESPD_DAC_USE_BOTH_CHANNELS
+    bool "Both channels (stereo, GPIO25+26)"
+    help
+        Use both DAC channels for true stereo output. Left channel to GPIO25, right channel to GPIO26.
+
+config ESPD_DAC_USE_CH0_ONLY
+    bool "CH0 only (mono, GPIO25)"
+    help
+        Use only DAC channel 0 (GPIO25) for mono output.
+
+config ESPD_DAC_USE_CH1_ONLY
+    bool "CH1 only (mono, GPIO26)"
+    help
+        Use only DAC channel 1 (GPIO26) for mono output.
+
+endchoice
+
+endmenu
 
 endmenu
 
