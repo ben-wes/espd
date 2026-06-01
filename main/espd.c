@@ -17,15 +17,8 @@
 #include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#ifdef PD_LYRAT
-#include "board.h"
-#endif /* PD_LYRAT */
-#ifdef OBSOLETEAPI
-#include "driver/i2s.h"
-#else /* OBSOLETEAPI */
 #include "driver/i2s_std.h"
 #include "driver/gpio.h"
-#endif /* OBSOLETEAPI */
 
 #include "esp_log.h"
 #include "esp_err.h"
@@ -1927,14 +1920,9 @@ static void espd_nvs_flash_init(void)
 
 extern void pdmain_tick( void);
 void pdmain_init( void);
-
-void sd_init( void);
 void espd_control_io_init(void);
 
-#ifndef OBSOLETEAPI
 static espd_audio_t *s_audio;
-#endif /* OBSOLETEAPI */
-
 #define BLKSIZE 64
 DRAM_ATTR float soundin[IOCHANS * BLKSIZE], soundout[IOCHANS * BLKSIZE];
 DRAM_ATTR short poodle[IOCHANS * BLKSIZE];
@@ -1958,15 +1946,6 @@ static inline float espd_soundin_from_i16(int16_t s)
     return (float)s * (1.f / 32768.f);
 }
 
-/*static inline float espd_soundin_from_u16(uint32_t u)
-{
-    const float inv32768 = 1.f / 32768.f;
-    float x = (float)(u & 0xffffu) * inv32768;
-    if (u & 0x8000u)
-        x -= 2.f;
-    return x;
-}*/
-
 void senddacs( void)
 {
     int i, j;
@@ -1984,34 +1963,15 @@ void senddacs( void)
         soundout[i + BLKSIZE] = 0.f;
 #endif
     }
-#ifdef OBSOLETEAPI
-    {
-        size_t transferred;
-        int ret = i2s_write(I2S_NUM_0, poodle, sizeof(poodle), &transferred,
-            portMAX_DELAY);
-        if (ret != ESP_OK)
-            ESP_LOGE(TAG, "error writing");
-    }
-#else
+
     err = espd_audio_write(s_audio, poodle, (size_t)(IOCHANS * BLKSIZE));
     if (err != ESP_OK)
         ESP_LOGE(TAG, "audio write failed: %s", esp_err_to_name(err));
-#endif
 
 #ifdef ESPD_USE_ADC
-#ifdef OBSOLETEAPI
-    {
-        size_t transferred;
-        int ret = i2s_read(I2S_NUM_0, poodle, sizeof(poodle), &transferred,
-            portMAX_DELAY);
-        if (ret != ESP_OK)
-            ESP_LOGE(TAG, "error reading");
-    }
-#else
     err = espd_audio_read(s_audio, poodle, (size_t)(IOCHANS * BLKSIZE));
     if (err != ESP_OK && err != ESP_ERR_NOT_SUPPORTED)
         ESP_LOGE(TAG, "audio read failed: %s", esp_err_to_name(err));
-#endif
     
     for (i = j = 0; i < BLKSIZE; i++, j += IOCHANS)
     {
@@ -2022,70 +1982,6 @@ void senddacs( void)
     }
 #endif /* ESPD_USE_ADC */
 }
-
-#ifdef OBSOLETEAPI
-    /* allow deprecated form if new one unavailable */
-#ifndef I2S_COMM_FORMAT_STAND_I2S
-#define I2S_COMM_FORMAT_STAND_I2S I2S_COMM_FORMAT_I2S
-#endif
-
-static void initdacs( void)
-{
-    i2s_config_t i2s_config =
-    {
-        .mode = (I2S_MODE_MASTER | I2S_MODE_TX
-#ifdef ESPD_USE_ADC
-            | I2S_MODE_RX
-#endif
-            ),
-        .sample_rate = 48000,
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-#if IOCHANS > 1
-        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
-#else
-        .channel_format = I2S_CHANNEL_FMT_ONLY_RIGHT,
-#endif
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .dma_buf_count = 4,
-        .dma_buf_len = 256,
-#ifdef PD_LYRAT
-        .use_apll=1,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL2,
-#else
-        .use_apll=0,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1, /* high interrupt priority */
-        .tx_desc_auto_clear= true, 
-        .fixed_mclk=-1
- #endif
-   };
-
-    ESP_LOGI(TAG, "[ 1 ] Start audio codec chip");
-
-#ifdef PD_LYRAT
-    audio_board_handle_t board_handle = audio_board_init();
-    audio_hal_ctrl_codec(board_handle->audio_hal,
-        AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
-    audio_hal_set_volume(board_handle->audio_hal, 100);
-#endif
-
-    i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
-
-    {
-#ifdef PD_LYRAT
-        i2s_pin_config_t i2s_pin_cfg;
-        get_i2s_pins(I2S_NUM_0, (board_i2s_pin_t *)(&i2s_pin_cfg));
-#else /* PD_LYRAT */
-        i2s_pin_config_t i2s_pin_cfg = {
-        .bck_io_num = PIN_BIT_CLOCK,    /* bit clock */
-        .ws_io_num = PIN_WORD_SELECT,   /* Word select, aka left right clock */
-        .data_out_num = PIN_DATA_OUT,   /* Data out ESP32 - to DIN on 38357A */
-        .data_in_num = PIN_DATA_IN      /* data from ADC */
-        };
-#endif /* PD_LYRAT */
-        i2s_set_pin(I2S_NUM_0, &i2s_pin_cfg);
-    }               
-}
-#else /* OBSOLETEAPI */
 
 static void initdacs( void)
 {
@@ -2098,21 +1994,13 @@ static void initdacs( void)
     memset(soundout, 0, sizeof(soundout));
     memset(soundin, 0, sizeof(soundin));
 }
-#endif /* OBSOLETEAPI */
 
 static int audiostate;
 
 void sys_set_audio_state(int onoff)
 {
-/*
-    if (onoff && !audiostate)
-        i2s_start(I2S_NUM_0);
-    else if (!onoff && audiostate)
-        i2s_stop(I2S_NUM_0);
-*/
     audiostate = onoff;
 }
-
 
 /* queue from host.  Need to make this a proper RTOS queue */
 void *getbytes(size_t nbytes);
@@ -2225,6 +2113,11 @@ void app_main(void)
     espd_board_early_init();
     espd_storage_init();
 
+#ifdef ESPD_USE_SDCARD
+    espd_storage_mount_sdcard();
+#endif
+    espd_storage_refresh_paths();
+
 #if CONFIG_ESPD_USE_USB_MSC
     espd_usb_msc_sync_clear_unless_sw_reset();
     /* /storage for config.txt before USB (both normal and msc_sync boots). */
@@ -2235,11 +2128,6 @@ void app_main(void)
         espd_storage_refresh_paths();
     }
 #endif
-
-#ifdef ESPD_USE_SDCARD
-    espd_storage_mount_sdcard();
-#endif
-    espd_storage_refresh_paths();
 
 #ifdef ESPD_USE_WIFI
     espd_wifi_config_defaults();
@@ -2278,18 +2166,15 @@ void app_main(void)
         "ESP System Settings → Main task stack size",
         CONFIG_ESP_MAIN_TASK_STACK_SIZE);
 #endif
-
     heap_caps_malloc_extmem_enable(16384);
 
-    {
-        esp_pthread_cfg_t pth_cfg = esp_pthread_get_default_config();
-        pth_cfg.stack_size = 8192;
-        pth_cfg.prio = 5;
-        pth_cfg.pin_to_core = 0;
-        pth_cfg.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
-        if (esp_pthread_set_cfg(&pth_cfg) != ESP_OK)
-            ESP_LOGW(TAG, "esp_pthread_set_cfg failed; using IDF defaults");
-    }
+    esp_pthread_cfg_t pth_cfg = esp_pthread_get_default_config();
+    pth_cfg.stack_size = 8192;
+    pth_cfg.prio = 5;
+    pth_cfg.pin_to_core = 0;
+    pth_cfg.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+    if (esp_pthread_set_cfg(&pth_cfg) != ESP_OK)
+        ESP_LOGW(TAG, "esp_pthread_set_cfg failed; using IDF defaults");
 
 #ifdef ESPD_USE_AOUT
     espd_aout_load_config();
@@ -2401,11 +2286,9 @@ void app_main(void)
 #endif
 
         pdmain_tick();
-#ifdef ESPD_USE_WIFI
-#if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
+#if defined(ESPD_USE_WIFI) && ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
         if (espd_wifi_net_enabled)
             net_alive();
-#endif
 #endif
         cputime += (unsigned int)((uint64_t)esp_timer_get_time() - t0);
         senddacs();
@@ -2422,24 +2305,6 @@ void espd_control_io_init(void)
 #endif
     espd_io_bind();
 }
-
-#ifdef ESPD_USE_SDCARD
-void sd_init( void)
-{
-#ifdef PD_LYRAT
-    ESP_LOGI(TAG, "[ 1 ] Mount sdcard");
-    {
-        esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
-        esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
-        audio_board_sdcard_init(set, SD_MODE_1_LINE);
-    }
-    ESP_LOGI(TAG, "[ 1b ] done starting network");
-#else
-    /* Idempotent; first call is before pdmain_init() in app_main. */
-    (void)espd_storage_mount_sdcard();
-#endif
-}
-#endif
 
 static void espd_print_memdiag(void)
 {
