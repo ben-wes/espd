@@ -92,6 +92,7 @@ set(MAIN_REQUIRES
     esp_driver_i2c
     esp_driver_gpio
     esp_driver_uart
+    esp_driver_dac
     lwip
     pthread
     sock_utils
@@ -121,6 +122,8 @@ if(CONFIG_ESPD_AUDIO_BACKEND_BSP_CODEC STREQUAL "y")
     target_sources(${COMPONENT_LIB} PRIVATE "espd_audio_codec.c")
 elseif(CONFIG_ESPD_AUDIO_BACKEND_GENERIC_I2S STREQUAL "y")
     target_sources(${COMPONENT_LIB} PRIVATE "espd_audio_generic.c")
+elseif(CONFIG_ESPD_AUDIO_BACKEND_DAC STREQUAL "y")
+    target_sources(${COMPONENT_LIB} PRIVATE "espd_audio_dac.c")
 endif()
 
 idf_component_get_property(_espd_main_lib ${COMPONENT_NAME} COMPONENT_LIB)
