@@ -1590,7 +1590,6 @@ static esp_err_t espd_usb_mount_flash_early_vfs(void)
     if (err != ESP_OK)
         return err;
     s_flash_vfs_early = true;
-    espd_storage_refresh_paths();
     return ESP_OK;
 }
 
@@ -1675,7 +1674,6 @@ static esp_err_t espd_usb_mount_storage_app(bool msc_sync_mode)
         }
     }
 
-    espd_storage_refresh_paths();
     if (msc_sync_mode) {
         ESP_LOGI(TAG, "USB: /storage APP-only (msc_sync — host MSC hidden)");
     } else {
@@ -1848,6 +1846,7 @@ static bool usb_init_on_core0(void)
         err = espd_usb_mount_storage_app(msc_sync_mode);
         if (err != ESP_OK)
             ESP_LOGW(TAG, "USB: /storage mount failed: %s", esp_err_to_name(err));
+        else espd_storage_refresh_paths();
     }
 #endif
 #if CONFIG_ESPD_DEV_CDC_SYNC
@@ -2121,11 +2120,12 @@ void app_main(void)
 #if CONFIG_ESPD_USE_USB_MSC
     espd_usb_msc_sync_clear_unless_sw_reset();
     /* /storage for config.txt before USB (both normal and msc_sync boots). */
-    if (!espd_storage_sdcard_ready()) {
+    if (!espd_storage_sdcard_ready() && !espd_storage_flash_ready()) {
         esp_err_t mnt = espd_usb_mount_flash_early_vfs();
-        if (mnt != ESP_OK)
-            ESP_LOGW(TAG, "USB: early /storage VFS failed: %s", esp_err_to_name(mnt));
-        espd_storage_refresh_paths();
+        if (mnt == ESP_OK) {
+            ESP_LOGW(TAG, "USB: MSC unavailable — /storage on early VFS");
+            espd_storage_refresh_paths();
+        }
     }
 #endif
 
@@ -2134,29 +2134,18 @@ void app_main(void)
     espd_wifi_try_load_config();
     if (!espd_wifi_config_txt_allows_sta())
         espd_wifi_net_enabled = 0;
-#endif
 
     /* Wi‑Fi PHY before OTG; start STA early so DHCP overlaps USB bring-up. */
-#ifdef ESPD_USE_WIFI
     wifi_prepare_phy();
     if (espd_wifi_net_enabled && !espd_wifi_started) {
         wifi_start_sta();
         espd_wifi_started = 1;
     }
 #endif
+
 #if CONFIG_ESPD_USE_USB_OTG
     if (!espd_usb_start_after_wifi())
         ESP_LOGE(TAG, "USB: boot init failed");
-#endif
-
-#if CONFIG_ESPD_USE_USB_MSC
-    if (!espd_storage_sdcard_ready() && !espd_storage_flash_ready()) {
-        esp_err_t mnt = espd_usb_mount_flash_early_vfs();
-        if (mnt == ESP_OK) {
-            ESP_LOGW(TAG, "USB: MSC unavailable — /storage on early VFS");
-            espd_storage_refresh_paths();
-        }
-    }
 #endif
 
 #if CONFIG_ESP_MAIN_TASK_STACK_SIZE < 16384
