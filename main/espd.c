@@ -1859,7 +1859,7 @@ static bool usb_init_on_core0(void)
         err = espd_usb_mount_storage_app(msc_sync_mode);
         if (err != ESP_OK)
             ESP_LOGW(TAG, "USB: /storage mount failed: %s", esp_err_to_name(err));
-        else espd_storage_refresh_paths();
+        else espd_storage_resolve_paths();
     }
 #endif
 #if CONFIG_ESPD_DEV_CDC_SYNC
@@ -2125,7 +2125,7 @@ void app_main(void)
 #ifdef ESPD_USE_SDCARD
     espd_storage_mount_sdcard();
 #endif
-    espd_storage_refresh_paths();
+    espd_storage_resolve_paths();
 
 #if CONFIG_ESPD_USE_USB_MSC
     espd_usb_msc_sync_clear_unless_sw_reset();
@@ -2134,7 +2134,7 @@ void app_main(void)
         esp_err_t mnt = espd_usb_mount_flash_early_vfs();
         if (mnt == ESP_OK) {
             ESP_LOGW(TAG, "USB: MSC unavailable — /storage on early VFS");
-            espd_storage_refresh_paths();
+            espd_storage_resolve_paths();
         }
     }
 #endif
@@ -2183,7 +2183,7 @@ void app_main(void)
         ESP_LOGW(TAG, "esp_pthread_set_cfg failed; using IDF defaults");
 
     espd_audio_load_config();
-    esdp_initdacs();
+    espd_initdacs();
     espd_board_init();
 
 #ifdef ESPD_USE_WIFI
