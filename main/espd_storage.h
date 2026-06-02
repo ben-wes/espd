@@ -26,8 +26,6 @@ bool espd_patch_store_main_pd_exists(void);
 bool espd_sdcard_main_pd_exists(void);
 bool espd_storage_main_pd_exists(void);
 
-/** Re-resolve after mount changes or CDC PUT. */
-void espd_storage_refresh_paths(void);
-
+void espd_storage_resolve_paths(void);
 bool espd_storage_sdcard_ready(void);
 bool espd_storage_flash_ready(void);

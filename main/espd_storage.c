@@ -107,7 +107,7 @@ static const char *espd_storage_config_on_mount(const char *mount)
     return NULL;
 }
 
-static void espd_storage_resolve_paths(void)
+void espd_storage_resolve_paths(void)
 {
     const char *mount = espd_storage_active_mount();
 
@@ -205,9 +205,4 @@ bool espd_storage_main_pd_exists(void)
 #else
     return false;
 #endif
-}
-
-void espd_storage_refresh_paths(void)
-{
-    espd_storage_resolve_paths();
 }
