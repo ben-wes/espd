@@ -193,7 +193,4 @@ bool espd_storage_main_pd_exists(void)
 {
     return espd_storage_flash_ready()
         && espd_storage_file_exists(ESPD_STORAGE_MAIN_PD_PATH);
-#else
-    return false;
-#endif
 }

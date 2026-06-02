@@ -2133,7 +2133,6 @@ void app_main(void)
         }
     }*/
 
-    espd_board_early_init();
     espd_storage_init();
 
 #ifdef ESPD_USE_SDCARD
@@ -2153,10 +2152,8 @@ void app_main(void)
             espd_storage_resolve_paths();
         }
     }
-#endif
 
     espd_storage_init();
-
 
 #ifdef ESPD_USE_WIFI
     espd_wifi_config_defaults();
