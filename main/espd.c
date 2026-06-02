@@ -2133,18 +2133,26 @@ void app_main(void)
         }
     }*/
 
+    espd_board_early_init();
+    espd_storage_init();
+
+#ifdef ESPD_USE_SDCARD
+    espd_storage_mount_sdcard();
+#endif
+    espd_storage_resolve_paths();
+
 #if CONFIG_ESPD_USE_USB_MSC
     espd_usb_msc_sync_clear_unless_sw_reset();
 #endif
 
     /* /storage for config.txt before USB (both normal and msc_sync boots). */
-    esp_err_t mnt = espd_usb_mount_flash_early_vfs();
-    if (mnt != ESP_OK) {
-        ESP_LOGW(TAG, "/storage on early VFS unavailable");
+    if (!espd_storage_sdcard_ready() && !espd_storage_flash_ready()) {
+        esp_err_t mnt = espd_usb_mount_flash_early_vfs();
+        if (mnt == ESP_OK) {
+            ESP_LOGW(TAG, "USB: MSC unavailable — /storage on early VFS");
+            espd_storage_resolve_paths();
+        }
     }
-
-#ifdef ESPD_USE_SDCARD
-    espd_storage_mount_sdcard();
 #endif
 
     espd_storage_init();
