@@ -1,6 +1,7 @@
 #include "../main/espd.h"
 #ifdef ESPD_USE_WIFI
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "sdkconfig.h"
@@ -184,14 +185,10 @@ void net_init( void)
     /*
      * Stack size is in bytes (ESP-IDF). tcprcv holds rx_buffer[4000] plus
      * lwIP/socket and pd_fromhost() — 6000 was far too small (overflow).
+     * Pin to Core 0 to prevent CPU contention with the CPU 1 audio thread.
      */
-    xTaskCreate(tcpreceivertask, "tcprcv", 20480, NULL, PRIORITY_WIFI, NULL);
-    xTaskCreate(udpreceivertask, "udprcv", 8192, NULL, PRIORITY_WIFI, NULL);
-    while (!tcp_socket)
-    {
-        ESP_LOGI(TAG, "sendtcp: waiting for socket");
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
+    xTaskCreatePinnedToCore(tcpreceivertask, "tcprcv", 20480, NULL, PRIORITY_WIFI, NULL, 0);
+    xTaskCreatePinnedToCore(udpreceivertask, "udprcv", 8192, NULL, PRIORITY_WIFI, NULL, 0);
     s_net_send_ready = 1;
 }
 

@@ -33,6 +33,16 @@
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
+/*
+ * Boot contract (app_main in espd.c):
+ *   1. wifi_prepare_phy()  — once, after config.txt credentials, before USB OTG
+ *   2. (USB OTG init)
+ *   3. wifi_start_sta()    — once, after USB; STA connect may overlap TinyUSB
+ *   4. wifi_wait_sta()     — later, before Pd / legacy net (optional timeout)
+ *
+ * wifi_phy_init() is idempotent. wifi_start_sta() ensures PHY if called out of order.
+ */
+
 static const char *TAG = "ESPD";
 static int s_retry_num = 0;
 static EventGroupHandle_t s_wifi_event_group;
@@ -203,19 +213,27 @@ static void wifi_sta_apply_config(void)
 }
 #endif
 
-/* esp_wifi_init + event handlers only (shared PHY with USB OTG). Call before TinyUSB. */
+/* esp_wifi_init + event handlers. Call once before USB OTG (shared PHY ordering). */
 void wifi_prepare_phy(void)
 {
+    if (s_wifi_phy_ready)
+        return;
+#if CONFIG_ESP_WIFI_REMOTE_ENABLED
+    ESP_LOGI(TAG, "wifi_prepare_phy: esp_wifi_remote (ESP-Hosted)");
+#else
+    ESP_LOGI(TAG, "wifi_prepare_phy: native esp_wifi");
+#endif
     wifi_phy_init();
 }
 
-/* Start STA after config.txt (ssid/password). Does not block for DHCP. */
+/* Apply STA config and start. Does not block for DHCP — use wifi_wait_sta(). */
 void wifi_start_sta(void)
 {
     if (s_wifi_sta_started)
         return;
 
-    //wifi_phy_init();
+    wifi_prepare_phy();
+
     xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
     s_retry_num = 0;
     wifi_sta_apply_config();

@@ -29,35 +29,6 @@ void pd_init(void);
 void glob_open(t_pd *ignore, t_symbol *name, t_symbol *dir, t_floatarg f);
 
 void pdmain_print( const char *s);
-/*
-sed command to prepare patch:
-    sed 's/;$/;\\/' foo.pd | sed 's/#N //'
-*/
-
-#if 0
-static const char patchfile[] = "\
-canvas 274 279 752 643 12;\n\
-#X obj 123 146 loadbang;\n\
-#X obj 123 171 metro 1000;\n\
-#X obj 123 196 print poodle;\n\
-#X connect 0 0 1 0;\n\
-#X connect 1 0 2 0;\n\
-";
-#endif
-#if 0
-static const char patchfile[] = "\
-canvas 0 50 450 300 12;\n\
-#X obj 190 104 loadbang;\n\
-#X msg 190 129 \; pd dsp 1;\n\
-#X obj 118 123 dac~ 1;\n\
-#X obj 118 98 osc~ 440;\n\
-#X connect 0 0 1 0;\n\
-#X connect 3 0 2 0;\n\
-";
-#endif
-#ifdef ESPD_INCLUDEPATCH
-#include "testpatch.c"
-#endif
 
 void trymem(int foo)
 {
@@ -303,19 +274,24 @@ void pdmain_init( void)
             }
         }
     }
-#ifdef ESPD_INCLUDEPATCH
     if (!espd_main_pd_loaded_from_store) {
-        t_binbuf *b = binbuf_new();
-        glob_setfilename(0, gensym("main-patch"), gensym("."));
-        binbuf_text(b, patchfile, strlen(patchfile));
-        binbuf_eval(b, &pd_canvasmaker, 0, 0);
-        canvas_loadbang((t_canvas *)s__X.s_thing);
-        vmess(s__X.s_thing, gensym("pop"), "i", 0);
-        canvas_update_dsp();
-        glob_setfilename(0, &s_, &s_);
-        binbuf_free(b);
-    }
+#ifdef ESPD_USE_WIFI
+        if (espd_wifi_ssid[0] == '\0') {
+            snprintf(espd_wifi_ssid, sizeof(espd_wifi_ssid), "%s", CONFIG_ESP_WIFI_SSID);
+            snprintf(espd_wifi_password, sizeof(espd_wifi_password), "%s", CONFIG_ESP_WIFI_PASSWORD);
+        }
+        espd_wifi_net_enabled = 1;
+        pdmain_print("No main.pd found on SD or internal storage. Waiting for Wi-Fi connection...\n");
+        wifi_start_sta();
+        (void)wifi_wait_sta(portMAX_DELAY);
+#if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
+        net_init();
+        net_hello();
 #endif
+#else
+        pdmain_print("No main.pd found and Wi-Fi is not compiled into firmware. System is idle.\n");
+#endif
+    }
 }
 
 

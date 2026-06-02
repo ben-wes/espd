@@ -19,7 +19,12 @@
 #include "espd_dev.h"
 #include <stddef.h>
 
+#if CONFIG_ESPD_DEV_SYNC
+
+#include "driver/uart.h"
 #if CONFIG_ESPD_DEV_CDC_SYNC
+#include "tinyusb_cdc_acm.h"
+#endif
 
 #include "espd.h"
 #include "espd_storage.h"
@@ -29,7 +34,9 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_crc.h"
+#if CONFIG_ESPD_DEV_CDC_SYNC
 #include "tinyusb_cdc_acm.h"
+#endif
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -132,6 +139,11 @@ static size_t dev_rx_pop(uint8_t *out, size_t max)
 
 static void dev_drain_cdc_hw(void)
 {
+#if CONFIG_ESPD_DEV_SERIAL_SYNC
+    int rx;
+    while ((rx = uart_read_bytes(UART_NUM_0, s_cdc_rx_buf, sizeof(s_cdc_rx_buf), pdMS_TO_TICKS(0))) > 0)
+        dev_rx_push(s_cdc_rx_buf, rx);
+#elif CONFIG_ESPD_DEV_CDC_SYNC
     size_t rx;
 
     if (!tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
@@ -141,11 +153,17 @@ static void dev_drain_cdc_hw(void)
                == ESP_OK
            && rx > 0)
         dev_rx_push(s_cdc_rx_buf, rx);
+#endif
 }
 
 /* PUT payload bypasses the 16 KiB line ring (large files overflow it otherwise). */
 static void dev_drain_cdc_put(void)
 {
+#if CONFIG_ESPD_DEV_SERIAL_SYNC
+    int rx;
+    while ((rx = uart_read_bytes(UART_NUM_0, s_cdc_rx_buf, sizeof(s_cdc_rx_buf), pdMS_TO_TICKS(0))) > 0)
+        dev_put_data(s_cdc_rx_buf, rx);
+#elif CONFIG_ESPD_DEV_CDC_SYNC
     size_t rx;
 
     if (!tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
@@ -154,8 +172,10 @@ static void dev_drain_cdc_put(void)
     while (tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, s_cdc_rx_buf, sizeof(s_cdc_rx_buf), &rx) == ESP_OK
            && rx > 0)
         dev_put_data(s_cdc_rx_buf, rx);
+#endif
 }
 
+#if CONFIG_ESPD_DEV_CDC_SYNC
 void espd_dev_cdc_rx_cb(int itf, cdcacm_event_t *event)
 {
     (void)event;
@@ -166,6 +186,7 @@ void espd_dev_cdc_rx_cb(int itf, cdcacm_event_t *event)
     if (s_dev_task)
         xTaskNotifyGive(s_dev_task);
 }
+#endif
 
 static void dev_reply(const char *msg)
 {
@@ -783,15 +804,34 @@ void espd_dev_init(void)
         s_put_mux = xSemaphoreCreateMutex();
     dev_refresh_target();
 
+#if CONFIG_ESPD_DEV_SERIAL_SYNC
+    /* Initialize high-speed standard serial UART port */
+    uart_config_t uart_config = {
+        .baud_rate = 921600,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    uart_driver_install(UART_NUM_0, 2048, 2048, 0, NULL, 0);
+    uart_param_config(UART_NUM_0, &uart_config);
+#endif
+
     if (xTaskCreatePinnedToCore(espd_dev_task, "espd_dev", ESPD_DEV_TASK_STACK, NULL,
             ESPD_DEV_TASK_PRIO, &s_dev_task, ESPD_DEV_TASK_CORE) != pdPASS) {
-        ESP_LOGW(TAG, "dev CDC task create failed");
+        ESP_LOGW(TAG, "dev sync task create failed");
         s_dev_task = NULL;
         return;
     }
+#if CONFIG_ESPD_DEV_CDC_SYNC
     ESP_LOGI(TAG, "CDC dev sync: PUT/RELOAD -> %s (%s mode)",
         dev_target_mount(s_target),
         espd_usb_msc_sync_mode_active() ? "msc_sync" : "normal");
+#else
+    ESP_LOGI(TAG, "Serial dev sync: PUT/RELOAD -> %s (UART0 921600 BPS)",
+        dev_target_mount(s_target));
+#endif
 }
 
 bool espd_dev_reload_pending(void)
@@ -824,7 +864,7 @@ bool espd_dev_pdmsg_take(char *out, size_t outsz)
     return true;
 }
 
-#else /* !CONFIG_ESPD_DEV_CDC_SYNC */
+#else /* !CONFIG_ESPD_DEV_SYNC */
 
 void espd_dev_init(void) {}
 bool espd_dev_reload_pending(void) { return false; }
@@ -837,4 +877,4 @@ bool espd_dev_pdmsg_take(char *out, size_t outsz)
     return false;
 }
 
-#endif /* CONFIG_ESPD_DEV_CDC_SYNC */
+#endif /* CONFIG_ESPD_DEV_SYNC */

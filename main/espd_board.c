@@ -26,10 +26,15 @@ esp_err_t espd_board_early_init(void)
     return ESP_OK;
 }
 
+void espd_board_peripherals_init(void) __attribute__((weak));
+
 esp_err_t espd_board_init(void)
 {
     bsp_button_set_handler(espd_din_changed);
     espd_board_log_optional("buttons", bsp_button_init());
+    if (espd_board_peripherals_init) {
+        espd_board_peripherals_init();
+    }
     return ESP_OK;
 }
 

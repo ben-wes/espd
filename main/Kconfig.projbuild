@@ -113,12 +113,6 @@ config ESPD_USE_SDCARD
     bool "Enable SD card"
     default n
 
-config ESPD_INCLUDEPATCH
-    bool "Embed fallback test patch at build time"
-    default n
-    help
-        Used when no main.pd is found on SD or USB MSC storage at boot.
-
 menu "USB device (OTG)"
     depends on SOC_USB_OTG_SUPPORTED
 
@@ -142,13 +136,14 @@ menu "USB device (OTG)"
             Reflash: BOOT + RESET (download mode), then idf.py flash — not
             cu.debug-console on macOS (esptool often gets no data there). App
             serial is OTG cu.usbmodem* while running. See docs/DEV_SYNC.md.
+        select TINYUSB_CDC_ENABLED
         select ESPD_USE_USB_CDC
 
     if ESPD_USE_USB_OTG
 
         config ESPD_USE_USB_MSC
             bool "USB mass storage (internal flash drive)"
-            depends on TINYUSB_MSC_ENABLED
+            select TINYUSB_MSC_ENABLED
             default y
             help
                 Expose the "storage" partition as a USB drive. Slow; shares flash
@@ -161,20 +156,40 @@ menu "USB device (OTG)"
             help
                 Internal: stdout/printf routing via tinyusb_console_init.
 
-        config ESPD_DEV_CDC_SYNC
-            bool "Patch sync over OTG CDC (espd_sync)"
-            depends on ESPD_USE_SDCARD || ESPD_USE_USB_MSC
-            default y
-            help
-                PUT/RELOAD/STATUS/RESET on the OTG serial port. Target is /sdcard
-                (normal) or /storage (MODE MSC_SYNC). Needs SD and/or internal
-                flash MSC enabled. Serial (printf, ESP_LOG) still works when off.
-
-                See docs/DEV_SYNC.md.
-
     endif
 
 endmenu
+
+config ESPD_DEV_SYNC
+    bool "Enable Developer Patch Sync (espd_sync)"
+    default n
+    help
+        Enables rapid patch sync (PUT/RELOAD/STATUS/RESET) over a serial port.
+        Edit patches on the host and hear them almost immediately.
+        See docs/DEV_SYNC.md.
+
+    choice ESPD_DEV_SYNC_BACKEND
+        prompt "Dev Sync Backend"
+        depends on ESPD_DEV_SYNC
+        default ESPD_DEV_SERIAL_SYNC
+        help
+            Select the communication backend for Dev Sync.
+
+        config ESPD_DEV_SERIAL_SYNC
+            bool "Standard UART console serial port"
+            help
+                Uses UART0 (standard console port) for communicating with the host.
+                Supported on all chips, including generic ESP32. Communicates at 921600 BPS.
+                CDC and USB Mass Storage are not supported/required.
+
+        config ESPD_DEV_CDC_SYNC
+            bool "TinyUSB OTG CDC port"
+            depends on ESPD_USE_USB_OTG && (ESPD_USE_SDCARD || ESPD_USE_USB_MSC)
+            help
+                Uses the native TinyUSB CDC port on USB OTG (ESP32-S3, ESP32-P4).
+                Requires USB OTG CDC to be enabled and SD or MSC storage to be active.
+
+    endchoice
 
 endmenu
 

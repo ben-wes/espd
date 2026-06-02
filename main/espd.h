@@ -45,17 +45,17 @@ void pd_sendmsg(char *buf, int bufsize);
 void pd_fromhost(char *data, size_t size);
 void espd_control_io_init(void);
 
-#if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_DEV_CDC_SYNC
-/** Serialized TinyUSB CDC TX (protocol replies + esp_log). */
+#if CONFIG_ESPD_DEV_SYNC
+/** Serialized TX (protocol replies + esp_log). */
 void espd_usb_cdc_write(const void *data, size_t len);
 #endif
 
 #ifdef ESPD_USE_WIFI
 #include "freertos/FreeRTOS.h"
-void espd_netif_ensure_init(void); /* wifi.c - idempotent lwIP/event-loop init */
-void wifi_prepare_phy(void);       /* wifi.c - esp_wifi_init only (before USB OTG) */
-void wifi_start_sta(void);         /* wifi.c - set STA config + start (after config.txt) */
-bool wifi_wait_sta(TickType_t ticks); /* pdMS_TO_TICKS(ms); 0 = poll once */
+void espd_netif_ensure_init(void);   /* wifi.c — lwIP + default event loop (idempotent) */
+void wifi_prepare_phy(void);         /* wifi.c — PHY + handlers; call before USB OTG */
+void wifi_start_sta(void);         /* wifi.c — STA config + start; call after USB OTG */
+bool wifi_wait_sta(TickType_t ticks); /* wifi.c — wait for DHCP; 0 = poll once */
 void net_init( void);   /* init */
 void net_hello( void);  /* send initial TCP packet when connected */
 void net_alive( void);  /* send keep-alive packet if needed */

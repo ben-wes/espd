@@ -39,10 +39,11 @@
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
 #include "driver/usb_serial_jtag.h"
 #endif
-#if CONFIG_ESPD_USE_USB_OTG
 #include "esp_partition.h"
+#include "esp_flash.h"
 #include "esp_vfs_fat.h"
 #include "wear_levelling.h"
+#if CONFIG_ESPD_USE_USB_OTG
 #include "tinyusb.h"
 #include "tinyusb_msc.h"
 #include "tinyusb_cdc_acm.h"
@@ -766,7 +767,6 @@ int espd_main_pd_loaded_from_store;
 const char *espd_main_pd_loaded_dir;
 #ifdef ESPD_USE_WIFI
 int espd_wifi_net_enabled = 1;
-static int espd_wifi_started;
 char espd_wifi_ssid[33];
 char espd_wifi_password[65];
 static void espd_wifi_config_defaults(void)
@@ -1722,16 +1722,32 @@ esp_err_t espd_usb_ensure_msc_app_mount(void)
 }
 #endif
 
-#if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_DEV_CDC_SYNC
+#if CONFIG_ESPD_DEV_SYNC
+#include "driver/uart.h"
+
 static SemaphoreHandle_t s_usb_cdc_tx_mux;
 
-/* TX-only CDC; espd_dev owns RX. Mutex: esp_log and +OK lines must not interleave. */
+/* TX-only CDC / Serial; espd_dev owns RX. Mutex: esp_log and +OK lines must not interleave. */
 void espd_usb_cdc_write(const void *data, size_t len)
 {
+    if (!data || len == 0)
+        return;
+
+#if CONFIG_ESPD_DEV_SERIAL_SYNC
+    if (!s_usb_cdc_tx_mux) {
+        s_usb_cdc_tx_mux = xSemaphoreCreateMutex();
+        if (!s_usb_cdc_tx_mux)
+            return;
+    }
+    if (xSemaphoreTake(s_usb_cdc_tx_mux, pdMS_TO_TICKS(500)) != pdTRUE)
+        return;
+    uart_write_bytes(UART_NUM_0, data, len);
+    xSemaphoreGive(s_usb_cdc_tx_mux);
+#elif CONFIG_ESPD_DEV_CDC_SYNC
     size_t off = 0;
     TickType_t deadline;
 
-    if (!data || len == 0 || !tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
+    if (!tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
         return;
     if (!s_usb_cdc_tx_mux) {
         s_usb_cdc_tx_mux = xSemaphoreCreateMutex();
@@ -1758,6 +1774,7 @@ void espd_usb_cdc_write(const void *data, size_t len)
     }
     (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
     xSemaphoreGive(s_usb_cdc_tx_mux);
+#endif
 }
 
 static void espd_usb_cdc_write_bytes(const char *data, size_t len)
@@ -2109,6 +2126,19 @@ void app_main(void)
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
     espd_nvs_flash_init();
+
+    /* Dynamic partition resizing: expand "storage" to occupy all remaining flash */
+    uint32_t flash_size = 0;
+    if (esp_flash_get_size(NULL, &flash_size) == ESP_OK) {
+        esp_partition_t *part = (esp_partition_t *)esp_partition_find_first(
+            ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "storage");
+        if (part && flash_size > part->address) {
+            part->size = flash_size - part->address;
+            ESP_LOGI(TAG, "dynamic partition sizing: resized 'storage' partition to %u KB (flash size %u MB)",
+                (unsigned)(part->size / 1024), (unsigned)(flash_size / (1024 * 1024)));
+        }
+    }
+
     espd_board_early_init();
     espd_storage_init();
 
@@ -2134,7 +2164,9 @@ void app_main(void)
     espd_wifi_try_load_config();
     if (!espd_wifi_config_txt_allows_sta())
         espd_wifi_net_enabled = 0;
-    else wifi_prepare_phy();
+    /* PHY + handlers before OTG (radio/USB ordering on shared SoCs). */
+    if (espd_wifi_net_enabled)
+        wifi_prepare_phy();
 #endif
 
 #if CONFIG_ESPD_USE_USB_OTG
@@ -2143,10 +2175,14 @@ void app_main(void)
 #endif
 
 #ifdef ESPD_USE_WIFI
-    if (espd_wifi_net_enabled && !espd_wifi_started) {        
+    /* STA after USB so DHCP can overlap TinyUSB bring-up. */
+    if (espd_wifi_net_enabled)
         wifi_start_sta();
-        espd_wifi_started = 1;
-    }
+#endif
+
+#if CONFIG_ESPD_DEV_SERIAL_SYNC
+    espd_dev_init();
+    esp_log_set_vprintf(espd_usb_cdc_log_vprintf);
 #endif
 
 #if CONFIG_ESP_MAIN_TASK_STACK_SIZE < 16384
@@ -2256,7 +2292,7 @@ void app_main(void)
 #endif
         espd_io_poll();
 
-#if CONFIG_ESPD_DEV_CDC_SYNC
+#if CONFIG_ESPD_DEV_SYNC
         if (espd_dev_reload_pending()) {
             pdmain_reload_patch_from(espd_dev_reload_dir());
             espd_dev_clear_reload_pending();

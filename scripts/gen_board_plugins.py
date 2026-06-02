@@ -20,14 +20,29 @@ except ImportError as exc:  # pragma: no cover
 
 ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 GENERATED_HEADER = "# Auto-generated from {src} — do not edit.\n"
-CMAKE_GLUE = """\
-# Auto-generated from {src} — do not edit.
+# Standardized peripheral schemas
+_SUPPORTED_PERIPHERALS = {
+    "sensor": {
+        "required": ["bsp_getter", "rate_ms", "outputs"],
+    },
+    "actuator": {
+        "required": ["bsp_setter", "inputs"],
+    }
+}
+
+def _gen_cmake_glue(data: dict, src: str) -> str:
+    bsp_component = data["bsp"]["component"]
+    peripherals = data.get("peripherals") or []
+    extra_srcs = ""
+    if peripherals:
+        extra_srcs = '\n            "espd_board_peripherals.c"'
+    return f"""# Auto-generated from {src} — do not edit.
 
 if(CONFIG_ESPD_BOARD_ESP_BSP_GLUE)
     idf_component_register(
         SRCS
             "espd_bsp_audio_glue.c"
-            "espd_bsp_io_glue.c"
+            "espd_bsp_io_glue.c"{extra_srcs}
         INCLUDE_DIRS "." "${{CMAKE_CURRENT_LIST_DIR}}"
         REQUIRES espd_integration {bsp_component}
     )
@@ -180,6 +195,40 @@ def _load_board(path: Path) -> dict:
     return data
 
 
+def _validate_peripherals(data: dict, path: Path) -> None:
+    peripherals = data.get("peripherals") or []
+    if not isinstance(peripherals, list):
+        raise ValueError(f"{path}: peripherals must be a list of mappings")
+    for i, p in enumerate(peripherals):
+        if not isinstance(p, dict):
+            raise ValueError(f"{path}: peripheral item {i} must be a mapping")
+        ptype = p.get("type")
+        if not ptype:
+            raise ValueError(f"{path}: peripheral at index {i} missing 'type'")
+        if ptype not in _SUPPORTED_PERIPHERALS:
+            raise ValueError(
+                f"{path}: unrecognized peripheral type {ptype!r} at index {i}. "
+                f"Supported types: {list(_SUPPORTED_PERIPHERALS.keys())}"
+            )
+        
+        schema = _SUPPORTED_PERIPHERALS[ptype]
+        for req in schema["required"]:
+            if req not in p:
+                raise ValueError(f"{path}: peripheral {ptype!r} at index {i} missing required key {req!r}")
+        
+        # Validate outputs
+        if "outputs" in schema:
+            outputs = p.get("outputs") or []
+            if not isinstance(outputs, list):
+                raise ValueError(f"{path}: peripheral outputs at index {i} must be a list of symbols")
+        
+        # Validate inputs
+        if "inputs" in schema:
+            inputs = p.get("inputs") or []
+            if not isinstance(inputs, list):
+                raise ValueError(f"{path}: peripheral inputs at index {i} must be a list of symbols")
+
+
 def _validate_board(data: dict, path: Path) -> None:
     board_id = data.get("id")
     if not board_id or not ID_RE.match(str(board_id)):
@@ -191,6 +240,7 @@ def _validate_board(data: dict, path: Path) -> None:
     bsp = data.get("bsp")
     if not isinstance(bsp, dict) or not bsp.get("component"):
         raise ValueError(f"{path}: bsp.component is required")
+    _validate_peripherals(data, path)
 
 
 def _kconfig_symbol(board_id: str) -> str:
@@ -318,6 +368,117 @@ def _write_if_changed(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def _gen_peripherals_c(data: dict, src: str) -> str:
+    peripherals = data.get("peripherals") or []
+    if not peripherals:
+        return ""
+    
+    init_code = []
+    task_code = []
+    global_code = []
+    
+    bsp_header = data.get("bsp", {}).get("header", "bsp/esp-bsp.h")
+    
+    for i, p in enumerate(peripherals):
+        ptype = p["type"]
+        name = p.get("name", f"device_{i}")
+        
+        if ptype == "sensor":
+            getter = p["bsp_getter"]
+            rate = p["rate_ms"]
+            outputs = p["outputs"]
+            
+            var_declarations = ", ".join(f"val_{idx} = 0.0f" for idx in range(len(outputs)))
+            var_pointers = ", ".join(f"&val_{idx}" for idx in range(len(outputs)))
+            
+            send_calls = []
+            for idx, pd_sym in enumerate(outputs):
+                send_calls.append(f'        _espd_send_pd_float("{pd_sym}", val_{idx});')
+            
+            send_calls_str = "\n".join(send_calls)
+            
+            task_code.append(f"""
+        // Poll sensor {name} using BSP getter {getter}
+        {{
+            float {var_declarations};
+            {getter}({var_pointers});
+{send_calls_str}
+            vTaskDelay(pdMS_TO_TICKS({rate}));
+        }}
+""")
+            
+        elif ptype == "actuator":
+            setter = p["bsp_setter"]
+            inputs = p["inputs"]
+            
+            for idx, pd_sym in enumerate(inputs):
+                global_code.append(f"""
+// Actuator {name} callback for index {idx}
+static t_class *actuator_class_{name}_{idx};
+typedef struct _actuator_recv_{name}_{idx} {{
+    t_pd x_pd;
+}} t_actuator_recv_{name}_{idx};
+static t_actuator_recv_{name}_{idx} actuator_instance_{name}_{idx};
+
+extern void {setter}(float val);
+
+static void actuator_recv_val_{name}_{idx}(t_actuator_recv_{name}_{idx} *x, t_float f) {{
+    {setter}((float)f);
+}}
+""")
+                init_code.append(f"""
+    // Bind Pd receiver for {pd_sym} to {setter}
+    actuator_class_{name}_{idx} = class_new(gensym("_actuator_{name}_{idx}"), 0, 0, sizeof(t_actuator_recv_{name}_{idx}), CLASS_PD, 0);
+    class_addfloat(actuator_class_{name}_{idx}, (t_method)actuator_recv_val_{name}_{idx});
+    actuator_instance_{name}_{idx}.x_pd = actuator_class_{name}_{idx};
+    pd_bind((t_pd *)&actuator_instance_{name}_{idx}, gensym("{pd_sym}"));
+""")
+            
+    globals_str = "\n".join(global_code)
+    inits_str = "\n".join(init_code)
+    tasks_str = "\n".join(task_code)
+    
+    return f"""/*
+ * Auto-generated from {src} — do not edit.
+ *
+ * Board custom peripherals & actuators driver task (isolated to Core 0).
+ */
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "{bsp_header}"
+#include "../pd/src/m_pd.h"
+
+static const char *TAG = "espd_peripherals";
+
+static void _espd_send_pd_float(const char *name, float val)
+{{
+    t_symbol *sym = gensym(name);
+    if (sym && sym->s_thing) {{
+        pd_float(sym->s_thing, (t_float)val);
+    }}
+}}
+
+{globals_str}
+
+static void espd_peripherals_task(void *arg)
+{{
+    (void)arg;
+    ESP_LOGI(TAG, "peripherals polling task started on Core 0");
+    for (;;) {{
+{tasks_str}
+    }}
+}}
+
+void espd_board_peripherals_init(void)
+{{
+{inits_str}
+
+    xTaskCreatePinnedToCore(espd_peripherals_task, "espd_periph", 4096, NULL, 3, NULL, 0);
+}}
+"""
+
+
 def _generate_board(repo: Path, yaml_path: Path, boards_dir: Path) -> Path:
     try:
         rel_src = yaml_path.relative_to(repo).as_posix()
@@ -331,7 +492,7 @@ def _generate_board(repo: Path, yaml_path: Path, boards_dir: Path) -> Path:
     _write_if_changed(out_dir / "idf_component.yml", _gen_idf_component_yml(data, rel_src))
     _write_if_changed(
         out_dir / "CMakeLists.txt",
-        CMAKE_GLUE.format(src=rel_src, bsp_component=data["bsp"]["component"]),
+        _gen_cmake_glue(data, rel_src),
     )
     _write_if_changed(out_dir / "espd_bsp_audio_glue.c", AUDIO_GLUE_C.format(src=rel_src))
     _write_if_changed(out_dir / "espd_bsp_io_glue.c", IO_GLUE_C.format(src=rel_src))
@@ -343,6 +504,13 @@ def _generate_board(repo: Path, yaml_path: Path, boards_dir: Path) -> Path:
         _write_if_changed(io_path, io_cfg)
     elif io_path.exists():
         io_path.unlink()
+
+    periphs_c = _gen_peripherals_c(data, rel_src)
+    periphs_path = out_dir / "espd_board_peripherals.c"
+    if periphs_c:
+        _write_if_changed(periphs_path, periphs_c)
+    elif periphs_path.exists():
+        periphs_path.unlink()
 
     return out_dir
 

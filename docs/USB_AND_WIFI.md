@@ -23,8 +23,8 @@ Do not monitor `101` while the app uses `1234561`.
 ## Boot order
 
 ```
-/storage (early VFS) → config.txt → Wi‑Fi PHY + CDC + MSC APP mount
-→ SD optional → wifi_start_sta → wifi_wait_sta → pdmain → audio
+/storage (early VFS) → config.txt → wifi_prepare_phy → USB OTG (CDC/MSC)
+→ SD optional → wifi_start_sta → board/audio init → wifi_wait_sta → pdmain
 ```
 
 Wi‑Fi credentials always come from `config.txt` before STA. USB never auto-mounts internal flash on the host at plug-in.

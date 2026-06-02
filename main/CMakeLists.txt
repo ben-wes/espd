@@ -84,6 +84,9 @@ set(MAIN_REQUIRES
     driver
     esp_adc
     nvs_flash
+    spi_flash
+    fatfs
+    wear_levelling
     esp_timer
     esp_event
     esp_netif
@@ -108,8 +111,7 @@ idf_component_register(
 
 if(CONFIG_ESPD_USE_USB_OTG)
     idf_component_optional_requires(PRIVATE esp_tinyusb espressif__esp_tinyusb
-        wear_levelling esp_partition esp_driver_usb_serial_jtag)
-    target_link_libraries(${COMPONENT_LIB} PRIVATE idf::fatfs idf::wear_levelling)
+        esp_partition esp_driver_usb_serial_jtag)
 endif()
 
 if(CONFIG_ESPD_USE_WIFI)

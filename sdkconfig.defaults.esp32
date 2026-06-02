@@ -1,8 +1,35 @@
 # ESP32 (classic) — conservative defaults for typical 4 MB dev boards (~320 KB RAM).
 
+# Select the generic board for ESP32
+CONFIG_ESPD_BOARD_GENERIC=y
+
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_pd_4mb.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_pd_4mb.csv"
 
 # Pd on app_main; IDF default 3584 overflows on FFT-heavy patches. Same need as
 # S3, but internal RAM is much tighter here — avoid large static allocations.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536
+
+# Audio loop on CPU1; WiFi/pthread workers on CPU0 (see main/espd.c, espd_dev.c).
+# Crucial on dual-core ESP32 to prevent Wi-Fi/IP interrupts from glitching real-time audio.
+CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y
+CONFIG_ESP_MAIN_TASK_AFFINITY="0x1"
+CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_0=y
+CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0=y
+CONFIG_LWIP_TCPIP_TASK_AFFINITY="0x0"
+CONFIG_ESP_TIMER_TASK_AFFINITY="0x0"
+CONFIG_ESP_TIMER_TASK_AFFINITY_CPU0=y
+CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
+CONFIG_PTHREAD_TASK_PRIO_DEFAULT=5
+CONFIG_PTHREAD_TASK_CORE_DEFAULT=0
+
+# CPU Frequency (240 MHz for maximum DSP capability)
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# Networking limits
+CONFIG_LWIP_MAX_SOCKETS=8
+
+# Classic ESP32 does not support hardware DS (Digital Signature) or HMAC peripherals
+CONFIG_ESP_TLS_USE_DS_PERIPHERAL=n
+CONFIG_MBEDTLS_HARDWARE_RSA_DS_PERIPHERAL=n
