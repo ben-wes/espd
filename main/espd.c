@@ -62,14 +62,15 @@
 static const char *TAG = "ESPD";
 
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
-static wl_handle_t wl_handle = WL_INVALID_HANDLE;
 static tinyusb_msc_storage_handle_t msc_handle = NULL;
-static bool s_flash_vfs_early;
-RTC_NOINIT_ATTR static uint32_t s_usb_mode_magic_a;
-RTC_NOINIT_ATTR static uint32_t s_usb_mode_magic_b;
 #define ESPD_USB_MODE_MAGIC_A 0x45535044u /* "ESPD" */
 #define ESPD_USB_MODE_MAGIC_B 0x4d534331u /* "MSC1" */
 #endif
+static wl_handle_t wl_handle = WL_INVALID_HANDLE;
+static bool s_flash_vfs_early;
+RTC_NOINIT_ATTR static uint32_t s_usb_mode_magic_a;
+RTC_NOINIT_ATTR static uint32_t s_usb_mode_magic_b;
+
 
 #if defined(ESPD_USE_AOUT)
 #include "driver/ledc.h"
@@ -1562,43 +1563,7 @@ bool espd_usb_msc_sync_mode_active(void) { return false; }
 void espd_usb_msc_sync_mode_set(bool active) { (void)active; }
 #endif
 
-static void espd_usb_apply_msc_volume_label_when_ready(void)
-{
-    /* Keep default FAT volume label behavior (typically "NO NAME"). */
-}
-
 #if CONFIG_ESPD_USE_USB_MSC
-/* VFS /storage before TinyUSB — config.txt without MSC driver on the USB PHY. */
-static esp_err_t espd_usb_mount_flash_early_vfs(void)
-{
-    esp_vfs_fat_mount_config_t mount_cfg;
-
-    if (msc_handle != NULL || s_flash_vfs_early)
-        return ESP_OK;
-
-    mount_cfg = (esp_vfs_fat_mount_config_t){
-        .max_files = 16,
-        .format_if_mount_failed = true,
-        .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
-    };
-    esp_err_t err = esp_vfs_fat_spiflash_mount_rw_wl(
-        ESPD_STORAGE_MOUNT, "storage", &mount_cfg, &wl_handle);
-    if (err != ESP_OK)
-        return err;
-    s_flash_vfs_early = true;
-    return ESP_OK;
-}
-
-static esp_err_t espd_usb_unmount_flash_early_vfs(void)
-{
-    if (!s_flash_vfs_early)
-        return ESP_OK;
-    esp_err_t err = esp_vfs_fat_spiflash_unmount_rw_wl(ESPD_STORAGE_MOUNT, wl_handle);
-    s_flash_vfs_early = false;
-    wl_handle = WL_INVALID_HANDLE;
-    return err;
-}
-
 static esp_err_t espd_usb_msc_driver_ensure(void)
 {
     tinyusb_msc_driver_config_t msc_drv_cfg = {
@@ -2100,6 +2065,42 @@ unsigned int espd_cputime_get(void)
     return cputime;
 }
 
+static void espd_usb_apply_msc_volume_label_when_ready(void)
+{
+    /* Keep default FAT volume label behavior (typically "NO NAME"). */
+}
+
+/* VFS /storage before TinyUSB — config.txt without MSC driver on the USB PHY. */
+static esp_err_t espd_usb_mount_flash_early_vfs(void)
+{
+    esp_vfs_fat_mount_config_t mount_cfg;
+
+    if (s_flash_vfs_early)
+        return ESP_OK;
+
+    mount_cfg = (esp_vfs_fat_mount_config_t){
+        .max_files = 16,
+        .format_if_mount_failed = true,
+        .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
+    };
+    esp_err_t err = esp_vfs_fat_spiflash_mount_rw_wl(
+        ESPD_STORAGE_MOUNT, "storage", &mount_cfg, &wl_handle);
+    if (err != ESP_OK)
+        return err;
+    s_flash_vfs_early = true;
+    return ESP_OK;
+}
+
+static esp_err_t espd_usb_unmount_flash_early_vfs(void)
+{
+    if (!s_flash_vfs_early)
+        return ESP_OK;
+    esp_err_t err = esp_vfs_fat_spiflash_unmount_rw_wl(ESPD_STORAGE_MOUNT, wl_handle);
+    s_flash_vfs_early = false;
+    wl_handle = WL_INVALID_HANDLE;
+    return err;
+}
+
 void app_main(void)
 {
     esp_log_level_set("*", ESP_LOG_INFO);
@@ -2121,24 +2122,19 @@ void app_main(void)
 
 #if CONFIG_ESPD_USE_USB_MSC
     espd_usb_msc_sync_clear_unless_sw_reset();
-    /* /storage for config.txt before USB (both normal and msc_sync boots). */
-    if (!espd_storage_sdcard_ready() && !espd_storage_flash_ready()) {
-        esp_err_t mnt = espd_usb_mount_flash_early_vfs();
-        if (mnt == ESP_OK) {
-            ESP_LOGW(TAG, "USB: MSC unavailable — /storage on early VFS");
-            espd_storage_resolve_paths();
-        }
-    }
 #endif
 
-
-    espd_storage_init();
+    /* /storage for config.txt before USB (both normal and msc_sync boots). */
+    esp_err_t mnt = espd_usb_mount_flash_early_vfs();
+    if (mnt != ESP_OK) {
+        ESP_LOGW(TAG, "/storage on early VFS unavailable");
+    }
 
 #ifdef ESPD_USE_SDCARD
     espd_storage_mount_sdcard();
 #endif
-    espd_storage_resolve_paths();
 
+    espd_storage_init();
 
 
 #ifdef ESPD_USE_WIFI
