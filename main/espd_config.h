@@ -15,10 +15,6 @@
 #define ESPD_USE_WIFI 1
 #endif
 
-#if CONFIG_ESPD_USE_CONSOLE
-#define ESPD_USE_CONSOLE 1
-#endif
-
 #if CONFIG_ESPD_USE_SDCARD
 #define ESPD_USE_SDCARD 1
 #endif
