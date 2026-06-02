@@ -20,16 +20,11 @@ static void espd_board_log_optional(const char *what, esp_err_t err)
         ESP_LOGW(TAG, "%s: %s", what, esp_err_to_name(err));
 }
 
-esp_err_t espd_board_early_init(void)
-{
-    espd_board_log_optional("LED init", bsp_led_init());
-    return ESP_OK;
-}
-
 void espd_board_peripherals_init(void) __attribute__((weak));
 
 esp_err_t espd_board_init(void)
 {
+    espd_board_log_optional("LED init", bsp_led_init());
     bsp_button_set_handler(espd_din_changed);
     espd_board_log_optional("buttons", bsp_button_init());
     if (espd_board_peripherals_init) {

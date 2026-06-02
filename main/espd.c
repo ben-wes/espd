@@ -2119,14 +2119,6 @@ void app_main(void)
         }
     }*/
 
-    espd_board_early_init();
-    espd_storage_init();
-
-#ifdef ESPD_USE_SDCARD
-    espd_storage_mount_sdcard();
-#endif
-    espd_storage_resolve_paths();
-
 #if CONFIG_ESPD_USE_USB_MSC
     espd_usb_msc_sync_clear_unless_sw_reset();
     /* /storage for config.txt before USB (both normal and msc_sync boots). */
@@ -2138,6 +2130,16 @@ void app_main(void)
         }
     }
 #endif
+
+
+    espd_storage_init();
+
+#ifdef ESPD_USE_SDCARD
+    espd_storage_mount_sdcard();
+#endif
+    espd_storage_resolve_paths();
+
+
 
 #ifdef ESPD_USE_WIFI
     espd_wifi_config_defaults();
