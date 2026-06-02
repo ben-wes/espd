@@ -2134,18 +2134,19 @@ void app_main(void)
     espd_wifi_try_load_config();
     if (!espd_wifi_config_txt_allows_sta())
         espd_wifi_net_enabled = 0;
-
-    /* Wi‑Fi PHY before OTG; start STA early so DHCP overlaps USB bring-up. */
-    wifi_prepare_phy();
-    if (espd_wifi_net_enabled && !espd_wifi_started) {
-        wifi_start_sta();
-        espd_wifi_started = 1;
-    }
+    else wifi_prepare_phy();
 #endif
 
 #if CONFIG_ESPD_USE_USB_OTG
     if (!espd_usb_start_after_wifi())
         ESP_LOGE(TAG, "USB: boot init failed");
+#endif
+
+#ifdef ESPD_USE_WIFI
+    if (espd_wifi_net_enabled && !espd_wifi_started) {        
+        wifi_start_sta();
+        espd_wifi_started = 1;
+    }
 #endif
 
 #if CONFIG_ESP_MAIN_TASK_STACK_SIZE < 16384

@@ -215,7 +215,7 @@ void wifi_start_sta(void)
     if (s_wifi_sta_started)
         return;
 
-    wifi_phy_init();
+    //wifi_phy_init();
     xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
     s_retry_num = 0;
     wifi_sta_apply_config();
