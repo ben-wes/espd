@@ -235,6 +235,17 @@ static void espd_dout_receiver_float(t_espd_dout_receiver *x, t_floatarg f)
     espd_dout_set_value(x->idx, (t_float)f);
 }
 
+static char *espd_cfg_trim(char *s)
+{
+    char *e;
+    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
+        s++;
+    e = s + strlen(s);
+    while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r' || e[-1] == '\n'))
+        *--e = '\0';
+    return s;
+}
+
 static void espd_dout_load_config(void)
 {
     FILE *f;
@@ -599,17 +610,6 @@ void espd_din_log_map(void)
 #endif
 #include "espd_storage.h"
 #include "espd_runtime_config.h"
-
-static char *espd_cfg_trim(char *s)
-{
-    char *e;
-    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
-        s++;
-    e = s + strlen(s);
-    while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r' || e[-1] == '\n'))
-        *--e = '\0';
-    return s;
-}
 
 static void espd_audio_load_config(void)
 {
@@ -2202,27 +2202,12 @@ void app_main(void)
     if (esp_pthread_set_cfg(&pth_cfg) != ESP_OK)
         ESP_LOGW(TAG, "esp_pthread_set_cfg failed; using IDF defaults");
 
-#ifdef ESPD_USE_AOUT
-    espd_aout_load_config();
-#endif
-#ifdef ESPD_USE_DOUT
-    espd_dout_load_config();
-#endif
-#ifdef ESPD_USE_DIN
-    espd_din_load_config();
-#endif
-#ifdef ESPD_USE_AIN
-    espd_ain_load_config();
-#endif
-#ifdef ESPD_USE_TOUCH
-    espd_touch_load_config();
-#endif
     espd_audio_load_config();
-
     initdacs();
 
     espd_board_init();
 #ifdef ESPD_USE_DIN
+    espd_din_load_config();
     espd_din_gpio_init();
 #endif
     espd_io_log_din_map();
@@ -2253,9 +2238,11 @@ void app_main(void)
 #endif
 
 #ifdef ESPD_USE_AIN
+    espd_ain_load_config();
     espd_ain_init();
 #endif
 #ifdef ESPD_USE_TOUCH
+    espd_touch_load_config();
     espd_touch_init();
 #endif
 #ifdef ESPD_USE_CONSOLE
@@ -2324,9 +2311,11 @@ void app_main(void)
 void espd_control_io_init(void)
 {
 #ifdef ESPD_USE_AOUT
+    espd_aout_load_config();
     espd_aout_init();
 #endif
 #ifdef ESPD_USE_DOUT
+    espd_dout_load_config();
     espd_dout_init();
 #endif
     espd_io_bind();
