@@ -74,10 +74,6 @@ RTC_NOINIT_ATTR static uint32_t s_usb_mode_magic_b;
 #if defined(ESPD_USE_AOUT)
 #include "driver/ledc.h"
 #endif
-#ifdef ESPD_USE_CONSOLE
-#include "driver/uart.h"
-#include "esp_console.h"
-#endif
 #ifdef ESPD_USE_AOUT
 #define ESPD_AOUT_MAX_CHANNELS 4
 #define ESPD_AOUT_PWM_RES LEDC_TIMER_12_BIT
@@ -1848,7 +1844,7 @@ static bool usb_init_on_core0(void)
 #if CONFIG_ESPD_DEV_CDC_SYNC
     espd_dev_init();
     esp_log_set_vprintf(espd_usb_cdc_log_vprintf);
-#elif CONFIG_ESPD_USB_CONSOLE_CDC && CONFIG_ESPD_USE_CONSOLE
+#elif CONFIG_ESPD_USB_CONSOLE_CDC
     err = tinyusb_console_init(TINYUSB_CDC_ACM_0);
     if (err != ESP_OK)
         ESP_LOGW(TAG, "USB: CDC console: %s", esp_err_to_name(err));
@@ -2041,25 +2037,10 @@ void pd_fromhost(char *data, size_t size)
     xSemaphoreGive(pd_bt_mutex);
 }
 
-#ifdef ESPD_USE_CONSOLE
-static QueueHandle_t uart_queue;
-static void console_init(void)
-{
-    (void)uart_queue;
-#if !CONFIG_ESPD_USB_CONSOLE_CDC
-    /* UART console: host->Pd UART input disabled (boot crashes if we install
-     * a second driver). Output still goes via printf / pdmain_print. */
-#endif
-}
-#endif
-
     /* dispatch messages enqueued above */
 void pd_pollhost( void)
 {
     int lastchar;
-#ifdef ESPD_USE_CONSOLE
-    /* Host->Pd UART input disabled (see console_init comment above). */
-#endif
     if (!pd_bt_mutex)
         pd_bt_mutex = xSemaphoreCreateMutex();
     if (xSemaphoreTake(pd_bt_mutex, 0) != pdTRUE)
@@ -2253,9 +2234,6 @@ void app_main(void)
 #ifdef ESPD_USE_TOUCH
     espd_touch_load_config();
     espd_touch_init();
-#endif
-#ifdef ESPD_USE_CONSOLE
-    console_init();
 #endif
 
     ESP_LOGI(TAG, "entering audio block loop");
