@@ -2108,7 +2108,7 @@ void app_main(void)
     espd_nvs_flash_init();
 
     /* Dynamic partition resizing: expand "storage" to occupy all remaining flash */
-    uint32_t flash_size = 0;
+    /*uint32_t flash_size = 0;
     if (esp_flash_get_size(NULL, &flash_size) == ESP_OK) {
         esp_partition_t *part = (esp_partition_t *)esp_partition_find_first(
             ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, "storage");
@@ -2117,7 +2117,7 @@ void app_main(void)
             ESP_LOGI(TAG, "dynamic partition sizing: resized 'storage' partition to %u KB (flash size %u MB)",
                 (unsigned)(part->size / 1024), (unsigned)(flash_size / (1024 * 1024)));
         }
-    }
+    }*/
 
     espd_board_early_init();
     espd_storage_init();

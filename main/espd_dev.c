@@ -539,7 +539,7 @@ static void dev_put_data(const uint8_t *data, size_t len)
         xSemaphoreGive(s_put_mux);
         snprintf(reply, sizeof(reply), "+OK PUT done %08" PRIx32, s_put_crc);
         dev_reply(reply);
-        espd_storage_refresh_paths();
+        espd_storage_resolve_paths();
 #if CONFIG_ESPD_USE_USB_MSC
         if (s_target == DEV_TARGET_MSC && !espd_usb_msc_sync_mode_active())
             (void)espd_usb_expose_msc_to_host();
