@@ -1936,7 +1936,6 @@ static void espd_nvs_flash_init(void)
 
 extern void pdmain_tick( void);
 void pdmain_init( void);
-void espd_control_io_init(void);
 
 static espd_audio_t *s_audio;
 #define BLKSIZE 64
@@ -1999,7 +1998,7 @@ void senddacs( void)
 #endif /* ESPD_USE_ADC */
 }
 
-static void initdacs( void)
+static void espd_initdacs( void)
 {
     esp_err_t e = espd_audio_init(&s_audio);
     if (e != ESP_OK) {
@@ -2203,14 +2202,8 @@ void app_main(void)
         ESP_LOGW(TAG, "esp_pthread_set_cfg failed; using IDF defaults");
 
     espd_audio_load_config();
-    initdacs();
-
+    esdp_initdacs();
     espd_board_init();
-#ifdef ESPD_USE_DIN
-    espd_din_load_config();
-    espd_din_gpio_init();
-#endif
-    espd_io_log_din_map();
 
 #ifdef ESPD_USE_WIFI
     if (espd_wifi_net_enabled) {
@@ -2236,6 +2229,22 @@ void app_main(void)
             ESP_LOGW(TAG, "USB: host MSC expose: %s", esp_err_to_name(exp));
     }
 #endif
+
+ #ifdef ESPD_USE_AOUT
+    espd_aout_load_config();
+    espd_aout_init();
+#endif
+#ifdef ESPD_USE_DOUT
+    espd_dout_load_config();
+    espd_dout_init();
+#endif
+    espd_io_bind();
+
+#ifdef ESPD_USE_DIN
+    espd_din_load_config();
+    espd_din_gpio_init();
+#endif
+    espd_io_log_din_map();
 
 #ifdef ESPD_USE_AIN
     espd_ain_load_config();
@@ -2306,19 +2315,6 @@ void app_main(void)
         cputime += (unsigned int)((uint64_t)esp_timer_get_time() - t0);
         senddacs();
     }
-}
-
-void espd_control_io_init(void)
-{
-#ifdef ESPD_USE_AOUT
-    espd_aout_load_config();
-    espd_aout_init();
-#endif
-#ifdef ESPD_USE_DOUT
-    espd_dout_load_config();
-    espd_dout_init();
-#endif
-    espd_io_bind();
 }
 
 static void espd_print_memdiag(void)

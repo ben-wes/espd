@@ -251,7 +251,6 @@ void pdmain_init( void)
 {
     sys_printhook = pdmain_print;
     pd_init();
-    espd_control_io_init();
     STUFF->st_dacsr = sys_getsr();
     STUFF->st_soundout = soundout;
     STUFF->st_soundin = soundin;
