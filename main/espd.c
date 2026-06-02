@@ -1531,6 +1531,55 @@ static void espd_touch_poll(void)
 #define ESPD_USB_INIT_TASK_PRIO     2
 #define ESPD_USB_DEVICE_TASK_PRIO   4  /* step 2: drain MSC FIFO during host writes */
 
+static void espd_usb_apply_msc_volume_label_when_ready(void)
+{
+#if CONFIG_FATFS_USE_LABEL
+    FRESULT res;
+    const char *label = "ESPD";
+    
+    /* Set volume label on the MSC storage (drive 0: is the default FAT drive) */
+    res = f_setlabel(label);
+    if (res == FR_OK) {
+        ESP_LOGI(TAG, "USB: MSC volume label set to '%s'", label);
+    } else {
+        ESP_LOGW(TAG, "USB: Failed to set MSC volume label (res=%d)", res);
+    }
+#else
+    /* Keep default FAT volume label behavior (typically "NO NAME"). */
+#endif
+}
+
+/* VFS /storage before TinyUSB — config.txt without MSC driver on the USB PHY. */
+static esp_err_t espd_usb_mount_flash_early_vfs(void)
+{
+    esp_vfs_fat_mount_config_t mount_cfg;
+
+    if (s_flash_vfs_early)
+        return ESP_OK;
+
+    mount_cfg = (esp_vfs_fat_mount_config_t){
+        .max_files = 16,
+        .format_if_mount_failed = true,
+        .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
+    };
+    esp_err_t err = esp_vfs_fat_spiflash_mount_rw_wl(
+        ESPD_STORAGE_MOUNT, "storage", &mount_cfg, &wl_handle);
+    if (err != ESP_OK)
+        return err;
+    s_flash_vfs_early = true;
+    return ESP_OK;
+}
+
+static esp_err_t espd_usb_unmount_flash_early_vfs(void)
+{
+    if (!s_flash_vfs_early)
+        return ESP_OK;
+    esp_err_t err = esp_vfs_fat_spiflash_unmount_rw_wl(ESPD_STORAGE_MOUNT, wl_handle);
+    s_flash_vfs_early = false;
+    wl_handle = WL_INVALID_HANDLE;
+    return err;
+}
+
 #if CONFIG_ESPD_USE_USB_MSC
 bool espd_usb_msc_sync_mode_active(void)
 {
@@ -2063,42 +2112,6 @@ void espd_cputime_reset(void)
 unsigned int espd_cputime_get(void)
 {
     return cputime;
-}
-
-static void espd_usb_apply_msc_volume_label_when_ready(void)
-{
-    /* Keep default FAT volume label behavior (typically "NO NAME"). */
-}
-
-/* VFS /storage before TinyUSB — config.txt without MSC driver on the USB PHY. */
-static esp_err_t espd_usb_mount_flash_early_vfs(void)
-{
-    esp_vfs_fat_mount_config_t mount_cfg;
-
-    if (s_flash_vfs_early)
-        return ESP_OK;
-
-    mount_cfg = (esp_vfs_fat_mount_config_t){
-        .max_files = 16,
-        .format_if_mount_failed = true,
-        .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
-    };
-    esp_err_t err = esp_vfs_fat_spiflash_mount_rw_wl(
-        ESPD_STORAGE_MOUNT, "storage", &mount_cfg, &wl_handle);
-    if (err != ESP_OK)
-        return err;
-    s_flash_vfs_early = true;
-    return ESP_OK;
-}
-
-static esp_err_t espd_usb_unmount_flash_early_vfs(void)
-{
-    if (!s_flash_vfs_early)
-        return ESP_OK;
-    esp_err_t err = esp_vfs_fat_spiflash_unmount_rw_wl(ESPD_STORAGE_MOUNT, wl_handle);
-    s_flash_vfs_early = false;
-    wl_handle = WL_INVALID_HANDLE;
-    return err;
 }
 
 void app_main(void)
