@@ -203,6 +203,17 @@ static void espd_aout_init(void)
 }
 #endif
 
+static char *espd_cfg_trim(char *s)
+{
+    char *e;
+    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
+        s++;
+    e = s + strlen(s);
+    while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r' || e[-1] == '\n'))
+        *--e = '\0';
+    return s;
+}
+
 #ifdef ESPD_USE_DOUT
 #define ESPD_DOUT_MAX_CHANNELS 8
 
@@ -230,17 +241,6 @@ static void espd_dout_set_value(int idx, t_float f)
 static void espd_dout_receiver_float(t_espd_dout_receiver *x, t_floatarg f)
 {
     espd_dout_set_value(x->idx, (t_float)f);
-}
-
-static char *espd_cfg_trim(char *s)
-{
-    char *e;
-    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
-        s++;
-    e = s + strlen(s);
-    while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r' || e[-1] == '\n'))
-        *--e = '\0';
-    return s;
 }
 
 static void espd_dout_load_config(void)
@@ -1525,12 +1525,6 @@ static void espd_touch_poll(void)
 }
 #endif
 
-#if CONFIG_ESPD_USE_USB_OTG
-/* Pd/audio on CPU1 (board profile); TinyUSB on CPU0. */
-#define ESPD_USB_TASK_CORE          0
-#define ESPD_USB_INIT_TASK_PRIO     2
-#define ESPD_USB_DEVICE_TASK_PRIO   4  /* step 2: drain MSC FIFO during host writes */
-
 static void espd_usb_apply_msc_volume_label_when_ready(void)
 {
 #if CONFIG_FATFS_USE_LABEL
@@ -1579,6 +1573,12 @@ static esp_err_t espd_usb_unmount_flash_early_vfs(void)
     wl_handle = WL_INVALID_HANDLE;
     return err;
 }
+
+#if CONFIG_ESPD_USE_USB_OTG
+/* Pd/audio on CPU1 (board profile); TinyUSB on CPU0. */
+#define ESPD_USB_TASK_CORE          0
+#define ESPD_USB_INIT_TASK_PRIO     2
+#define ESPD_USB_DEVICE_TASK_PRIO   4  /* step 2: drain MSC FIFO during host writes */
 
 #if CONFIG_ESPD_USE_USB_MSC
 bool espd_usb_msc_sync_mode_active(void)
