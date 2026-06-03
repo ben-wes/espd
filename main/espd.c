@@ -62,14 +62,15 @@
 static const char *TAG = "ESPD";
 
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
-static wl_handle_t wl_handle = WL_INVALID_HANDLE;
 static tinyusb_msc_storage_handle_t msc_handle = NULL;
-static bool s_flash_vfs_early;
-RTC_NOINIT_ATTR static uint32_t s_usb_mode_magic_a;
-RTC_NOINIT_ATTR static uint32_t s_usb_mode_magic_b;
 #define ESPD_USB_MODE_MAGIC_A 0x45535044u /* "ESPD" */
 #define ESPD_USB_MODE_MAGIC_B 0x4d534331u /* "MSC1" */
 #endif
+static wl_handle_t wl_handle = WL_INVALID_HANDLE;
+static bool s_flash_vfs_early;
+RTC_NOINIT_ATTR static uint32_t s_usb_mode_magic_a;
+RTC_NOINIT_ATTR static uint32_t s_usb_mode_magic_b;
+
 
 #if defined(ESPD_USE_AOUT)
 #include "driver/ledc.h"
@@ -202,6 +203,17 @@ static void espd_aout_init(void)
 }
 #endif
 
+static char *espd_cfg_trim(char *s)
+{
+    char *e;
+    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
+        s++;
+    e = s + strlen(s);
+    while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r' || e[-1] == '\n'))
+        *--e = '\0';
+    return s;
+}
+
 #ifdef ESPD_USE_DOUT
 #define ESPD_DOUT_MAX_CHANNELS 8
 
@@ -229,17 +241,6 @@ static void espd_dout_set_value(int idx, t_float f)
 static void espd_dout_receiver_float(t_espd_dout_receiver *x, t_floatarg f)
 {
     espd_dout_set_value(x->idx, (t_float)f);
-}
-
-static char *espd_cfg_trim(char *s)
-{
-    char *e;
-    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n')
-        s++;
-    e = s + strlen(s);
-    while (e > s && (e[-1] == ' ' || e[-1] == '\t' || e[-1] == '\r' || e[-1] == '\n'))
-        *--e = '\0';
-    return s;
 }
 
 static void espd_dout_load_config(void)
@@ -1524,6 +1525,55 @@ static void espd_touch_poll(void)
 }
 #endif
 
+static void espd_usb_apply_msc_volume_label_when_ready(void)
+{
+#if CONFIG_FATFS_USE_LABEL
+    FRESULT res;
+    const char *label = "ESPD";
+    
+    /* Set volume label on the MSC storage (drive 0: is the default FAT drive) */
+    res = f_setlabel(label);
+    if (res == FR_OK) {
+        ESP_LOGI(TAG, "USB: MSC volume label set to '%s'", label);
+    } else {
+        ESP_LOGW(TAG, "USB: Failed to set MSC volume label (res=%d)", res);
+    }
+#else
+    /* Keep default FAT volume label behavior (typically "NO NAME"). */
+#endif
+}
+
+/* VFS /storage before TinyUSB — config.txt without MSC driver on the USB PHY. */
+static esp_err_t espd_usb_mount_flash_early_vfs(void)
+{
+    esp_vfs_fat_mount_config_t mount_cfg;
+
+    if (s_flash_vfs_early)
+        return ESP_OK;
+
+    mount_cfg = (esp_vfs_fat_mount_config_t){
+        .max_files = 16,
+        .format_if_mount_failed = true,
+        .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
+    };
+    esp_err_t err = esp_vfs_fat_spiflash_mount_rw_wl(
+        ESPD_STORAGE_MOUNT, "storage", &mount_cfg, &wl_handle);
+    if (err != ESP_OK)
+        return err;
+    s_flash_vfs_early = true;
+    return ESP_OK;
+}
+
+static esp_err_t espd_usb_unmount_flash_early_vfs(void)
+{
+    if (!s_flash_vfs_early)
+        return ESP_OK;
+    esp_err_t err = esp_vfs_fat_spiflash_unmount_rw_wl(ESPD_STORAGE_MOUNT, wl_handle);
+    s_flash_vfs_early = false;
+    wl_handle = WL_INVALID_HANDLE;
+    return err;
+}
+
 #if CONFIG_ESPD_USE_USB_OTG
 /* Pd/audio on CPU1 (board profile); TinyUSB on CPU0. */
 #define ESPD_USB_TASK_CORE          0
@@ -1562,43 +1612,7 @@ bool espd_usb_msc_sync_mode_active(void) { return false; }
 void espd_usb_msc_sync_mode_set(bool active) { (void)active; }
 #endif
 
-static void espd_usb_apply_msc_volume_label_when_ready(void)
-{
-    /* Keep default FAT volume label behavior (typically "NO NAME"). */
-}
-
 #if CONFIG_ESPD_USE_USB_MSC
-/* VFS /storage before TinyUSB — config.txt without MSC driver on the USB PHY. */
-static esp_err_t espd_usb_mount_flash_early_vfs(void)
-{
-    esp_vfs_fat_mount_config_t mount_cfg;
-
-    if (msc_handle != NULL || s_flash_vfs_early)
-        return ESP_OK;
-
-    mount_cfg = (esp_vfs_fat_mount_config_t){
-        .max_files = 16,
-        .format_if_mount_failed = true,
-        .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
-    };
-    esp_err_t err = esp_vfs_fat_spiflash_mount_rw_wl(
-        ESPD_STORAGE_MOUNT, "storage", &mount_cfg, &wl_handle);
-    if (err != ESP_OK)
-        return err;
-    s_flash_vfs_early = true;
-    return ESP_OK;
-}
-
-static esp_err_t espd_usb_unmount_flash_early_vfs(void)
-{
-    if (!s_flash_vfs_early)
-        return ESP_OK;
-    esp_err_t err = esp_vfs_fat_spiflash_unmount_rw_wl(ESPD_STORAGE_MOUNT, wl_handle);
-    s_flash_vfs_early = false;
-    wl_handle = WL_INVALID_HANDLE;
-    return err;
-}
-
 static esp_err_t espd_usb_msc_driver_ensure(void)
 {
     tinyusb_msc_driver_config_t msc_drv_cfg = {
@@ -2119,25 +2133,22 @@ void app_main(void)
         }
     }*/
 
-    espd_board_early_init();
-    espd_storage_init();
+
+
+#if CONFIG_ESPD_USE_USB_MSC
+    espd_usb_msc_sync_clear_unless_sw_reset();
+#endif
+
+    /* /storage for config.txt before USB (both normal and msc_sync boots). */
+    esp_err_t mnt = espd_usb_mount_flash_early_vfs();
+        if (mnt != ESP_OK) {
+            ESP_LOGW(TAG, "/storage on early VFS unavailable");
+    }
 
 #ifdef ESPD_USE_SDCARD
     espd_storage_mount_sdcard();
 #endif
-    espd_storage_resolve_paths();
-
-#if CONFIG_ESPD_USE_USB_MSC
-    espd_usb_msc_sync_clear_unless_sw_reset();
-    /* /storage for config.txt before USB (both normal and msc_sync boots). */
-    if (!espd_storage_sdcard_ready() && !espd_storage_flash_ready()) {
-        esp_err_t mnt = espd_usb_mount_flash_early_vfs();
-        if (mnt == ESP_OK) {
-            ESP_LOGW(TAG, "USB: MSC unavailable — /storage on early VFS");
-            espd_storage_resolve_paths();
-        }
-    }
-#endif
+    espd_storage_init();
 
 #ifdef ESPD_USE_WIFI
     espd_wifi_config_defaults();

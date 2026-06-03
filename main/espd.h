@@ -219,14 +219,11 @@ extern char espd_wifi_password[65];
 /** SD card patch store when the card is mounted (see pdmain_init). */
 #define ESPD_SDCARD_MAIN_PD_PATH ESPD_SDCARD_MOUNT "/main.pd"
 #define ESPD_SDCARD_CONFIG_PATH ESPD_SDCARD_MOUNT "/config.txt"
-#if CONFIG_ESPD_USE_USB_MSC
-/** VFS path where USB MSC storage is mounted (flash "storage" partition). */
 #ifndef ESPD_STORAGE_MOUNT
 #define ESPD_STORAGE_MOUNT "/storage"
 #endif
 #define ESPD_STORAGE_MAIN_PD_PATH ESPD_STORAGE_MOUNT "/main.pd"
 #define ESPD_STORAGE_CONFIG_PATH ESPD_STORAGE_MOUNT "/config.txt"
-#endif
 /* config.txt optional keys (key=value, # comment). Active store: mounted SD,
  * else mounted internal flash (/storage) — not mixed by file presence.
  * WiFi (when ESPD_USE_WIFI): STA starts when config.txt has a non-empty wifi_ssid=

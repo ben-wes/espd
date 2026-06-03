@@ -10,7 +10,6 @@
 #define ESPD_SDCARD_MOUNT "/sdcard"
 #endif
 
-esp_err_t espd_board_early_init(void);
 esp_err_t espd_board_init(void);
 void espd_board_poll(void);
 esp_err_t espd_board_sdcard_mount(void);
