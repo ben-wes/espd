@@ -70,7 +70,8 @@ void espd_usb_msc_sync_mode_set(bool active)
 
 void espd_usb_msc_sync_clear_unless_sw_reset(void)
 {
-    if (esp_reset_reason() != ESP_RST_SW) {
+    esp_reset_reason_t reason = esp_reset_reason();
+    if (reason == ESP_RST_POWERON || reason == ESP_RST_BROWNOUT) {
         s_usb_mode_magic_a = 0;
         s_usb_mode_magic_b = 0;
     }
@@ -239,6 +240,12 @@ esp_err_t espd_usb_expose_msc_to_host(void)
         return ESP_ERR_INVALID_STATE;
     if (espd_usb_msc_host_mounted())
         return ESP_OK;
+#if CONFIG_ESPD_DEV_CDC_SYNC
+    if (tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0)) {
+        (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, pdMS_TO_TICKS(100));
+    }
+#endif
+    vTaskDelay(pdMS_TO_TICKS(10));
     return tinyusb_msc_set_storage_mount_point(msc_handle,
         TINYUSB_MSC_STORAGE_MOUNT_USB);
 }

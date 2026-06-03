@@ -6,6 +6,7 @@
 #include "../pd/src/g_undo.h"
 #include "espd.h"
 #include "espd_runtime_config.h"
+#include "espd_usb.h"
 #include "esp_attr.h"
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -275,18 +276,22 @@ void pdmain_init( void)
     }
     if (!espd_main_pd_loaded_from_store) {
 #ifdef ESPD_USE_WIFI
-        if (espd_wifi_ssid[0] == '\0') {
-            snprintf(espd_wifi_ssid, sizeof(espd_wifi_ssid), "%s", CONFIG_ESP_WIFI_SSID);
-            snprintf(espd_wifi_password, sizeof(espd_wifi_password), "%s", CONFIG_ESP_WIFI_PASSWORD);
-        }
-        espd_wifi_net_enabled = 1;
-        pdmain_print("No main.pd found on SD or internal storage. Waiting for Wi-Fi connection...\n");
-        wifi_start_sta();
-        (void)wifi_wait_sta(portMAX_DELAY);
+        if (!espd_usb_msc_sync_mode_active()) {
 #if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
-        net_init();
-        net_hello();
+            if (espd_wifi_ssid[0] == '\0') {
+                snprintf(espd_wifi_ssid, sizeof(espd_wifi_ssid), "%s", CONFIG_ESP_WIFI_SSID);
+                snprintf(espd_wifi_password, sizeof(espd_wifi_password), "%s", CONFIG_ESP_WIFI_PASSWORD);
+            }
+            espd_wifi_net_enabled = 1;
+            pdmain_print("No main.pd found on SD or internal storage. Waiting for Wi-Fi connection...\n");
+            wifi_start_sta();
+            (void)wifi_wait_sta(pdMS_TO_TICKS(1500));
+            net_init();
+            net_hello();
+#else
+            pdmain_print("No main.pd found on SD or internal storage. System is idle.\n");
 #endif
+        }
 #else
         pdmain_print("No main.pd found and Wi-Fi is not compiled into firmware. System is idle.\n");
 #endif

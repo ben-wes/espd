@@ -92,16 +92,9 @@ DRAM_ATTR short poodle[IOCHANS * BLKSIZE];
 
 static inline short espd_soundout_to_short(float x)
 {
-    if (x > 1.f)
-        x = 1.f;
-    else if (x < -1.f)
-        x = -1.f;
+    x = (x > 1.f) ? 1.f : ((x < -1.f) ? -1.f : x);
     short y = (short)lrintf(x * 32768.f);
-    if (y > 32767)
-        y = 32767;
-    else if (y < -32768)
-        y = -32768;
-    return y;
+    return (y > 32767) ? 32767 : ((y < -32768) ? -32768 : y);
 }
 
 static inline float espd_soundin_from_i16(int16_t s)
@@ -252,8 +245,16 @@ unsigned int espd_cputime_get(void)
 
 void app_main(void)
 {
-    esp_log_level_set("*", ESP_LOG_INFO);
-    esp_log_level_set(TAG, ESP_LOG_INFO);
+    esp_log_level_set("*", ESP_LOG_WARN);
+    esp_log_level_set("ESPD", ESP_LOG_INFO);
+    esp_log_level_set("espd_usb", ESP_LOG_INFO);
+    esp_log_level_set("espd_config", ESP_LOG_INFO);
+    esp_log_level_set("espd_pd_io", ESP_LOG_INFO);
+    esp_log_level_set("espd_gpio_peripherals", ESP_LOG_INFO);
+    esp_log_level_set("espd_storage", ESP_LOG_INFO);
+    esp_log_level_set("espd_dev", ESP_LOG_INFO);
+    esp_log_level_set("espd_audio", ESP_LOG_INFO);
+    esp_log_level_set("espd_audio_dac", ESP_LOG_INFO);
 
     espd_nvs_flash_init();
 
@@ -325,7 +326,7 @@ void app_main(void)
 
 #ifdef ESPD_USE_WIFI
     if (espd_wifi_net_enabled) {
-        (void)wifi_wait_sta(pdMS_TO_TICKS(20000));
+        (void)wifi_wait_sta(pdMS_TO_TICKS(500));
 #if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
         net_init();
         net_hello();
