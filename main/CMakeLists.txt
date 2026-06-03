@@ -1,7 +1,9 @@
 set(MAIN_SRCS
     "espd.c"
-    "espd_board.c"
-    "espd_io.c"
+    "espd_config_file.c"
+    "espd_gpio_peripherals.c"
+    "espd_usb.c"
+    "espd_pd_io.c"
     "pd_lseek64_compat.c"
     "pd_posix_file_compat.c"
     "pd_pdcontrol_compat.c"

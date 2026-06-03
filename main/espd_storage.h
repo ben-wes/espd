@@ -20,9 +20,7 @@ const char *espd_storage_config_path(void);
 /** Active patch directory (/sdcard or /storage), or NULL. */
 const char *espd_storage_main_pd_mount_dir(void);
 
-/* Legacy helpers (prefer espd_storage_* above). */
-bool espd_patch_store_is_mounted(void);
-bool espd_patch_store_main_pd_exists(void);
+/* Legacy helpers */
 bool espd_sdcard_main_pd_exists(void);
 bool espd_storage_main_pd_exists(void);
 

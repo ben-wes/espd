@@ -20,4 +20,3 @@ esp_err_t espd_audio_write(espd_audio_t *audio, const int16_t *pcm,
 esp_err_t espd_audio_read(espd_audio_t *audio, int16_t *pcm, size_t samples);
 
 int espd_audio_sample_rate(const espd_audio_t *audio);
-int espd_audio_channels(const espd_audio_t *audio);

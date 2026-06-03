@@ -27,6 +27,7 @@
 #endif
 
 #include "espd.h"
+#include "espd_usb.h"
 #include "espd_storage.h"
 
 #include "freertos/FreeRTOS.h"
@@ -864,6 +865,26 @@ bool espd_dev_pdmsg_take(char *out, size_t outsz)
     return true;
 }
 
+void espd_dev_sync_poll(void)
+{
+    if (espd_dev_reload_pending()) {
+        pdmain_reload_patch_from(espd_dev_reload_dir());
+        espd_dev_clear_reload_pending();
+    }
+    {
+        char pdmsg[272];
+        if (espd_dev_pdmsg_take(pdmsg, sizeof(pdmsg))) {
+            size_t n = strlen(pdmsg);
+            if (n > 0 && pdmsg[n - 1] != ';' && n + 1 < sizeof(pdmsg)) {
+                pdmsg[n++] = ';';
+                pdmsg[n] = '\0';
+            }
+            if (n > 0)
+                pd_sendmsg(pdmsg, (int)n);
+        }
+    }
+}
+
 #else /* !CONFIG_ESPD_DEV_SYNC */
 
 void espd_dev_init(void) {}
@@ -876,5 +897,6 @@ bool espd_dev_pdmsg_take(char *out, size_t outsz)
     (void)outsz;
     return false;
 }
+void espd_dev_sync_poll(void) {}
 
 #endif /* CONFIG_ESPD_DEV_SYNC */
