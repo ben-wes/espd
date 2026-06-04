@@ -8,7 +8,6 @@
  *          raw bytes -> +OK PUT done <crc> (writes to <path>.tmp, rename on success)
  *   RELOAD
  *   MSG <pd-message>  (queued; evaluated on audio thread via pd_sendmsg)
- *   MODE MSC_SYNC | MODE NORMAL (optional; hardware reset also clears msc_sync)
  *   RESET  (reboot ESP after reply)
  *
  * Device replies (one line each, prefixed for filtering):
@@ -23,6 +22,7 @@
 
 #include "driver/uart.h"
 #if CONFIG_ESPD_DEV_CDC_SYNC
+#include "tinyusb.h"
 #include "tinyusb_cdc_acm.h"
 #endif
 
@@ -221,7 +221,7 @@ static const char *dev_target_name(dev_target_t target)
 static int dev_sdcard_available(void)
 {
 #ifdef ESPD_USE_SDCARD
-    return espd_storage_sdcard_ready() ? 1 : 0;
+    return espd_storage_sdcard_ready();
 #else
     return 0;
 #endif
@@ -230,7 +230,7 @@ static int dev_sdcard_available(void)
 static int dev_flash_available(void)
 {
 #if CONFIG_ESPD_USE_USB_MSC
-    return espd_usb_msc_storage_present() ? 1 : 0;
+    return espd_usb_msc_storage_present() && !espd_usb_msc_host_mounted();
 #else
     return 0;
 #endif
@@ -541,16 +541,17 @@ static void dev_put_data(const uint8_t *data, size_t len)
         snprintf(reply, sizeof(reply), "+OK PUT done %08" PRIx32, s_put_crc);
         dev_reply(reply);
         espd_storage_resolve_paths();
-#if CONFIG_ESPD_USE_USB_MSC
-        if (s_target == DEV_TARGET_MSC && !espd_usb_msc_sync_mode_active())
-            (void)espd_usb_expose_msc_to_host();
-#endif
     }
 }
 
 static void dev_queue_pdmsg(const char *text)
 {
     size_t n;
+
+    if (!g_espd_pd_running) {
+        dev_reply("-ERR PD not running");
+        return;
+    }
 
     if (!text || !text[0]) {
         dev_reply("-ERR MSG empty");
@@ -581,6 +582,10 @@ static void dev_do_reload(void)
         char msg[96];
         snprintf(msg, sizeof(msg), "-ERR target %s not mounted", dev_target_name(s_target));
         dev_reply(msg);
+        return;
+    }
+    if (!g_espd_pd_running) {
+        dev_reply("-ERR PD not running");
         return;
     }
     s_reload_pending = true;
@@ -643,30 +648,7 @@ static int dev_parse_put_line(char *line, char *rel, size_t relsz,
     return 1;
 }
 
-static void dev_set_mode_msc_sync(void)
-{
-#if CONFIG_ESPD_USE_USB_MSC
-    if (espd_usb_msc_sync_mode_active()) {
-        dev_reply("+OK MODE msc_sync");
-        return;
-    }
-    /* Reboot: hide MSC from host so the host OS cannot race CDC PUT. */
-    dev_reply("+OK MODE msc_sync rebooting");
-    vTaskDelay(pdMS_TO_TICKS(250));
-    espd_usb_msc_sync_mode_set(true);
-    esp_restart();
-#else
-    dev_reply("-ERR msc not enabled");
-#endif
-}
 
-static void dev_set_mode_normal(void)
-{
-    dev_reply("+OK MODE normal rebooting");
-    vTaskDelay(pdMS_TO_TICKS(250));
-    espd_usb_msc_sync_mode_set(false);
-    esp_restart();
-}
 
 static void dev_handle_line(char *line)
 {
@@ -679,19 +661,16 @@ static void dev_handle_line(char *line)
     if (!strcmp(line, "STATUS")) {
         char reply[128];
         dev_refresh_target();
-        snprintf(reply, sizeof(reply), "+OK STATUS sdcard=%s internal=%s mode=%s",
+        snprintf(reply, sizeof(reply), "+OK STATUS sdcard=%s internal=%s",
             dev_sdcard_available() ? "yes" : "no",
-            dev_flash_available() ? "yes" : "no",
-            espd_usb_msc_sync_mode_active() ? "msc_sync" : "normal");
+            dev_flash_available() ? "yes" : "no");
         dev_reply(reply);
         return;
     }
-    if (!strcmp(line, "MODE MSC_SYNC")) {
-        dev_set_mode_msc_sync();
-        return;
-    }
-    if (!strcmp(line, "MODE NORMAL")) {
-        dev_set_mode_normal();
+    if (!strcmp(line, "RESET")) {
+        dev_reply("+OK RESET rebooting");
+        vTaskDelay(pdMS_TO_TICKS(100));
+        esp_restart();
         return;
     }
     if (!strcmp(line, "RELOAD")) {
@@ -703,12 +682,6 @@ static void dev_handle_line(char *line)
         while (*body == ' ' || *body == '\t')
             body++;
         dev_queue_pdmsg(body);
-        return;
-    }
-    if (!strcmp(line, "RESET")) {
-        dev_reply("+OK RESET");
-        vTaskDelay(pdMS_TO_TICKS(100));
-        esp_restart();
         return;
     }
     if (!strncmp(line, "PUT ", 4)) {
@@ -826,9 +799,8 @@ void espd_dev_init(void)
         return;
     }
 #if CONFIG_ESPD_DEV_CDC_SYNC
-    ESP_LOGI(TAG, "CDC dev sync: PUT/RELOAD -> %s (%s mode)",
-        dev_target_mount(s_target),
-        espd_usb_msc_sync_mode_active() ? "msc_sync" : "normal");
+    ESP_LOGI(TAG, "CDC dev sync: PUT/RELOAD -> %s",
+        dev_target_mount(s_target));
 #else
     ESP_LOGI(TAG, "Serial dev sync: PUT/RELOAD -> %s (UART0 921600 BPS)",
         dev_target_mount(s_target));

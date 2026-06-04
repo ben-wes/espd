@@ -53,7 +53,7 @@ _ANSI_RE = re.compile(rb"\x1b\[[0-9;]*m")
 _ESP_LOG_RE = re.compile(rb"^[IWEDV] \([^)]+\) [^:\n]+: ")
 _PUT_DONE_RE = re.compile(rb"^\+OK PUT done ([0-9a-fA-F]{8})$")
 _STATUS_INFO_RE = re.compile(
-    rb"^\+OK STATUS sdcard=(yes|no) internal=(yes|no) mode=(normal|msc_sync)$"
+    rb"^\+OK STATUS sdcard=(yes|no) internal=(yes|no)$"
 )
 _LAST_PORT_LOGGED: str | None = None
 
@@ -453,11 +453,8 @@ class EspdCdc:
         return self.command(f"MSG {msg}", timeout=5.0)
 
     def reset_device(self) -> None:
-        self.command("RESET", timeout=2.0)
-
-    def set_mode(self, mode: str) -> None:
         try:
-            self.command(f"MODE {mode}", timeout=3.0)
+            self.command("RESET", timeout=2.0)
         except (EspdDisconnected, TimeoutError):
             pass  # reboot disconnects CDC — expected
 
@@ -484,22 +481,14 @@ def parse_status_info(line: bytes) -> dict[str, str]:
     return {
         "sdcard": m.group(1).decode(),
         "internal": m.group(2).decode(),
-        "mode": m.group(3).decode(),
     }
 
 
 def explain_status(info: dict[str, str]) -> str | None:
-    """Human note when internal=no (not the same as USB MSC visible on the host)."""
+    """Human note when internal=no."""
     if info["internal"] == "yes":
         return None
-    if info["mode"] == "normal":
-        return (
-            "note: /storage not mounted on device (USB MSC may still be visible on "
-            "the host; espd_sync uses msc_sync to mount /storage for writes)"
-        )
-    if info["mode"] == "msc_sync":
-        return "note: /storage not mounted on device yet"
-    return "note: /storage not available on device"
+    return "note: /storage not available on device (drive mode or boot in progress)"
 
 
 def resolve_port_pattern(port_arg: str | None) -> str:
@@ -526,19 +515,13 @@ def sync_store_path(info: dict[str, str]) -> str:
 
 def prepare_for_sync(cdc: EspdCdc, port: str) -> EspdCdc:
     """SD when a card is mounted; otherwise sync to internal flash (/storage)."""
-    info = wait_for_storage_ready(cdc)
+    info = device_status(cdc)
     if info["sdcard"] == "yes":
-        log_script("SD card available — using /sdcard")
+        log_script("SD card available -- using /sdcard")
         return cdc
-    if info["internal"] == "yes" and info["mode"] == "normal":
-        log_script("internal flash — CDC PUT (host MSC hidden at boot)")
+    if info["internal"] == "yes":
         return cdc
-    if info["internal"] != "yes" and info["mode"] != "msc_sync":
-        log_script("no SD card — using /storage on device")
-        note = explain_status(info)
-        if note:
-            log_script(note)
-    return ensure_msc_sync_for_write(cdc, port)
+    return ensure_storage_for_write(cdc, port)
 
 
 def wait_for_storage_ready(cdc: EspdCdc, timeout_s: float = 45.0) -> dict[str, str]:
@@ -552,47 +535,20 @@ def wait_for_storage_ready(cdc: EspdCdc, timeout_s: float = 45.0) -> dict[str, s
     raise RuntimeError("/storage not ready on device (boot still in progress?)")
 
 
-def ensure_msc_sync_for_write(cdc: EspdCdc, port: str) -> EspdCdc:
-    """Enter msc_sync so the host cannot mount /storage during CDC PUT."""
-    info = wait_for_storage_ready(cdc)
-    if info["mode"] == "msc_sync":
-        if info["internal"] == "no":
-            log_script("waiting for /storage mount on device…")
-            for _ in range(30):
-                if info["internal"] == "yes":
-                    break
-                time.sleep(0.5)
-                info = parse_status_info(cdc.status())
-        if info["internal"] != "yes":
-            raise RuntimeError("/storage not mounted (msc_sync); check boot log on CDC")
-        return cdc
-
-    log_script("switching to msc_sync for flash write (device will reboot)")
-    cdc.set_mode("MSC_SYNC")
+def ensure_storage_for_write(cdc: EspdCdc, port: str) -> EspdCdc:
+    """Reset the device so /storage is APP-mounted (exits drive mode)."""
+    log_script("internal storage not available -- resetting device")
+    cdc.reset_device()
     cdc.close()
     time.sleep(0.5)
     wait_port_gone(port, timeout=25.0)
     time.sleep(2.0)
     log_script("waiting for CDC after reboot (up to 60s)…")
     cdc = connect_cdc(port, ready_timeout=60.0)
-    info = device_status(cdc)
-    for attempt in range(60):
-        if info["mode"] == "msc_sync" and info["internal"] == "yes":
-            break
-        if info["mode"] == "msc_sync" and info["internal"] == "no":
-            if attempt == 0 or attempt % 10 == 0:
-                log_script("waiting for /storage mount on device…")
-        try:
-            time.sleep(0.5)
-            info = parse_status_info(cdc.status())
-        except EspdDisconnected:
-            log_script("CDC dropped during mode wait — reconnecting…")
-            cdc.close()
-            cdc = connect_cdc(port, ready_timeout=60.0)
-            info = device_status(cdc)
-    if info["mode"] != "msc_sync" or info["internal"] != "yes":
+    info = wait_for_storage_ready(cdc)
+    if info["internal"] != "yes":
         raise RuntimeError(
-            f"msc_sync failed: mode={info['mode']} internal={info['internal']}"
+            f"/storage still not available after reset (internal={info['internal']})"
         )
     return cdc
 

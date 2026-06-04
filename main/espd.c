@@ -34,12 +34,14 @@
 
 #include "espd_dev.h"
 #if CONFIG_ESPD_USE_USB_OTG
+#include "tinyusb.h"
 #include "tinyusb_cdc_acm.h"
 #endif
 
 #include "espd_storage.h"
 
 static const char *TAG = "ESPD";
+bool g_espd_pd_running = false;
 
 int espd_main_pd_loaded_from_store;
 const char *espd_main_pd_loaded_dir;
@@ -265,9 +267,6 @@ void app_main(void)
     esp_netif_init();
     esp_event_loop_create_default();
 
-#if CONFIG_ESPD_USE_USB_MSC
-    espd_usb_msc_sync_clear_unless_sw_reset();
-#endif
 
     /* /storage for config.txt before USB takes over the flash partition. */
     esp_err_t mnt = espd_usb_mount_flash_early_vfs();
@@ -337,18 +336,12 @@ void app_main(void)
 #endif
     }
 #endif
+#if CONFIG_ESPD_USE_USB_MSC
+    if (espd_usb_msc_storage_present() && tud_mounted())
+        espd_usb_drive_mode_wait();
+#endif
 
     pdmain_init();
-
-#if CONFIG_ESPD_USE_USB_MSC
-    if (!espd_usb_msc_sync_mode_active() && espd_usb_msc_storage_present()) {
-        esp_err_t exp = espd_usb_expose_msc_to_host();
-        if (exp == ESP_OK)
-            ESP_LOGI(TAG, "USB: /storage exposed to host (normal)");
-        else
-            ESP_LOGW(TAG, "USB: host MSC expose: %s", esp_err_to_name(exp));
-    }
-#endif
 
     espd_aout_init();
     espd_dout_init();
@@ -360,15 +353,15 @@ void app_main(void)
 
     ESP_LOGI(TAG, "entering audio block loop");
 
-    {
-        UBaseType_t was = uxTaskPriorityGet(NULL);
-        UBaseType_t want = 19;
-        if (want > (UBaseType_t)(configMAX_PRIORITIES - 2))
-            want = (UBaseType_t)(configMAX_PRIORITIES - 2);
-        vTaskPrioritySet(NULL, want);
-        ESP_LOGI(TAG, "audio loop priority set to %u (was %u)",
-            (unsigned)want, (unsigned)was);
-    }
+    UBaseType_t was = uxTaskPriorityGet(NULL);
+    UBaseType_t want = 19;
+    if (want > (UBaseType_t)(configMAX_PRIORITIES - 2))
+        want = (UBaseType_t)(configMAX_PRIORITIES - 2);
+    vTaskPrioritySet(NULL, want);
+    ESP_LOGI(TAG, "audio loop priority set to %u (was %u)",
+        (unsigned)want, (unsigned)was);
+
+    g_espd_pd_running = true;
 
     while (1)
     {

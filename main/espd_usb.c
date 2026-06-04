@@ -40,51 +40,9 @@ static const char *TAG = "espd_usb";
 
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
 static tinyusb_msc_storage_handle_t msc_handle = NULL;
-#define ESPD_USB_MODE_MAGIC_A 0x45535044u /* "ESPD" */
-#define ESPD_USB_MODE_MAGIC_B 0x4d534331u /* "MSC1" */
 #endif
 static wl_handle_t wl_handle = WL_INVALID_HANDLE;
 static bool s_flash_vfs_early;
-RTC_NOINIT_ATTR static uint32_t s_usb_mode_magic_a;
-RTC_NOINIT_ATTR static uint32_t s_usb_mode_magic_b;
-
-/* ─── MSC sync mode (RTC-persistent) ─── */
-
-#if CONFIG_ESPD_USE_USB_MSC
-bool espd_usb_msc_sync_mode_active(void)
-{
-    return s_usb_mode_magic_a == ESPD_USB_MODE_MAGIC_A
-        && s_usb_mode_magic_b == ESPD_USB_MODE_MAGIC_B;
-}
-
-void espd_usb_msc_sync_mode_set(bool active)
-{
-    if (active) {
-        s_usb_mode_magic_a = ESPD_USB_MODE_MAGIC_A;
-        s_usb_mode_magic_b = ESPD_USB_MODE_MAGIC_B;
-    } else {
-        s_usb_mode_magic_a = 0;
-        s_usb_mode_magic_b = 0;
-    }
-}
-
-void espd_usb_msc_sync_clear_unless_sw_reset(void)
-{
-    esp_reset_reason_t reason = esp_reset_reason();
-    if (reason == ESP_RST_POWERON || reason == ESP_RST_BROWNOUT) {
-        s_usb_mode_magic_a = 0;
-        s_usb_mode_magic_b = 0;
-    }
-}
-#elif CONFIG_ESPD_USE_USB_OTG
-bool espd_usb_msc_sync_mode_active(void) { return false; }
-void espd_usb_msc_sync_mode_set(bool active) { (void)active; }
-#endif
-
-#if !CONFIG_ESPD_USE_USB_OTG
-bool espd_usb_msc_sync_mode_active(void) { return false; }
-void espd_usb_msc_sync_mode_set(bool active) { (void)active; }
-#endif
 
 /* ─── Early VFS mount (plain FAT, no TinyUSB — for config.txt before USB) ─── */
 
@@ -154,7 +112,7 @@ static esp_err_t espd_usb_msc_driver_ensure(void)
     return err;
 }
 
-static esp_err_t espd_usb_mount_storage_app(bool msc_sync_mode)
+static esp_err_t espd_usb_mount_storage_app(void)
 {
     const esp_partition_t *data_partition;
     esp_err_t err;
@@ -209,10 +167,7 @@ static esp_err_t espd_usb_mount_storage_app(bool msc_sync_mode)
         }
     }
 
-    if (msc_sync_mode)
-        ESP_LOGI(TAG, "/storage APP-only (msc_sync — host MSC hidden)");
-    else
-        ESP_LOGI(TAG, "/storage APP-only (normal)");
+    ESP_LOGI(TAG, "/storage mounted (APP)");
     espd_usb_apply_msc_volume_label_when_ready();
     return ESP_OK;
 }
@@ -235,8 +190,6 @@ bool espd_usb_msc_host_mounted(void)
 esp_err_t espd_usb_expose_msc_to_host(void)
 {
     if (!msc_handle)
-        return ESP_ERR_INVALID_STATE;
-    if (espd_usb_msc_sync_mode_active())
         return ESP_ERR_INVALID_STATE;
     if (espd_usb_msc_host_mounted())
         return ESP_OK;
@@ -326,18 +279,11 @@ static void espd_usb_release_usj_for_otg(void)
 }
 
 #if CONFIG_ESPD_USE_USB_MSC
-static void espd_usb_event_cb(tinyusb_event_t *event, void *arg)
+void espd_usb_drive_mode_wait(void)
 {
-    (void)arg;
-    if (event->id == TINYUSB_EVENT_ATTACHED) {
-        if (!espd_usb_msc_sync_mode_active())
-            (void)espd_usb_expose_msc_to_host();
-    } else if (event->id == TINYUSB_EVENT_DETACHED) {
-        esp_err_t err = espd_usb_ensure_msc_app_mount();
-        if (err != ESP_OK)
-            ESP_LOGW(TAG, "MSC app remount on disconnect: %s",
-                esp_err_to_name(err));
-    }
+    (void)espd_usb_expose_msc_to_host();
+    ESP_LOGI(TAG, "USB drive mode -- reset to start audio");
+    vTaskSuspend(NULL);
 }
 #endif
 
@@ -345,20 +291,15 @@ static bool usb_init_on_core0(void)
 {
     esp_err_t err;
     tinyusb_config_t tusb_cfg;
-    bool msc_sync_mode = false;
 
     espd_usb_release_usj_for_otg();
 
 #if CONFIG_ESPD_USE_USB_MSC
-    msc_sync_mode = espd_usb_msc_sync_mode_active();
     if (espd_usb_msc_driver_ensure() != ESP_OK)
         ESP_LOGW(TAG, "MSC driver pre-install failed");
 #endif
 
     tusb_cfg = TINYUSB_DEFAULT_CONFIG();
-#if CONFIG_ESPD_USE_USB_MSC
-    tusb_cfg.event_cb = espd_usb_event_cb;
-#endif
     tusb_cfg.task = TINYUSB_TASK_CUSTOM(
         TINYUSB_DEFAULT_TASK_SIZE, ESPD_USB_DEVICE_TASK_PRIO, ESPD_USB_TASK_CORE);
     err = tinyusb_driver_install(&tusb_cfg);
@@ -398,23 +339,14 @@ static bool usb_init_on_core0(void)
 
 #if CONFIG_ESPD_USE_USB_MSC
     if (msc_handle == NULL) {
-        err = espd_usb_mount_storage_app(msc_sync_mode);
+        err = espd_usb_mount_storage_app();
         if (err != ESP_OK)
             ESP_LOGW(TAG, "/storage mount failed: %s", esp_err_to_name(err));
         else
             espd_storage_resolve_paths();
     }
 #endif
-#if CONFIG_ESPD_DEV_CDC_SYNC
-    if (msc_sync_mode)
-        ESP_LOGI(TAG, "cu.usbmodem%s1 (CDC, msc_sync)",
-            CONFIG_TINYUSB_DESC_SERIAL_STRING);
-    else
-        ESP_LOGI(TAG, "cu.usbmodem%s1 (CDC+MSC, APP mount)",
-            CONFIG_TINYUSB_DESC_SERIAL_STRING);
-#else
     ESP_LOGI(TAG, "ready (cu.usbmodem%s1)", CONFIG_TINYUSB_DESC_SERIAL_STRING);
-#endif
     return true;
 }
 
