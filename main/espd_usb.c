@@ -240,6 +240,8 @@ esp_err_t espd_usb_expose_msc_to_host(void)
         return ESP_ERR_INVALID_STATE;
     if (espd_usb_msc_host_mounted())
         return ESP_OK;
+    if (!tud_mounted())
+        return ESP_OK;   /* no host — keep VFS available to app */
 #if CONFIG_ESPD_DEV_CDC_SYNC
     if (tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0)) {
         (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, pdMS_TO_TICKS(100));
@@ -266,54 +268,29 @@ esp_err_t espd_usb_ensure_msc_app_mount(void)
 #if CONFIG_ESPD_DEV_SYNC
 #include "driver/uart.h"
 
-static SemaphoreHandle_t s_usb_cdc_tx_mux;
-
 void espd_usb_cdc_write(const void *data, size_t len)
 {
     if (!data || len == 0)
         return;
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
-    if (!s_usb_cdc_tx_mux) {
-        s_usb_cdc_tx_mux = xSemaphoreCreateMutex();
-        if (!s_usb_cdc_tx_mux)
-            return;
-    }
-    if (xSemaphoreTake(s_usb_cdc_tx_mux, pdMS_TO_TICKS(500)) != pdTRUE)
-        return;
     uart_write_bytes(UART_NUM_0, data, len);
-    xSemaphoreGive(s_usb_cdc_tx_mux);
 #elif CONFIG_ESPD_DEV_CDC_SYNC
-    size_t off = 0;
-    TickType_t deadline;
-
-    if (!tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
+    if (!tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0) || !tud_mounted())
         return;
-    if (!s_usb_cdc_tx_mux) {
-        s_usb_cdc_tx_mux = xSemaphoreCreateMutex();
-        if (!s_usb_cdc_tx_mux)
-            return;
-    }
-    if (xSemaphoreTake(s_usb_cdc_tx_mux, pdMS_TO_TICKS(500)) != pdTRUE)
-        return;
-
-    deadline = xTaskGetTickCount() + pdMS_TO_TICKS(200);
-    while (off < len) {
-        size_t w = tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0,
-                (const uint8_t *)data + off, len - off);
-        if (w == 0) {
-            if (xTaskGetTickCount() >= deadline)
-                break;
-            vTaskDelay(1);
-            continue;
+    {
+        size_t off = 0;
+        while (off < len) {
+            size_t w = tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0,
+                    (const uint8_t *)data + off, len - off);
+            if (w == 0)
+                break;   /* endpoint busy — drop remainder */
+            off += w;
+            if (off < len)
+                tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
         }
-        off += w;
-        if (off < len
-                && tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0) != ESP_OK)
-            break;
+        (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
     }
-    (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
-    xSemaphoreGive(s_usb_cdc_tx_mux);
 #endif
 }
 
@@ -348,6 +325,22 @@ static void espd_usb_release_usj_for_otg(void)
 #endif
 }
 
+#if CONFIG_ESPD_USE_USB_MSC
+static void espd_usb_event_cb(tinyusb_event_t *event, void *arg)
+{
+    (void)arg;
+    if (event->id == TINYUSB_EVENT_ATTACHED) {
+        if (!espd_usb_msc_sync_mode_active())
+            (void)espd_usb_expose_msc_to_host();
+    } else if (event->id == TINYUSB_EVENT_DETACHED) {
+        esp_err_t err = espd_usb_ensure_msc_app_mount();
+        if (err != ESP_OK)
+            ESP_LOGW(TAG, "MSC app remount on disconnect: %s",
+                esp_err_to_name(err));
+    }
+}
+#endif
+
 static bool usb_init_on_core0(void)
 {
     esp_err_t err;
@@ -363,6 +356,9 @@ static bool usb_init_on_core0(void)
 #endif
 
     tusb_cfg = TINYUSB_DEFAULT_CONFIG();
+#if CONFIG_ESPD_USE_USB_MSC
+    tusb_cfg.event_cb = espd_usb_event_cb;
+#endif
     tusb_cfg.task = TINYUSB_TASK_CUSTOM(
         TINYUSB_DEFAULT_TASK_SIZE, ESPD_USB_DEVICE_TASK_PRIO, ESPD_USB_TASK_CORE);
     err = tinyusb_driver_install(&tusb_cfg);

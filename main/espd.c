@@ -205,20 +205,22 @@ void pd_pollhost(void)
 
 void pdmain_print(const char *s)
 {
-    char y[81];
-    if (s && *s) {
+    if (!s || !*s)
+        return;
+
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_DEV_CDC_SYNC
-        if (tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
-            espd_usb_cdc_write(s, strlen(s));
-        else
+    if (tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
+        espd_usb_cdc_write(s, strlen(s));
+    else
 #endif
-            printf("%s", s);
-    }
-    strncpy(y, s, 79);
-    y[79]=0;
-    strcat(y, ";");
+        printf("%s", s);
+
 #if defined(ESPD_USE_WIFI) && ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     if (espd_wifi_net_enabled && wifi_ipaddr[0] != '\0') {
+        char y[81];
+        strncpy(y, s, 79);
+        y[79] = '\0';
+        strcat(y, ";");
         net_sendudp(y, strlen(y), CONFIG_ESP_WIFI_SENDPORT);
         net_sendtcp(y, strlen(y));
     }
