@@ -53,8 +53,10 @@ char espd_wifi_password[65];
 
 static void espd_wifi_config_defaults(void)
 {
-    snprintf(espd_wifi_ssid, sizeof(espd_wifi_ssid), "%s", CONFIG_ESP_WIFI_SSID);
-    snprintf(espd_wifi_password, sizeof(espd_wifi_password), "%s", CONFIG_ESP_WIFI_PASSWORD);
+    if (espd_wifi_ssid[0] == '\0') {
+        snprintf(espd_wifi_ssid, sizeof(espd_wifi_ssid), "%s", CONFIG_ESP_WIFI_SSID);
+        snprintf(espd_wifi_password, sizeof(espd_wifi_password), "%s", CONFIG_ESP_WIFI_PASSWORD);
+    }
 }
 
 static int espd_wifi_config_txt_allows_sta(void)
@@ -319,20 +321,16 @@ void app_main(void)
     if (esp_pthread_set_cfg(&pth_cfg) != ESP_OK)
         ESP_LOGW(TAG, "esp_pthread_set_cfg failed; using IDF defaults");
 
-    espd_initdacs();
-
     bsp_led_init();
     bsp_button_set_handler(espd_din_changed);
     bsp_button_init();
 
 #ifdef ESPD_USE_WIFI
     if (espd_wifi_net_enabled) {
-        (void)wifi_wait_sta(pdMS_TO_TICKS(500));
 #if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
+        wifi_wait_sta(pdMS_TO_TICKS(2000));
         net_init();
         net_hello();
-#else
-        ESP_LOGI(TAG, "legacy espd TCP/UDP transport disabled (use Pd net objects)");
 #endif
     }
 #endif
@@ -341,6 +339,7 @@ void app_main(void)
         espd_usb_drive_mode_wait();
 #endif
 
+    espd_initdacs();
     pdmain_init();
 
     espd_aout_init();

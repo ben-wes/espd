@@ -7,6 +7,7 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 #include "../main/espd.h"
+#include "esp_wifi_types_generic.h"
 #ifdef ESPD_USE_WIFI
 #include <stdio.h>
 #include <string.h>
@@ -28,7 +29,7 @@
 #include "lwip/err.h"
 #include "lwip/sys.h"
 
-#define EXAMPLE_ESP_MAXIMUM_RETRY  50
+#define WIFI_MAXIMUM_RETRY  3
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
@@ -52,77 +53,65 @@ static bool s_wifi_sta_started;
 char wifi_mac[80];
 char wifi_ipaddr[20];
 
+/* Common WiFi event handler logic */
+typedef esp_err_t (*wifi_connect_func_t)(void);
+
+static void wifi_event_handler_common(wifi_connect_func_t connect_func,
+                                       esp_event_base_t event_base,
+                                       int32_t event_id, void* event_data)
+{
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        connect_func();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        const wifi_event_sta_disconnected_t *d =
+            (const wifi_event_sta_disconnected_t *)event_data;
+        if (s_retry_num < WIFI_MAXIMUM_RETRY) {
+            if (d->reason == WIFI_REASON_NO_AP_FOUND) {
+                ESP_LOGW(TAG, "WIFI ssid=%s not found", espd_wifi_ssid[0] ? espd_wifi_ssid : "(none)");
+                xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+            } else if (d->reason == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT) {
+                ESP_LOGW(TAG, "WIFI wrong password for ssid=%s", espd_wifi_ssid[0] ? espd_wifi_ssid : "(none)");
+                xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+            }  else if (d->reason == WIFI_REASON_AUTH_FAIL) {
+                ESP_LOGW(TAG, "WIFI authentication failed for ssid=%s", espd_wifi_ssid[0] ? espd_wifi_ssid : "(none)");
+                xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+            } else {
+                ESP_LOGW(TAG,
+                    "WIFI failure: reason=%u rssi=%d",
+                    (unsigned)d->reason, (int)d->rssi);
+                connect_func();
+                s_retry_num++;
+                ESP_LOGI(TAG, "WIFI retry connection (%d/%d)", s_retry_num,
+                    WIFI_MAXIMUM_RETRY);
+            }
+        } else {
+            ESP_LOGI(TAG, "WIFI connection failed");
+            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+        }
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        snprintf(wifi_ipaddr, sizeof(wifi_ipaddr),
+            IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "WIFI connected with IP %s", wifi_ipaddr);
+        wifi_ipaddr[sizeof(wifi_ipaddr)-1] = 0;
+        s_retry_num = 0;
+        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+    }
+}
+
 #if CONFIG_ESP_WIFI_REMOTE_ENABLED
 /* ESP-Hosted event handler (ESP32-P4)*/
 static void hosted_event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
 {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_remote_connect();
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        const wifi_event_sta_disconnected_t *d =
-            (const wifi_event_sta_disconnected_t *)event_data;
-        if (s_retry_num < 3) {
-            ESP_LOGW(TAG,
-                "STA disconnected: reason=%u rssi=%d (e.g. 201=no AP, 2=auth, 15=wrong pwd)",
-                (unsigned)d->reason, (int)d->rssi);
-        }
-        if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
-            esp_wifi_remote_connect();
-            s_retry_num++;
-            if (s_retry_num <= 3) {
-                ESP_LOGI(TAG, "retry to connect to the AP (%d/%d)", s_retry_num,
-                    EXAMPLE_ESP_MAXIMUM_RETRY);
-            }
-        } else {
-            ESP_LOGI(TAG,"connect to the AP fail");
-            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-        }
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "STA DHCP complete");
-        snprintf(wifi_ipaddr, sizeof(wifi_ipaddr),
-            IPSTR, IP2STR(&event->ip_info.ip));
-        wifi_ipaddr[sizeof(wifi_ipaddr)-1] = 0;
-        s_retry_num = 0;
-        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-    }
+    wifi_event_handler_common(esp_wifi_remote_connect, event_base, event_id, event_data);
 }
 #else
 /* Native WiFi event handler (ESP32/ESP32-S3) */
 static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
 {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        const wifi_event_sta_disconnected_t *d =
-            (const wifi_event_sta_disconnected_t *)event_data;
-        if (s_retry_num < 3) {
-            ESP_LOGW(TAG,
-                "STA disconnected: reason=%u rssi=%d (e.g. 201=no AP, 2=auth, 15=wrong pwd)",
-                (unsigned)d->reason, (int)d->rssi);
-        }
-        if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY) {
-            esp_wifi_connect();
-            s_retry_num++;
-            if (s_retry_num <= 3) {
-                ESP_LOGI(TAG, "retry to connect to the AP (%d/%d)", s_retry_num,
-                    EXAMPLE_ESP_MAXIMUM_RETRY);
-            }
-        } else {
-            ESP_LOGI(TAG,"connect to the AP fail");
-            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-        }
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "STA DHCP complete");
-        snprintf(wifi_ipaddr, sizeof(wifi_ipaddr),
-            IPSTR, IP2STR(&event->ip_info.ip));
-        wifi_ipaddr[sizeof(wifi_ipaddr)-1] = 0;
-        s_retry_num = 0;
-        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-    }
+    wifi_event_handler_common(esp_wifi_connect, event_base, event_id, event_data);
 }
 #endif
 
@@ -251,8 +240,10 @@ void wifi_start_sta(void)
 #else
         ESP_ERROR_CHECK(esp_wifi_get_mac(WIFI_IF_STA, sta_mac));
 #endif
-        ESP_LOGI(TAG, "wifi_start_sta: MAC %02x:%02x:%02x:%02x:%02x:%02x ssid=%s",
+        /* ESP_LOGI(TAG, "wifi_start_sta: MAC %02x:%02x:%02x:%02x:%02x:%02x ssid=%s",
             sta_mac[0], sta_mac[1], sta_mac[2], sta_mac[3], sta_mac[4], sta_mac[5],
+            espd_wifi_ssid[0] ? espd_wifi_ssid : "(none)"); */
+        ESP_LOGI(TAG, "WIFI connecting AP ssid=%s",
             espd_wifi_ssid[0] ? espd_wifi_ssid : "(none)");
         snprintf(wifi_mac, sizeof(wifi_mac), "%02x:%02x:%02x:%02x:%02x:%02x",
             sta_mac[0], sta_mac[1], sta_mac[2], sta_mac[3], sta_mac[4], sta_mac[5]);
