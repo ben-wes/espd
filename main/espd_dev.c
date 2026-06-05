@@ -70,7 +70,7 @@ typedef enum {
 
 typedef enum {
     DEV_TARGET_SD = 0,
-    DEV_TARGET_MSC,
+    DEV_TARGET_FLASH,
 } dev_target_t;
 
 static TaskHandle_t s_dev_task;
@@ -204,18 +204,16 @@ static void dev_reply(const char *msg)
 
 static const char *dev_target_mount(dev_target_t target)
 {
-#if CONFIG_ESPD_USE_USB_MSC
-    if (target == DEV_TARGET_MSC)
-        return ESPD_STORAGE_MOUNT;
-#endif
-    return ESPD_SDCARD_MOUNT;
+    if (target == DEV_TARGET_SD)
+        return ESPD_SDCARD_MOUNT;
+    return ESPD_STORAGE_MOUNT;
 }
 
 static const char *dev_target_name(dev_target_t target)
 {
-    if (target == DEV_TARGET_MSC)
-        return "msc";
-    return "sd";
+    if (target == DEV_TARGET_SD)
+        return "sd";
+    return "flash";
 }
 
 static int dev_sdcard_available(void)
@@ -229,11 +227,11 @@ static int dev_sdcard_available(void)
 
 static int dev_flash_available(void)
 {
-#if CONFIG_ESPD_USE_USB_MSC
-    return espd_usb_msc_storage_present() && !espd_usb_msc_host_mounted();
-#else
+    struct stat st;
+    if (stat(ESPD_STORAGE_MOUNT, &st) == 0 && S_ISDIR(st.st_mode))
+        return 1;
+
     return 0;
-#endif
 }
 
 static dev_target_t dev_default_target(void)
@@ -242,13 +240,7 @@ static dev_target_t dev_default_target(void)
     if (dev_sdcard_available())
         return DEV_TARGET_SD;
 #endif
-#if CONFIG_ESPD_USE_USB_MSC
-    return DEV_TARGET_MSC;
-#endif
-#ifdef ESPD_USE_SDCARD
-    return DEV_TARGET_SD;
-#endif
-    return DEV_TARGET_MSC;
+    return DEV_TARGET_FLASH;
 }
 
 static void dev_refresh_target(void)
@@ -258,14 +250,12 @@ static void dev_refresh_target(void)
 
 static int dev_target_ready(dev_target_t target)
 {
-#if CONFIG_ESPD_USE_USB_MSC
-    if (target == DEV_TARGET_MSC) {
+    if (target == DEV_TARGET_FLASH) {
         struct stat st;
         if (stat(ESPD_STORAGE_MOUNT, &st) != 0 || !S_ISDIR(st.st_mode))
             return 0;
         return 1;
     }
-#endif
 #ifdef ESPD_USE_SDCARD
     struct stat st;
     if (stat(ESPD_SDCARD_MOUNT, &st) != 0 || !S_ISDIR(st.st_mode))
@@ -388,7 +378,7 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
 
     dev_refresh_target();
 #if CONFIG_ESPD_USE_USB_MSC
-    if (s_target == DEV_TARGET_MSC) {
+    if (s_target == DEV_TARGET_FLASH && espd_usb_msc_storage_present()) {
         esp_err_t mnt = espd_usb_ensure_msc_app_mount();
         if (mnt != ESP_OK) {
             dev_reply("-ERR reclaim /storage from host failed (eject USB volume on host)");
@@ -513,7 +503,7 @@ static void dev_put_data(const uint8_t *data, size_t len)
         fflush(s_put_fp);
 #if CONFIG_ESPD_USE_USB_MSC
         /* fsync on internal flash is slow and can stall CDC; SD commit is fine after fflush. */
-        if (fd >= 0 && s_target == DEV_TARGET_MSC)
+        if (fd >= 0 && s_target == DEV_TARGET_FLASH && espd_usb_msc_storage_present())
             fsync(fd);
 #else
         (void)fd;
@@ -570,7 +560,7 @@ static void dev_do_reload(void)
 {
     dev_refresh_target();
 #if CONFIG_ESPD_USE_USB_MSC
-    if (s_target == DEV_TARGET_MSC) {
+    if (s_target == DEV_TARGET_FLASH && espd_usb_msc_storage_present()) {
         esp_err_t mnt = espd_usb_ensure_msc_app_mount();
         if (mnt != ESP_OK) {
             dev_reply("-ERR reclaim /storage from host failed (eject USB volume on host)");
@@ -807,7 +797,7 @@ void espd_dev_init(void)
     ESP_LOGI(TAG, "CDC dev sync: PUT/RELOAD -> %s",
         dev_target_mount(s_target));
 #else
-    ESP_LOGI(TAG, "Serial dev sync: PUT/RELOAD -> %s (UART0 921600 BPS)",
+    ESP_LOGI(TAG, "Serial dev sync: PUT/RELOAD -> %s (UART0)",
         dev_target_mount(s_target));
 #endif
 }
