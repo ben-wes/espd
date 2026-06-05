@@ -70,6 +70,7 @@ config ESPD_AUDIO_BACKEND_BSP_CODEC
 
 config ESPD_AUDIO_BACKEND_DAC
     bool "Internal DAC (GPIO25/26)"
+    depends on IDF_TARGET_ESP32 || IDF_TARGET_ESP32H2
     help
         Uses ESP32 internal DAC channels for audio output. Converts int16 PCM
         to 8-bit DAC output. No capture support (adc~ not available).
