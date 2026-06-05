@@ -143,7 +143,9 @@ esp_err_t espd_storage_mount_sdcard(void) {
     if (s_main_pd_mount)
       ESP_LOGI(TAG, "patch store: %s", s_main_pd_mount);
   } else if (e != ESP_ERR_NOT_SUPPORTED) {
-    ESP_LOGD(TAG, "no SD card (%s)", esp_err_to_name(e));
+    ESP_LOGE(TAG, "SD card mount failed: %s", esp_err_to_name(e));
+  } else {
+    ESP_LOGW(TAG, "SD card not supported");
   }
   return e;
 #else
