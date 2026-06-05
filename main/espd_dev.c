@@ -782,7 +782,6 @@ void espd_dev_init(void)
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
         .source_clk = UART_SCLK_DEFAULT,
     };
-    uart_driver_install(UART_NUM_0, 2048, 2048, 0, NULL, 0);
     uart_param_config(UART_NUM_0, &uart_config);
 #endif
 #endif
