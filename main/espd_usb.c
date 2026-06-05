@@ -18,6 +18,7 @@
 #include "freertos/semphr.h"
 #include <string.h>
 #include <stdint.h>
+#include "driver/uart.h"
 
 #if CONFIG_ESPD_USE_USB_OTG
 #include "tinyusb.h"
@@ -89,6 +90,52 @@ static void espd_usb_apply_msc_volume_label_when_ready(void)
     else
         ESP_LOGW(TAG, "Failed to set MSC volume label (res=%d)", res);
 #endif
+}
+
+/* ─── CDC write (serialized for esp_log + protocol replies) ─── */
+
+void espd_usb_cdc_write(const void *data, size_t len)
+{
+    if (!data || len == 0)
+        return;
+
+#if CONFIG_ESPD_DEV_SERIAL_SYNC
+    uart_write_bytes(UART_NUM_0, data, len);
+#elif CONFIG_ESPD_DEV_CDC_SYNC
+    if (!tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0) || !tud_mounted())
+        return;
+    {
+        size_t off = 0;
+        while (off < len) {
+            size_t w = tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0,
+                    (const uint8_t *)data + off, len - off);
+            if (w == 0)
+                break;   /* endpoint busy — drop remainder */
+            off += w;
+            if (off < len)
+                tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+        }
+        (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
+    }
+#endif
+}
+
+static void espd_usb_cdc_write_bytes(const char *data, size_t len)
+{
+    espd_usb_cdc_write(data, len);
+}
+
+int espd_usb_cdc_log_vprintf(const char *fmt, va_list args)
+{
+    char buf[256];
+    int n = vsnprintf(buf, sizeof(buf), fmt, args);
+    if (n > 0) {
+        size_t w = (size_t)n;
+        if (w >= sizeof(buf))
+            w = sizeof(buf) - 1;
+        espd_usb_cdc_write_bytes(buf, w);
+    }
+    return n;
 }
 
 /* ─── TinyUSB MSC storage ─── */
@@ -215,56 +262,6 @@ esp_err_t espd_usb_ensure_msc_app_mount(void)
         TINYUSB_MSC_STORAGE_MOUNT_APP);
 }
 #endif /* CONFIG_ESPD_USE_USB_MSC */
-
-/* ─── CDC write (serialized for esp_log + protocol replies) ─── */
-
-#if CONFIG_ESPD_DEV_SYNC
-#include "driver/uart.h"
-
-void espd_usb_cdc_write(const void *data, size_t len)
-{
-    if (!data || len == 0)
-        return;
-
-#if CONFIG_ESPD_DEV_SERIAL_SYNC
-    uart_write_bytes(UART_NUM_0, data, len);
-#elif CONFIG_ESPD_DEV_CDC_SYNC
-    if (!tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0) || !tud_mounted())
-        return;
-    {
-        size_t off = 0;
-        while (off < len) {
-            size_t w = tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0,
-                    (const uint8_t *)data + off, len - off);
-            if (w == 0)
-                break;   /* endpoint busy — drop remainder */
-            off += w;
-            if (off < len)
-                tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
-        }
-        (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
-    }
-#endif
-}
-
-static void espd_usb_cdc_write_bytes(const char *data, size_t len)
-{
-    espd_usb_cdc_write(data, len);
-}
-
-int espd_usb_cdc_log_vprintf(const char *fmt, va_list args)
-{
-    char buf[256];
-    int n = vsnprintf(buf, sizeof(buf), fmt, args);
-    if (n > 0) {
-        size_t w = (size_t)n;
-        if (w >= sizeof(buf))
-            w = sizeof(buf) - 1;
-        espd_usb_cdc_write_bytes(buf, w);
-    }
-    return n;
-}
-#endif /* CONFIG_ESPD_DEV_SYNC */
 
 /* ─── USJ teardown and TinyUSB boot ─── */
 

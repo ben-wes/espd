@@ -22,7 +22,5 @@ esp_err_t espd_usb_ensure_msc_app_mount(void);
 void espd_usb_drive_mode_wait(void);
 #endif
 
-#if CONFIG_ESPD_DEV_SYNC
 void espd_usb_cdc_write(const void *data, size_t len);
 int espd_usb_cdc_log_vprintf(const char *fmt, va_list args);
-#endif

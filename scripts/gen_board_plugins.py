@@ -136,7 +136,20 @@ def _otg_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str,
     by putting any ESP_CONSOLE_* member in its profile (e.g. keep a UART
     primary on a board that exposes one), and the matching default is skipped.
     """
-    if not _profile_has_usb_otg(data) or str(data.get("target")) not in _USB_OTG_TARGETS:
+    # Check if profile explicitly disables USB OTG (overrides features.imply)
+    profile = data.get("profile") or {}
+    usb_otg_disabled = False
+    usb_otg_explicit = False
+    for options in profile.values():
+        if isinstance(options, dict):
+            val = options.get("ESPD_USE_USB_OTG")
+            if val is not None:
+                usb_otg_explicit = True
+                if not _kconfig_value(val):
+                    usb_otg_disabled = True
+                    break
+    
+    if not _profile_has_usb_otg(data) or usb_otg_disabled or str(data.get("target")) not in _USB_OTG_TARGETS:
         return []
     
     _CONSOLE_PRIMARY_MEMBERS = {
@@ -152,6 +165,18 @@ def _otg_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str,
     }
     
     extras: list[tuple[str, object]] = []
+    # Skip console handoff if profile explicitly sets any console option or dev sync option
+    # (allows boards to override features.imply for console configuration)
+    if profile_keys & _CONSOLE_PRIMARY_MEMBERS:
+        # Profile has explicit console setting, skip handoff
+        return []
+    if "ESPD_DEV_SYNC" in profile_keys or "ESPD_DEV_SERIAL_SYNC" in profile_keys or "ESPD_DEV_CDC_SYNC" in profile_keys:
+        # Profile has explicit dev sync setting, skip console handoff (may come from chip defaults)
+        return []
+    # If USB OTG is only in features.imply (not explicit in profile), be conservative
+    # and don't disable console to allow chip defaults (e.g., serial sync) to work
+    if not usb_otg_explicit:
+        return []
     if not (profile_keys & _CONSOLE_PRIMARY_MEMBERS):
         extras.append(("ESP_CONSOLE_NONE", True))
     if not (profile_keys & _CONSOLE_SECONDARY_MEMBERS):
