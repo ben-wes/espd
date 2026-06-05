@@ -327,8 +327,8 @@ void app_main(void)
 
 #ifdef ESPD_USE_WIFI
     if (espd_wifi_net_enabled) {
-#if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
         wifi_wait_sta(pdMS_TO_TICKS(2000));
+#if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
         net_init();
         net_hello();
 #endif
