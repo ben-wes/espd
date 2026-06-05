@@ -7,8 +7,10 @@ Run automatically from root CMakeLists.txt before Kconfig / component discovery.
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 try:
@@ -20,14 +22,17 @@ except ImportError as exc:  # pragma: no cover
 
 ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 GENERATED_HEADER = "# Auto-generated from {src} — do not edit.\n"
-# Standardized peripheral schemas
+
+_USB_OTG_TARGETS = {"esp32s3", "esp32c3", "esp32c6", "esp32h2", "esp32c5", "esp32p4"}
+_WIFI_USB_TARGETS = {"esp32s3", "esp32c3", "esp32c6", "esp32h2", "esp32c5"}
+
+@dataclass
+class PeripheralSchema:
+    required: list[str]
+
 _SUPPORTED_PERIPHERALS = {
-    "sensor": {
-        "required": ["bsp_getter", "rate_ms", "outputs"],
-    },
-    "actuator": {
-        "required": ["bsp_setter", "inputs"],
-    }
+    "sensor": PeripheralSchema(required=["bsp_getter", "rate_ms", "outputs"]),
+    "actuator": PeripheralSchema(required=["bsp_setter", "inputs"]),
 }
 
 def _gen_cmake_glue(data: dict, src: str) -> str:
@@ -99,11 +104,8 @@ def _config_line(key: str, value) -> str:
         return f"CONFIG_{k}=\n"
     if isinstance(value, bool):
         return f"CONFIG_{k}={'y' if value else 'n'}\n"
-    if isinstance(value, str):
-        s = value.strip()
-        if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
-            return f"CONFIG_{k}={s}\n"
-        return f'CONFIG_{k}="{s}"\n'
+    if isinstance(value, str) and not (value[0] in '"\'' and value[-1] in "'\""):
+        return f'CONFIG_{k}="{value}"\n'
     return f"CONFIG_{k}={value}\n"
 
 
@@ -125,19 +127,6 @@ def _profile_has_wifi(data: dict) -> bool:
     return _feature_implied(data, "ESPD_USE_WIFI")
 
 
-_CONSOLE_PRIMARY_MEMBERS = {
-    "ESP_CONSOLE_UART_DEFAULT",
-    "ESP_CONSOLE_USB_CDC",
-    "ESP_CONSOLE_USB_SERIAL_JTAG",
-    "ESP_CONSOLE_UART_CUSTOM",
-    "ESP_CONSOLE_NONE",
-}
-_CONSOLE_SECONDARY_MEMBERS = {
-    "ESP_CONSOLE_SECONDARY_NONE",
-    "ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG",
-}
-
-
 def _otg_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str, object]]:
     """Hand the shared USB PHY to OTG: console off, USB Serial/JTAG off.
 
@@ -147,15 +136,21 @@ def _otg_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str,
     by putting any ESP_CONSOLE_* member in its profile (e.g. keep a UART
     primary on a board that exposes one), and the matching default is skipped.
     """
-    if not _profile_has_usb_otg(data) or str(data.get("target")) not in (
-        "esp32s3",
-        "esp32c3",
-        "esp32c6",
-        "esp32h2",
-        "esp32c5",
-        "esp32p4",
-    ):
+    if not _profile_has_usb_otg(data) or str(data.get("target")) not in _USB_OTG_TARGETS:
         return []
+    
+    _CONSOLE_PRIMARY_MEMBERS = {
+        "ESP_CONSOLE_UART_DEFAULT",
+        "ESP_CONSOLE_USB_CDC",
+        "ESP_CONSOLE_USB_SERIAL_JTAG",
+        "ESP_CONSOLE_UART_CUSTOM",
+        "ESP_CONSOLE_NONE",
+    }
+    _CONSOLE_SECONDARY_MEMBERS = {
+        "ESP_CONSOLE_SECONDARY_NONE",
+        "ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG",
+    }
+    
     extras: list[tuple[str, object]] = []
     if not (profile_keys & _CONSOLE_PRIMARY_MEMBERS):
         extras.append(("ESP_CONSOLE_NONE", True))
@@ -175,13 +170,7 @@ def _wifi_usb_coexist_extras(data: dict, profile_keys: set[str]) -> list[tuple[s
     when console is not USB Serial/JTAG). Required for OTG CDC after esp_wifi_init()."""
     if not _profile_has_usb_otg(data) or not _profile_has_wifi(data):
         return []
-    if str(data.get("target")) not in (
-        "esp32s3",
-        "esp32c3",
-        "esp32c6",
-        "esp32h2",
-        "esp32c5",
-    ):
+    if str(data.get("target")) not in _WIFI_USB_TARGETS:
         return []
     if "ESP_PHY_ENABLE_USB" in profile_keys:
         return []
@@ -212,21 +201,14 @@ def _validate_peripherals(data: dict, path: Path) -> None:
             )
         
         schema = _SUPPORTED_PERIPHERALS[ptype]
-        for req in schema["required"]:
+        for req in schema.required:
             if req not in p:
                 raise ValueError(f"{path}: peripheral {ptype!r} at index {i} missing required key {req!r}")
         
-        # Validate outputs
-        if "outputs" in schema:
-            outputs = p.get("outputs") or []
-            if not isinstance(outputs, list):
-                raise ValueError(f"{path}: peripheral outputs at index {i} must be a list of symbols")
-        
-        # Validate inputs
-        if "inputs" in schema:
-            inputs = p.get("inputs") or []
-            if not isinstance(inputs, list):
-                raise ValueError(f"{path}: peripheral inputs at index {i} must be a list of symbols")
+        # Validate list types for known keys
+        for list_key in ("outputs", "inputs"):
+            if list_key in p and not isinstance(p[list_key], list):
+                raise ValueError(f"{path}: peripheral {list_key} at index {i} must be a list")
 
 
 def _validate_board(data: dict, path: Path) -> None:
@@ -252,13 +234,20 @@ def _gen_kconfig(data: dict, src: str) -> str:
     target = data["target"]
     name = data["name"]
     help_text = (data.get("help") or name).strip()
+    bsp = data.get("bsp", {})
+    
+    # Only select ESPD_BOARD_ESP_BSP_GLUE for non-local BSPs
+    # Local BSPs (path: local) don't provide bsp/esp-bsp.h
+    select_bsp_glue = bsp.get("path") != "local"
+    
     lines = [
         GENERATED_HEADER.format(src=src),
         f"config {sym}\n",
         f'    bool "{name}"\n',
         f"    depends on IDF_TARGET_{target.upper()}\n",
-        "    select ESPD_BOARD_ESP_BSP_GLUE\n",
     ]
+    if select_bsp_glue:
+        lines.append("    select ESPD_BOARD_ESP_BSP_GLUE\n")
     for feat in data.get("features", {}).get("imply", []) or []:
         lines.append(f"    imply {feat}\n")
     lines.append("    help\n")
@@ -289,8 +278,11 @@ def _gen_idf_component_yml(data: dict, src: str) -> str:
     elif "registry" in bsp or "version" in bsp:
         ver = bsp.get("registry") or bsp.get("version")
         lines.append(f"    version: \"{ver}\"\n")
+    elif bsp.get("path") == "local":
+        # Local BSP from local_components/
+        lines.append(f'    path: ../../local_components/{comp}\n')
     else:
-        raise ValueError(f"{src}: bsp needs git or registry version")
+        raise ValueError(f"{src}: bsp needs git, registry version, or path: local")
     return "".join(lines)
 
 
@@ -317,13 +309,18 @@ def _gen_sdkconfig_defaults(data: dict, src: str) -> str:
         for feat in feat_defaults:
             lines.append(_config_line(feat, True))
         lines.append("\n")
-    extras = _otg_sdkconfig_extras(data, profile_keys)
+    
+    # Cache feature checks
+    has_usb_otg = _profile_has_usb_otg(data)
+    has_wifi = _profile_has_wifi(data)
+    
+    extras = _otg_sdkconfig_extras(data, profile_keys) if has_usb_otg else []
     if extras:
         lines.append("# --- USB OTG console handoff (auto) ---\n\n")
         for key, value in extras:
             lines.append(_config_line(key, value))
         lines.append("\n")
-    coexist = _wifi_usb_coexist_extras(data, profile_keys)
+    coexist = _wifi_usb_coexist_extras(data, profile_keys) if has_usb_otg and has_wifi else []
     if coexist:
         lines.append("# --- Wi-Fi + OTG (auto) ---\n\n")
         for key, value in coexist:
@@ -368,6 +365,61 @@ def _write_if_changed(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
+def _gen_sensor_code(p: dict, idx: int) -> tuple[str, str]:
+    name = p.get("name", f"device_{idx}")
+    getter = p["bsp_getter"]
+    rate = p["rate_ms"]
+    outputs = p["outputs"]
+    
+    var_decls = ", ".join(f"val_{i} = 0.0f" for i in range(len(outputs)))
+    var_ptrs = ", ".join(f"&val_{i}" for i in range(len(outputs)))
+    send_calls = "\n".join(f'        _espd_send_pd_float("{sym}", val_{i});' 
+                          for i, sym in enumerate(outputs))
+    
+    task = f"""        // Poll sensor {name} using BSP getter {getter}
+        {{
+            float {var_decls};
+            {getter}({var_ptrs});
+{send_calls}
+            vTaskDelay(pdMS_TO_TICKS({rate}));
+        }}"""
+    return "", task
+
+
+def _gen_actuator_code(p: dict, idx: int) -> tuple[str, str]:
+    name = p.get("name", f"device_{idx}")
+    setter = p["bsp_setter"]
+    inputs = p["inputs"]
+    
+    global_code = []
+    init_code = []
+    
+    for i, pd_sym in enumerate(inputs):
+        global_code.append(f"""
+// Actuator {name} callback for index {i}
+static t_class *actuator_class_{name}_{i};
+typedef struct _actuator_recv_{name}_{i} {{
+    t_pd x_pd;
+}} t_actuator_recv_{name}_{i};
+static t_actuator_recv_{name}_{i} actuator_instance_{name}_{i};
+
+extern void {setter}(float val);
+
+static void actuator_recv_val_{name}_{i}(t_actuator_recv_{name}_{i} *x, t_float f) {{
+    {setter}((float)f);
+}}
+""")
+        init_code.append(f"""
+    // Bind Pd receiver for {pd_sym} to {setter}
+    actuator_class_{name}_{i} = class_new(gensym("_actuator_{name}_{i}"), 0, 0, sizeof(t_actuator_recv_{name}_{i}), CLASS_PD, 0);
+    class_addfloat(actuator_class_{name}_{i}, (t_method)actuator_recv_val_{name}_{i});
+    actuator_instance_{name}_{i}.x_pd = actuator_class_{name}_{i};
+    pd_bind((t_pd *)&actuator_instance_{name}_{i}, gensym("{pd_sym}"));
+""")
+    
+    return "\n".join(global_code), "\n".join(init_code)
+
+
 def _gen_peripherals_c(data: dict, src: str) -> str:
     peripherals = data.get("peripherals") or []
     if not peripherals:
@@ -381,59 +433,14 @@ def _gen_peripherals_c(data: dict, src: str) -> str:
     
     for i, p in enumerate(peripherals):
         ptype = p["type"]
-        name = p.get("name", f"device_{i}")
-        
         if ptype == "sensor":
-            getter = p["bsp_getter"]
-            rate = p["rate_ms"]
-            outputs = p["outputs"]
-            
-            var_declarations = ", ".join(f"val_{idx} = 0.0f" for idx in range(len(outputs)))
-            var_pointers = ", ".join(f"&val_{idx}" for idx in range(len(outputs)))
-            
-            send_calls = []
-            for idx, pd_sym in enumerate(outputs):
-                send_calls.append(f'        _espd_send_pd_float("{pd_sym}", val_{idx});')
-            
-            send_calls_str = "\n".join(send_calls)
-            
-            task_code.append(f"""
-        // Poll sensor {name} using BSP getter {getter}
-        {{
-            float {var_declarations};
-            {getter}({var_pointers});
-{send_calls_str}
-            vTaskDelay(pdMS_TO_TICKS({rate}));
-        }}
-""")
-            
+            g, t = _gen_sensor_code(p, i)
+            task_code.append(t)
         elif ptype == "actuator":
-            setter = p["bsp_setter"]
-            inputs = p["inputs"]
-            
-            for idx, pd_sym in enumerate(inputs):
-                global_code.append(f"""
-// Actuator {name} callback for index {idx}
-static t_class *actuator_class_{name}_{idx};
-typedef struct _actuator_recv_{name}_{idx} {{
-    t_pd x_pd;
-}} t_actuator_recv_{name}_{idx};
-static t_actuator_recv_{name}_{idx} actuator_instance_{name}_{idx};
-
-extern void {setter}(float val);
-
-static void actuator_recv_val_{name}_{idx}(t_actuator_recv_{name}_{idx} *x, t_float f) {{
-    {setter}((float)f);
-}}
-""")
-                init_code.append(f"""
-    // Bind Pd receiver for {pd_sym} to {setter}
-    actuator_class_{name}_{idx} = class_new(gensym("_actuator_{name}_{idx}"), 0, 0, sizeof(t_actuator_recv_{name}_{idx}), CLASS_PD, 0);
-    class_addfloat(actuator_class_{name}_{idx}, (t_method)actuator_recv_val_{name}_{idx});
-    actuator_instance_{name}_{idx}.x_pd = actuator_class_{name}_{idx};
-    pd_bind((t_pd *)&actuator_instance_{name}_{idx}, gensym("{pd_sym}"));
-""")
-            
+            g, t = _gen_actuator_code(p, i)
+            global_code.append(g)
+            init_code.append(t)
+    
     globals_str = "\n".join(global_code)
     inits_str = "\n".join(init_code)
     tasks_str = "\n".join(task_code)
@@ -479,7 +486,7 @@ void espd_board_peripherals_init(void)
 """
 
 
-def _generate_board(repo: Path, yaml_path: Path, boards_dir: Path) -> Path:
+def _generate_board(repo: Path, yaml_path: Path) -> Path:
     try:
         rel_src = yaml_path.relative_to(repo).as_posix()
     except ValueError:
@@ -516,15 +523,12 @@ def _generate_board(repo: Path, yaml_path: Path, boards_dir: Path) -> Path:
 
 
 def _parse_args(argv: list[str]) -> tuple[Path, Path]:
-    repo = Path(argv[1] if len(argv) > 1 else ".").resolve()
-    boards_dir = repo / "boards"
-    i = 2
-    while i < len(argv):
-        if argv[i] == "--boards-dir" and i + 1 < len(argv):
-            boards_dir = Path(argv[i + 1]).resolve()
-            i += 2
-            continue
-        raise SystemExit(f"unknown argument: {argv[i]}")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("repo", nargs="?", default=".", type=Path)
+    parser.add_argument("--boards-dir", type=Path)
+    args = parser.parse_args(argv[1:])
+    repo = args.repo.resolve()
+    boards_dir = args.boards_dir.resolve() if args.boards_dir else repo / "boards"
     return repo, boards_dir
 
 
@@ -540,7 +544,7 @@ def main(argv: list[str]) -> int:
         return 0
 
     for yaml_path in yaml_files:
-        out = _generate_board(repo, yaml_path, boards_dir)
+        out = _generate_board(repo, yaml_path)
         print(f"gen_board_plugins: {yaml_path} -> {out.relative_to(repo)}")
 
     return 0
