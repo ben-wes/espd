@@ -27,7 +27,7 @@
 #include "tinyusb_console.h"
 #include "tinyusb_default_config.h"
 #endif
-#if CONFIG_ESPD_USE_USB_OTG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
+#if (CONFIG_ESPD_USE_USB_OTG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED) || (CONFIG_ESPD_DEV_SERIAL_SYNC && SOC_USB_SERIAL_JTAG_SUPPORTED)
 #include "driver/usb_serial_jtag.h"
 #endif
 #if CONFIG_ESPD_DEV_CDC_SYNC
@@ -100,7 +100,11 @@ void espd_usb_cdc_write(const void *data, size_t len)
         return;
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
+#if SOC_USB_SERIAL_JTAG_SUPPORTED
+    usb_serial_jtag_write_bytes(data, len, pdMS_TO_TICKS(100));
+#else
     uart_write_bytes(UART_NUM_0, data, len);
+#endif
 #elif CONFIG_ESPD_DEV_CDC_SYNC
     if (!tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0) || !tud_mounted())
         return;
