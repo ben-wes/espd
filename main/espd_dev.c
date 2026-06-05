@@ -779,7 +779,11 @@ void espd_dev_init(void)
     dev_refresh_target();
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
-    /* Initialize high-speed standard serial UART port */
+    /* Initialize UART driver (safe to call if already installed by console) */
+    uart_driver_install(UART_NUM_0, 2048, 2048, 0, NULL, 0);
+    
+    /* Only reconfigure baud rate if console is not using UART0.*/
+#if !(CONFIG_ESP_CONSOLE_UART && CONFIG_ESP_CONSOLE_UART_NUM == 0)
     uart_config_t uart_config = {
         .baud_rate = 921600,
         .data_bits = UART_DATA_8_BITS,
@@ -790,6 +794,7 @@ void espd_dev_init(void)
     };
     uart_driver_install(UART_NUM_0, 2048, 2048, 0, NULL, 0);
     uart_param_config(UART_NUM_0, &uart_config);
+#endif
 #endif
 
     if (xTaskCreatePinnedToCore(espd_dev_task, "espd_dev", ESPD_DEV_TASK_STACK, NULL,
