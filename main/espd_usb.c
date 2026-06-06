@@ -321,6 +321,11 @@ void espd_usb_drive_mode_wait(void)
     }
 
     ESP_LOGI(TAG, "USB drive ejected, storage remounted to APP");
+
+#if CONFIG_ESPD_DEV_SERIAL_SYNC
+    espd_dev_init();
+    esp_log_set_vprintf(espd_serial_sync_log);
+#endif
 }
 #endif
 
