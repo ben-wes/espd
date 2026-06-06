@@ -214,7 +214,7 @@ static void dev_reply(const char *msg)
     n = snprintf(line, sizeof(line), "%s\r\n", msg);
     if (n <= 0)
         return;
-    espd_usb_cdc_write(line, (size_t)n);
+    espd_serial_sync_write(line, (size_t)n);
 }
 
 static const char *dev_target_mount(dev_target_t target)

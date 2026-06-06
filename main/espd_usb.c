@@ -94,7 +94,7 @@ static void espd_usb_apply_msc_volume_label_when_ready(void)
 
 /* ─── CDC write (serialized for esp_log + protocol replies) ─── */
 
-void espd_usb_cdc_write(const void *data, size_t len)
+void espd_serial_sync_write(const void *data, size_t len)
 {
     if (!data || len == 0)
         return;
@@ -124,12 +124,7 @@ void espd_usb_cdc_write(const void *data, size_t len)
 #endif
 }
 
-static void espd_usb_cdc_write_bytes(const char *data, size_t len)
-{
-    espd_usb_cdc_write(data, len);
-}
-
-int espd_usb_cdc_log_vprintf(const char *fmt, va_list args)
+int espd_serial_sync_log(const char *fmt, va_list args)
 {
     char buf[256];
     int n = vsnprintf(buf, sizeof(buf), fmt, args);
@@ -137,7 +132,7 @@ int espd_usb_cdc_log_vprintf(const char *fmt, va_list args)
         size_t w = (size_t)n;
         if (w >= sizeof(buf))
             w = sizeof(buf) - 1;
-        espd_usb_cdc_write_bytes(buf, w);
+        espd_serial_sync_write(buf, w);
     }
     return n;
 }
@@ -327,7 +322,7 @@ static bool usb_init_on_core0(void)
 
 #if CONFIG_ESPD_DEV_CDC_SYNC
     espd_dev_init();
-    esp_log_set_vprintf(espd_usb_cdc_log_vprintf);
+    esp_log_set_vprintf(espd_serial_sync_log);
 #elif CONFIG_ESPD_USB_CONSOLE_CDC
     err = tinyusb_console_init(TINYUSB_CDC_ACM_0);
     if (err != ESP_OK)
