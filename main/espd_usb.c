@@ -41,6 +41,7 @@ static const char *TAG = "espd_usb";
 
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
 static tinyusb_msc_storage_handle_t msc_handle = NULL;
+static volatile bool s_msc_should_exit_drive_mode = false;
 #endif
 static wl_handle_t wl_handle = WL_INVALID_HANDLE;
 static bool s_flash_vfs_early;
@@ -139,6 +140,38 @@ int espd_serial_sync_log(const char *fmt, va_list args)
 
 /* ─── TinyUSB MSC storage ─── */
 
+#if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
+static void espd_usb_msc_event_callback(tinyusb_msc_storage_handle_t handle,
+                                          tinyusb_msc_event_t *event, void *arg)
+{
+    (void)handle;
+    (void)arg;
+
+    switch (event->id) {
+    case TINYUSB_MSC_EVENT_MOUNT_START:
+        ESP_LOGI(TAG, "MSC mount start (mount_point=%d)", event->mount_point);
+        break;
+    case TINYUSB_MSC_EVENT_MOUNT_COMPLETE:
+        ESP_LOGI(TAG, "MSC mount complete (mount_point=%d)", event->mount_point);
+        if (event->mount_point == TINYUSB_MSC_STORAGE_MOUNT_APP) {
+            s_msc_should_exit_drive_mode = true;
+        }
+        break;
+    case TINYUSB_MSC_EVENT_MOUNT_FAILED:
+        ESP_LOGW(TAG, "MSC mount failed (mount_point=%d)", event->mount_point);
+        break;
+    case TINYUSB_MSC_EVENT_FORMAT_REQUIRED:
+        ESP_LOGW(TAG, "MSC format required");
+        break;
+    case TINYUSB_MSC_EVENT_FORMAT_FAILED:
+        ESP_LOGW(TAG, "MSC format failed");
+        break;
+    default:
+        break;
+    }
+}
+#endif
+
 #if CONFIG_ESPD_USE_USB_OTG
 
 #define ESPD_USB_TASK_CORE          0
@@ -149,7 +182,9 @@ int espd_serial_sync_log(const char *fmt, va_list args)
 static esp_err_t espd_usb_msc_driver_ensure(void)
 {
     tinyusb_msc_driver_config_t msc_drv_cfg = {
-        .user_flags.auto_mount_off = 1,
+        .user_flags.auto_mount_off = 0,
+        .callback = espd_usb_msc_event_callback,
+        .callback_arg = NULL,
     };
     esp_err_t err = tinyusb_msc_install_driver(&msc_drv_cfg);
     if (err == ESP_OK || err == ESP_ERR_INVALID_STATE)
@@ -278,8 +313,14 @@ static void espd_usb_release_usj_for_otg(void)
 void espd_usb_drive_mode_wait(void)
 {
     (void)espd_usb_expose_msc_to_host();
-    ESP_LOGI(TAG, "USB drive mode -- reset to start audio");
-    vTaskSuspend(NULL);
+    ESP_LOGI(TAG, "USB drive mode -- eject to start audio");
+
+    s_msc_should_exit_drive_mode = false;
+    while (!s_msc_should_exit_drive_mode) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    ESP_LOGI(TAG, "USB drive ejected, storage remounted to APP");
 }
 #endif
 
