@@ -336,16 +336,18 @@ void app_main(void)
 #endif
 
 #if CONFIG_ESPD_USE_USB_MSC
-    if (espd_usb_msc_storage_present()) { 
-        if (tud_mounted()) { 
-            espd_usb_drive_mode_wait();
-        }
+    /* Drive mode (expose flash to host, Pd suspended until eject) only on a real
+     * power-on with a host attached. A software reset — notably the dev-sync RESET
+     * command's esp_restart() — returns straight to Pd with the flash internal, so
+     * the host can't re-grab it and the host-side sync reconnects cleanly. */
+    if (esp_reset_reason() == ESP_RST_POWERON
+        && espd_usb_msc_storage_present() && tud_mounted()) {
+        espd_usb_drive_mode_wait();
     }
 
-    espd_usb_msc_unmount_storage();
-    espd_usb_msc_reinstall_driver_with_auto_mount_off();
-    espd_usb_msc_remount_vfs();
-    espd_usb_msc_disable_after_eject();
+    /* Always hand the flash to the app (auto_mount_off=1, direct VFS) before Pd
+     * starts, so the host can never (auto-)mount it while Pd is running. */
+    espd_usb_msc_disable_and_remount_vfs();
 
 #if CONFIG_ESPD_DEV_CDC_SYNC
     espd_dev_init();

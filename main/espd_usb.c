@@ -41,7 +41,6 @@ static const char *TAG = "espd_usb";
 
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
 static tinyusb_msc_storage_handle_t msc_handle = NULL;
-static bool s_msc_disabled_after_eject = false;
 #endif
 static wl_handle_t wl_handle = WL_INVALID_HANDLE;
 static bool s_flash_vfs_early;
@@ -295,7 +294,7 @@ esp_err_t espd_usb_ensure_msc_app_mount(void)
 #endif /* CONFIG_ESPD_USE_USB_MSC */
 
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
-esp_err_t espd_usb_msc_unmount_storage(void)
+static esp_err_t espd_usb_msc_unmount_storage(void)
 {
     if (!msc_handle) {
         return ESP_OK; /* Already disabled */
@@ -314,7 +313,7 @@ esp_err_t espd_usb_msc_unmount_storage(void)
     return ESP_OK;
 }
 
-esp_err_t espd_usb_msc_reinstall_driver_with_auto_mount_off(void)
+static esp_err_t espd_usb_msc_reinstall_driver_with_auto_mount_off(void)
 {
     /* Uninstall MSC driver */
     esp_err_t err = tinyusb_msc_uninstall_driver();
@@ -343,39 +342,31 @@ esp_err_t espd_usb_msc_reinstall_driver_with_auto_mount_off(void)
     return err;
 }
 
-esp_err_t espd_usb_msc_remount_vfs(void)
+static esp_err_t espd_usb_msc_remount_vfs(void)
 {
     /* Remount storage using direct VFS */
     esp_err_t err = espd_usb_mount_flash_early_vfs();
-    if (err == ESP_OK) {
+    if (err == ESP_OK)
         ESP_LOGI(TAG, "Storage remounted via direct VFS");
-        s_msc_disabled_after_eject = true;
-    } else {
+    else
         ESP_LOGE(TAG, "Failed to remount storage via direct VFS: %s", esp_err_to_name(err));
-    }
-
     return err;
 }
 
+/* Take the flash from the host: drop the MSC storage, reinstall the driver with
+ * auto_mount_off=1 (so a USB (re)connect can't auto-expose it), and remount it for
+ * the app via direct VFS. Called before Pd starts and to reclaim from drive mode. */
 esp_err_t espd_usb_msc_disable_and_remount_vfs(void)
 {
     esp_err_t err = espd_usb_msc_unmount_storage();
-    if (err != ESP_OK) {
+    if (err != ESP_OK)
         return err;
-    }
 
     err = espd_usb_msc_reinstall_driver_with_auto_mount_off();
-    if (err != ESP_OK) {
+    if (err != ESP_OK)
         ESP_LOGW(TAG, "MSC driver reinstall failed, continuing anyway");
-    }
 
-    err = espd_usb_msc_remount_vfs();
-    return err;
-}
-
-void espd_usb_msc_disable_after_eject()
-{
-    s_msc_disabled_after_eject = true;
+    return espd_usb_msc_remount_vfs();
 }
 #endif /* CONFIG_ESPD_USE_USB_MSC */
 
@@ -461,7 +452,7 @@ static bool usb_init_on_core0(void)
 #endif
 
 #if CONFIG_ESPD_USE_USB_MSC
-    if (msc_handle == NULL && !s_msc_disabled_after_eject) {
+    if (msc_handle == NULL) {
         err = espd_usb_mount_storage_app();
         if (err != ESP_OK)
             ESP_LOGW(TAG, "/storage mount failed: %s", esp_err_to_name(err));
