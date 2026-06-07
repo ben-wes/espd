@@ -42,6 +42,7 @@ static const char *TAG = "espd_usb";
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
 static tinyusb_msc_storage_handle_t msc_handle = NULL;
 static volatile bool s_msc_should_exit_drive_mode = false;
+static bool s_msc_disabled_after_eject = false;
 #endif
 static wl_handle_t wl_handle = WL_INVALID_HANDLE;
 static bool s_flash_vfs_early;
@@ -297,6 +298,65 @@ esp_err_t espd_usb_ensure_msc_app_mount(void)
 }
 #endif /* CONFIG_ESPD_USE_USB_MSC */
 
+#if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
+esp_err_t espd_usb_msc_disable_and_remount_vfs(void)
+{
+    if (!msc_handle) {
+        return ESP_OK; /* Already disabled */
+    }
+
+    ESP_LOGI(TAG, "Unmounting MSC storage");
+    esp_err_t err = tinyusb_msc_delete_storage(msc_handle);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "MSC storage unmounted");
+        msc_handle = NULL;
+    } else {
+        ESP_LOGW(TAG, "MSC storage unmounting failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    /* Uninstall MSC driver */
+    err = tinyusb_msc_uninstall_driver();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "MSC driver uninstalled");
+    } else if (err == ESP_ERR_NOT_SUPPORTED) {
+        ESP_LOGW(TAG, "MSC driver not installed");
+    } else {
+        ESP_LOGW(TAG, "MSC driver uninstall failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    /* Reinstall MSC driver with auto_mount_off=1 to prevent auto-remount on USB reconnect */
+    tinyusb_msc_driver_config_t msc_drv_cfg = {
+        .user_flags.auto_mount_off = 1,
+        .callback = NULL,
+        .callback_arg = NULL,
+    };
+    err = tinyusb_msc_install_driver(&msc_drv_cfg);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "MSC driver reinstalled with auto_mount_off=1");
+    } else {
+        ESP_LOGW(TAG, "MSC driver reinstall failed: %s", esp_err_to_name(err));
+    }
+
+    /* Remount storage using direct VFS */
+    err = espd_usb_mount_flash_early_vfs();
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "Storage remounted via direct VFS");
+        s_msc_disabled_after_eject = true;
+    } else {
+        ESP_LOGE(TAG, "Failed to remount storage via direct VFS: %s", esp_err_to_name(err));
+    }
+
+    return err;
+}
+
+void espd_usb_msc_disable_after_eject()
+{
+    s_msc_disabled_after_eject = true;
+}
+#endif /* CONFIG_ESPD_USE_USB_MSC */
+
 /* ─── USJ teardown and TinyUSB boot ─── */
 
 static void espd_usb_release_usj_for_otg(void)
@@ -320,12 +380,7 @@ void espd_usb_drive_mode_wait(void)
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
-    ESP_LOGI(TAG, "USB drive ejected, storage remounted to APP");
-
-#if CONFIG_ESPD_DEV_SERIAL_SYNC
-    espd_dev_init();
-    esp_log_set_vprintf(espd_serial_sync_log);
-#endif
+    ESP_LOGI(TAG, "USB drive ejected by host");
 }
 #endif
 
@@ -380,7 +435,7 @@ static bool usb_init_on_core0(void)
 #endif
 
 #if CONFIG_ESPD_USE_USB_MSC
-    if (msc_handle == NULL) {
+    if (msc_handle == NULL && !s_msc_disabled_after_eject) {
         err = espd_usb_mount_storage_app();
         if (err != ESP_OK)
             ESP_LOGW(TAG, "/storage mount failed: %s", esp_err_to_name(err));

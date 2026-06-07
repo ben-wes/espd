@@ -334,9 +334,22 @@ void app_main(void)
 #endif
     }
 #endif
+
 #if CONFIG_ESPD_USE_USB_MSC
-    if (espd_usb_msc_storage_present() && tud_mounted())
+    if (espd_usb_msc_storage_present() && tud_mounted()) { 
         espd_usb_drive_mode_wait();
+
+        esp_err_t err = espd_usb_msc_disable_and_remount_vfs();
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "MSC disable failed, continuing anyway");
+        }
+    }
+    espd_usb_msc_disable_after_eject();
+
+#if CONFIG_ESPD_DEV_CDC_SYNC
+    espd_dev_init();
+    esp_log_set_vprintf(espd_serial_sync_log);
+#endif
 #endif
 
     espd_initdacs();
