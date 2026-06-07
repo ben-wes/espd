@@ -1,11 +1,8 @@
 # ESP32 (classic) — conservative defaults for typical 4 MB dev boards (~320 KB RAM).
-
-# Select the generic board for ESP32
-CONFIG_ESPD_BOARD_GENERIC=y
-
-CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_pd_4mb.csv"
-CONFIG_PARTITION_TABLE_FILENAME="partitions_pd_4mb.csv"
+# Chip files are IDF tuning only; board choice is the Kconfig "ESPD_BOARD" choice
+# (defaults to generic, override in menuconfig or sdkconfig.defaults.local). Flash
+# size / partition table come from the base 4 MB fallback (a board's `flash:`
+# overrides it).
 
 # Pd on app_main; IDF default 3584 overflows on FFT-heavy patches. Same need as
 # S3, but internal RAM is much tighter here — avoid large static allocations.

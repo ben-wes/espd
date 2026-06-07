@@ -9,16 +9,10 @@ cmake_minimum_required(VERSION 3.16...3.30)
 
 set(SDKCONFIG_DEFAULTS "${CMAKE_SOURCE_DIR}/sdkconfig.defaults")
 
-# Optional target-specific chip defaults (merged before board/local profiles so they can override them).
-set(_idf_target_name "")
-if(DEFINED IDF_TARGET AND NOT "${IDF_TARGET}" STREQUAL "")
-    set(_idf_target_name "${IDF_TARGET}")
-elseif(DEFINED ENV{IDF_TARGET} AND NOT "$ENV{IDF_TARGET}" STREQUAL "")
-    set(_idf_target_name "$ENV{IDF_TARGET}")
-endif()
-if(_idf_target_name AND EXISTS "${CMAKE_SOURCE_DIR}/sdkconfig.defaults.${_idf_target_name}.chip")
-    list(APPEND SDKCONFIG_DEFAULTS "${CMAKE_SOURCE_DIR}/sdkconfig.defaults.${_idf_target_name}.chip")
-endif()
+# Per-chip tuning lives in sdkconfig.defaults.<target> (e.g. sdkconfig.defaults.esp32s3).
+# IDF merges "<entry>.<IDF_TARGET>" right after each SDKCONFIG_DEFAULTS entry on its
+# own (tools/cmake/kconfig.cmake), so the base file pulls in the chip file with no
+# code here — keeping the chip layer IDF tuning only (never a board choice).
 
 # Optional local overlay (menuconfig alternative) — gitignored; kits CI writes this file.
 set(_espd_extra_defaults "")
@@ -39,23 +33,16 @@ foreach(_espd_defaults_file IN LISTS _espd_extra_defaults)
     list(APPEND SDKCONFIG_DEFAULTS "${_espd_defaults_file}")
 endforeach()
 
-# Read sdkconfig when present; otherwise scan sdkconfig.defaults (+ target file) so
-# board profile defaults apply before the first menuconfig / kconfgen run.
+# Read sdkconfig when present; otherwise scan the defaults that can carry a board
+# choice (base + local/env overlays) so the active board is known before the first
+# kconfgen run. Chip files (sdkconfig.defaults.<target>) are IDF tuning only and
+# never declare a board, so they are not scanned here.
 function(_espd_collect_config_text _out_var)
     if(EXISTS "${CMAKE_SOURCE_DIR}/sdkconfig")
         file(READ "${CMAKE_SOURCE_DIR}/sdkconfig" _text)
     else()
         set(_text "")
         set(_defaults_files "${CMAKE_SOURCE_DIR}/sdkconfig.defaults")
-        set(_collect_target "")
-        if(DEFINED IDF_TARGET AND NOT "${IDF_TARGET}" STREQUAL "")
-            set(_collect_target "${IDF_TARGET}")
-        elseif(DEFINED ENV{IDF_TARGET} AND NOT "$ENV{IDF_TARGET}" STREQUAL "")
-            set(_collect_target "$ENV{IDF_TARGET}")
-        endif()
-        if(_collect_target AND EXISTS "${CMAKE_SOURCE_DIR}/sdkconfig.defaults.${_collect_target}.chip")
-            list(APPEND _defaults_files "${CMAKE_SOURCE_DIR}/sdkconfig.defaults.${_collect_target}.chip")
-        endif()
         if(_espd_extra_defaults)
             list(APPEND _defaults_files ${_espd_extra_defaults})
         endif()
@@ -69,9 +56,9 @@ function(_espd_collect_config_text _out_var)
     set(${_out_var} "${_text}" PARENT_SCOPE)
 endfunction()
 
-# Active board suffix (e.g. waveshare_p4_nano), or "generic", or "" if unknown.
-# Skips sdkconfig board choices that do not match the current IDF target; falls
-# back to CONFIG_ESPD_BOARD_* in sdkconfig.defaults.<target> when present.
+# Active board suffix (e.g. waveshare_s3), or "generic", or "" if unknown.
+# Reads the board choice (CONFIG_ESPD_BOARD_*) from sdkconfig or the base/overlay
+# defaults; skips choices that do not match the current IDF target.
 function(_espd_resolve_active_board _config_text _out_var)
     set(_idf_target "")
     if(DEFINED IDF_TARGET AND NOT "${IDF_TARGET}" STREQUAL "")
@@ -83,18 +70,6 @@ function(_espd_resolve_active_board _config_text _out_var)
     endif()
 
     set(_suffix "")
-    if(_idf_target)
-        set(_target_defaults
-            "${CMAKE_SOURCE_DIR}/sdkconfig.defaults.${_idf_target}.chip")
-        if(EXISTS "${_target_defaults}")
-            file(READ "${_target_defaults}" _target_defaults_text)
-            if(_target_defaults_text MATCHES "CONFIG_ESPD_BOARD_([A-Z0-9_]+)=y")
-                string(TOLOWER "${CMAKE_MATCH_1}" _suffix)
-            endif()
-        endif()
-    endif()
-
-    if(_suffix STREQUAL "")
     string(REGEX MATCHALL "CONFIG_ESPD_BOARD_[A-Z0-9_]+=y" _espd_board_syms
         "${_config_text}")
     foreach(_sym IN LISTS _espd_board_syms)
@@ -118,7 +93,6 @@ function(_espd_resolve_active_board _config_text _out_var)
             endif()
         endif()
     endforeach()
-    endif()
 
     if(_suffix STREQUAL "" AND _config_text MATCHES "CONFIG_ESPD_BOARD_GENERIC=y")
         set(_suffix "generic")
@@ -127,21 +101,20 @@ function(_espd_resolve_active_board _config_text _out_var)
     set(${_out_var} "${_suffix}" PARENT_SCOPE)
 endfunction()
 
+# Board IDF-tuning profile to merge. BSP boards ship a generated
+# components/espd_board_*/sdkconfig.defaults (flash/PHY/console tuning Kconfig
+# cannot express). The generic board and the unresolved/default case carry no
+# profile: board choice + features are pure Kconfig (choice defaults to generic,
+# features follow via Kconfig "imply"), so nothing sticky leaks across boards.
 function(_espd_resolve_profile_defaults _config_text _out_var)
     _espd_resolve_active_board("${_config_text}" _active_board)
-    if(_active_board STREQUAL "generic")
-        set(_profile "${CMAKE_SOURCE_DIR}/main/boards/generic/sdkconfig.defaults")
-    elseif(_active_board)
+    set(_profile "")
+    if(_active_board AND NOT _active_board STREQUAL "generic")
         set(_profile
             "${CMAKE_SOURCE_DIR}/components/espd_board_${_active_board}/sdkconfig.defaults")
         if(NOT EXISTS "${_profile}")
             set(_profile "")
         endif()
-    else()
-        set(_profile "")
-    endif()
-    if(NOT _profile)
-        set(_profile "${CMAKE_SOURCE_DIR}/main/boards/generic/sdkconfig.defaults")
     endif()
     set(${_out_var} "${_profile}" PARENT_SCOPE)
 endfunction()
@@ -202,9 +175,9 @@ if(_espd_exclude_board_plugins)
     set(EXCLUDE_COMPONENTS "${_espd_exclude_board_plugins}")
 endif()
 
-# Merge board profile sdkconfig.defaults (sdkconfig or defaults chain).
+# Merge the active BSP board's IDF-tuning profile (sdkconfig or defaults chain).
 # Convention: CONFIG_ESPD_BOARD_FOO_BAR=y → components/espd_board_foo_bar/sdkconfig.defaults
-# Generic I2S uses main/boards/generic/sdkconfig.defaults (also the fallback).
+# Generic I2S and the default/unresolved case carry no profile (pure Kconfig).
 
 _espd_resolve_profile_defaults("${_espd_config_text}" _espd_profile_defaults)
 if(_espd_profile_defaults)

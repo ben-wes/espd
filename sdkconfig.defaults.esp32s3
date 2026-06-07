@@ -1,10 +1,6 @@
-# ESP32-S3 — chip-wide tuning (no board pre-select; pick board in menuconfig or
-# sdkconfig.defaults.local). Board YAML overrides flash/partitions (e.g. 16 MB).
-
-# Generic / CI smoke defaults (resizes dynamically to physical flash size at boot)
-CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_pd_4mb.csv"
-CONFIG_PARTITION_TABLE_FILENAME="partitions_pd_4mb.csv"
+# ESP32-S3 — chip-wide tuning only (no board pre-select; pick board in menuconfig
+# or sdkconfig.defaults.local). Flash size / partition table come from the base
+# 4 MB fallback, overridden by a board's `flash:` (e.g. waveshare_s3 = 16 MB).
 
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536
 

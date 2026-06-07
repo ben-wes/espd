@@ -25,9 +25,9 @@ architecture change.
 
 ## Build
 
-**Pick the Waveshare board in menuconfig** — `sdkconfig.defaults.esp32s3` only sets
-generic 4 MB smoke defaults until you do. The board profile then applies 16 MB flash
-and `partitions_pd.csv` from the YAML above.
+**Pick the Waveshare board in menuconfig** — until you do, the base 4 MB fallback
+applies. Selecting the board then applies its `flash: 16MB`, for which the generator
+emits a partition table (factory fixed, storage = remainder) overriding the fallback.
 
 ```bash
 . $HOME/.espressif/v6.0.1/esp-idf/export.sh

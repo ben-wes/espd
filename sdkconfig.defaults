@@ -1,9 +1,13 @@
 # Project-wide defaults (all targets). Board choice and profile defaults are
 # merged in CMakeLists.txt; target tuning in sdkconfig.defaults.<target>.
 
+# Conservative 4 MB fallback (smallest supported flash). Boards with more flash
+# declare `flash:` in their yaml; the generator then emits a board partition table
+# (storage = remainder) + ESPTOOLPY_FLASHSIZE that overrides this.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_pd.csv"
-CONFIG_PARTITION_TABLE_FILENAME="partitions_pd.csv"
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_pd_4mb.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions_pd_4mb.csv"
 CONFIG_PARTITION_TABLE_OFFSET=0x8000
 
 # Do not fsync after every FatFs write (IDF default off); espd_dev fsyncs MSC PUTs.

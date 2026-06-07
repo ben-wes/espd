@@ -1,6 +1,0 @@
-# Generic I2S board profile (merged when CONFIG_ESPD_BOARD_GENERIC=y).
-# ESPD feature flags only; flash/stack/PSRAM come from sdkconfig.defaults.<target>.
-
-CONFIG_ESPD_BOARD_GENERIC=y
-CONFIG_ESPD_AUDIO_BACKEND_GENERIC_I2S=y
-CONFIG_ESPD_ENABLE_LEGACY_WIFI_TRANSPORT=y

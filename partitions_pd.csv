@@ -1,8 +1,0 @@
-# Name,   Type, SubType, Offset,  Size, Flags
-# 16 MB flash (Waveshare S3/P4 and similar). Classic ESP32 4 MB: partitions_pd_4mb.csv.
-# Note: if you change the phy_init or app partition offset, make sure to change the offset in Kconfig.projbuild
-nvs,      data, nvs,     ,        0x6000,
-phy_init, data, phy,     ,        0x1000,
-factory,  app,  factory, ,        1536K,
-storage,  data, fat, ,           14720K,
-

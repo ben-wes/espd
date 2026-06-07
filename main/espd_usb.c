@@ -41,7 +41,6 @@ static const char *TAG = "espd_usb";
 
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
 static tinyusb_msc_storage_handle_t msc_handle = NULL;
-static volatile bool s_msc_should_exit_drive_mode = false;
 static bool s_msc_disabled_after_eject = false;
 #endif
 static wl_handle_t wl_handle = WL_INVALID_HANDLE;
@@ -154,9 +153,6 @@ static void espd_usb_msc_event_callback(tinyusb_msc_storage_handle_t handle,
         break;
     case TINYUSB_MSC_EVENT_MOUNT_COMPLETE:
         ESP_LOGI(TAG, "MSC mount complete (mount_point=%d)", event->mount_point);
-        if (event->mount_point == TINYUSB_MSC_STORAGE_MOUNT_APP) {
-            s_msc_should_exit_drive_mode = true;
-        }
         break;
     case TINYUSB_MSC_EVENT_MOUNT_FAILED:
         ESP_LOGW(TAG, "MSC mount failed (mount_point=%d)", event->mount_point);
@@ -400,10 +396,15 @@ void espd_usb_drive_mode_wait(void)
     (void)espd_usb_expose_msc_to_host();
     ESP_LOGI(TAG, "USB drive mode -- eject to start audio");
 
-    s_msc_should_exit_drive_mode = false;
-    while (!s_msc_should_exit_drive_mode) {
+    /* Poll the live mount point rather than trusting a single MOUNT_COMPLETE
+     * event: with auto-mount enabled the driver emits spurious APP-mount events
+     * during boot/expose that would otherwise start Pd before the host has even
+     * taken the drive. Phase 1 waits until the host actually mounts it (USB);
+     * phase 2 waits until the host ejects (driver auto-remounts to APP). */
+    while (!espd_usb_msc_host_mounted())
         vTaskDelay(pdMS_TO_TICKS(100));
-    }
+    while (espd_usb_msc_host_mounted())
+        vTaskDelay(pdMS_TO_TICKS(100));
 
     ESP_LOGI(TAG, "USB drive ejected by host");
 }

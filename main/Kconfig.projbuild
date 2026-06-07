@@ -10,7 +10,6 @@ choice ESPD_BOARD
 
 config ESPD_BOARD_GENERIC
     bool "Generic I2S (manual GPIO pins)"
-    imply ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     help
         Bare I2S pins without an external codec driver. Tune GPIOs under
         "Generic board I2S pins" below. BSP boards add a component under

@@ -33,7 +33,7 @@ idf.py menuconfig build flash monitor
 |------------|----------------|------------------|
 | `mykit` | `ESPD_BOARD_MYKIT` | `components/espd_board_mykit/` |
 | `waveshare_s3` | `ESPD_BOARD_WAVESHARE_S3` | `components/espd_board_waveshare_s3/` |
-| *(built-in)* | `ESPD_BOARD_GENERIC` | `main/boards/generic/` |
+| *(built-in)* | `ESPD_BOARD_GENERIC` | *(none — pure Kconfig, the default choice)* |
 
 `id` must be lowercase `[a-z][a-z0-9_]*`. Root **CMakeLists.txt** runs
 **scripts/gen_board_plugins.py** before Kconfig and component discovery.
@@ -120,27 +120,30 @@ bsp:                               # required — esp-bsp Component Manager dep
   # — or registry instead of git: —
   # version: "^1.0.0"
 
-features:                          # optional — live menuconfig hints
-  imply:
+flash: 16MB                        # hardware flash size → generated partition
+                                   # table (factory app fixed, storage = the
+                                   # rest) + ESPTOOLPY_FLASHSIZE. Omit to inherit
+                                   # the chip/base partition table.
+
+features:                          # ESPD features → Kconfig `imply` on the board
+  imply:                           # choice; enabled when the board is selected
     - ESPD_USE_ADC
     - ESPD_USE_SDCARD
 
 io:                                # optional — omit if BSP button order is fine
   buttons: [VOLUP, PLAY, VOLDOWN]  # → BSP_BUTTON_* for espd/din/0..N
 
-profile:                           # sdkconfig.defaults sections
-  ESPD features:
-    ESPD_USE_ADC: y
-    ESPD_USE_SDCARD: y
-  Board hardware:
-    ESPTOOLPY_FLASHSIZE_16MB: y
-    SPIRAM: y
-  Pd runtime tuning:
+profile:                           # optional extra IDF tuning Kconfig can't
+  Pd runtime tuning:               # express (flash/partitions come from `flash:`)
     ESP_DEFAULT_CPU_FREQ_MHZ_240: y
 ```
 
-Profile keys may omit the `CONFIG_` prefix. Values are `y`/`n`, numbers, or
-quoted strings (e.g. `'"/sdcard"'`, `"0x1"`).
+Feature flags belong in `features.imply` (board-following Kconfig), **not** in
+`profile:` — a value pinned in `sdkconfig.defaults` is sticky and leaks across
+board switches. `profile:` is for IDF tuning only. Keys may omit the `CONFIG_`
+prefix; values are `y`/`n`, numbers, or quoted strings (e.g. `'"/sdcard"'`,
+`"0x1"`). Setting `ESPTOOLPY_FLASHSIZE_*` or `PARTITION_TABLE_*` in `profile:`
+overrides the `flash:`-generated table.
 
 ### Chip defaults (do not repeat in YAML)
 
@@ -197,8 +200,12 @@ Clean slate / different SoC:
 idf.py set-target esp32s3 fullclean menuconfig build flash monitor
 ```
 
-Profile defaults merge from **main/boards/generic/** (Generic I2S) or the
-generated **components/espd_board_*/sdkconfig.defaults**.
+Board **features** come from Kconfig (`imply` in the generated
+**components/espd_board_*/Kconfig.board**) and fire when the board choice is
+selected — so switching boards in menuconfig is clean and nothing leaks. The
+generated **components/espd_board_*/sdkconfig.defaults** carries only IDF tuning
+Kconfig cannot express (flash, PHY, console handoff). The generic board needs no
+profile — it is the Kconfig choice default and derives everything from Kconfig.
 
 ### Pre-select a board (without menuconfig)
 

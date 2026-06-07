@@ -26,6 +26,34 @@ GENERATED_HEADER = "# Auto-generated from {src} — do not edit.\n"
 _USB_OTG_TARGETS = {"esp32s3", "esp32c3", "esp32c6", "esp32h2", "esp32c5", "esp32p4"}
 _WIFI_USB_TARGETS = {"esp32s3", "esp32c3", "esp32c6", "esp32h2", "esp32c5"}
 
+# Generated partition layout. espd claims a fixed app slot (its binary) plus nvs +
+# phy; "storage" (FAT) takes the rest of the declared flash. Only "storage" varies
+# with flash size, so the table is fully derivable from the board's `flash:` value.
+_PART_TABLE_OFFSET = 0x8000     # CONFIG_PARTITION_TABLE_OFFSET
+_PART_TABLE_SIZE = 0x1000
+_NVS_SIZE = 0x6000
+_PHY_SIZE = 0x1000
+_FACTORY_SIZE = 0x180000        # 1536K — holds the espd app binary
+_STORAGE_OFFSET = (_PART_TABLE_OFFSET + _PART_TABLE_SIZE
+                   + _NVS_SIZE + _PHY_SIZE + _FACTORY_SIZE)
+_FLASHSIZE_LABELS = {
+    0x100000: "1MB", 0x200000: "2MB", 0x400000: "4MB", 0x800000: "8MB",
+    0x1000000: "16MB", 0x2000000: "32MB", 0x4000000: "64MB", 0x8000000: "128MB",
+}
+
+
+def _flash_bytes(value) -> int:
+    if isinstance(value, int):
+        return value
+    s = str(value).strip().upper()
+    if s.endswith("MB") or s.endswith("M"):
+        return int(s.rstrip("MB")) * 1024 * 1024
+    if s.endswith("KB") or s.endswith("K"):
+        return int(s.rstrip("KB")) * 1024
+    if s.startswith("0X"):
+        return int(s, 16)
+    return int(s)
+
 @dataclass
 class PeripheralSchema:
     required: list[str]
@@ -327,14 +355,12 @@ def _gen_sdkconfig_defaults(data: dict, src: str) -> str:
         if isinstance(options, dict)
         for k in options
     }
-    imply_feats = (data.get("features") or {}).get("imply") or []
-    feat_defaults = [f for f in imply_feats if _config_key(f) not in profile_keys]
-    if feat_defaults:
-        lines.append("# --- ESPD features (from features.imply) ---\n\n")
-        for feat in feat_defaults:
-            lines.append(_config_line(feat, True))
-        lines.append("\n")
-    
+    # NOTE: features.imply is intentionally NOT emitted here. ESPD feature flags
+    # are board-following Kconfig "imply" (see _gen_kconfig) that fire when the
+    # board choice is selected. A value in sdkconfig.defaults is a sticky
+    # "remembered request" that survives board switches and leaks into other
+    # boards, so this file carries only IDF tuning Kconfig cannot express.
+
     # Cache feature checks
     has_usb_otg = _profile_has_usb_otg(data)
     has_wifi = _profile_has_wifi(data)
@@ -351,6 +377,25 @@ def _gen_sdkconfig_defaults(data: dict, src: str) -> str:
         for key, value in coexist:
             lines.append(_config_line(key, value))
         lines.append("\n")
+    # Flash size + generated partition table (storage = remainder). A profile
+    # that sets ESPTOOLPY_FLASHSIZE_* or PARTITION_TABLE_* overrides either piece.
+    if data.get("flash") is not None:
+        flash_b = _flash_bytes(data["flash"])
+        label = _FLASHSIZE_LABELS.get(flash_b)
+        if not label:
+            raise ValueError(f"{src}: unsupported flash size {data['flash']!r}")
+        flash_lines = []
+        if not any(k.startswith("ESPTOOLPY_FLASHSIZE") for k in profile_keys):
+            flash_lines.append(_config_line(f"ESPTOOLPY_FLASHSIZE_{label}", True))
+        if not any(k.startswith("PARTITION_TABLE") for k in profile_keys):
+            rel = f"components/espd_board_{data['id']}/partitions.csv"
+            flash_lines.append(_config_line("PARTITION_TABLE_CUSTOM", True))
+            flash_lines.append(_config_line("PARTITION_TABLE_CUSTOM_FILENAME", rel))
+            flash_lines.append(_config_line("PARTITION_TABLE_FILENAME", rel))
+        if flash_lines:
+            lines.append("# --- Flash (generated partition table; storage = remainder) ---\n\n")
+            lines.extend(flash_lines)
+            lines.append("\n")
     for section, options in profile.items():
         lines.append(f"# --- {section} ---\n\n")
         if not isinstance(options, dict):
@@ -359,6 +404,40 @@ def _gen_sdkconfig_defaults(data: dict, src: str) -> str:
             lines.append(_config_line(key, value))
         lines.append("\n")
     return "".join(lines)
+
+
+def _gen_partition_csv(data: dict, src: str) -> str | None:
+    """Partition table for the board's flash: fixed app/nvs/phy, storage = rest.
+
+    Returns None when the board declares no `flash:` or overrides the table in
+    its profile (then the profile / chip / base table is used as-is)."""
+    if data.get("flash") is None:
+        return None
+    profile = data.get("profile") or {}
+    profile_keys = {
+        _config_key(k)
+        for options in profile.values()
+        if isinstance(options, dict)
+        for k in options
+    }
+    if any(k.startswith("PARTITION_TABLE") for k in profile_keys):
+        return None
+    flash_b = _flash_bytes(data["flash"])
+    storage_b = flash_b - _STORAGE_OFFSET
+    if storage_b < 0x10000:
+        raise ValueError(
+            f"{src}: flash {data['flash']!r} too small — need > "
+            f"{_STORAGE_OFFSET // 1024}K for app/nvs/phy")
+    label = _FLASHSIZE_LABELS.get(flash_b, f"{flash_b}B")
+    return (
+        f"# Auto-generated from {src} — do not edit.\n"
+        f"# {label} flash: factory (espd app) fixed, storage (FAT) = remainder.\n"
+        "# Name,   Type, SubType, Offset, Size, Flags\n"
+        f"nvs,      data, nvs,     ,       0x{_NVS_SIZE:x},\n"
+        f"phy_init, data, phy,     ,       0x{_PHY_SIZE:x},\n"
+        f"factory,  app,  factory, ,       {_FACTORY_SIZE // 1024}K,\n"
+        f"storage,  data, fat,     ,       {storage_b // 1024}K,\n"
+    )
 
 
 def _gen_io_config(data: dict, src: str) -> str | None:
@@ -529,6 +608,13 @@ def _generate_board(repo: Path, yaml_path: Path) -> Path:
     _write_if_changed(out_dir / "espd_bsp_audio_glue.c", AUDIO_GLUE_C.format(src=rel_src))
     _write_if_changed(out_dir / "espd_bsp_io_glue.c", IO_GLUE_C.format(src=rel_src))
     _write_if_changed(out_dir / "sdkconfig.defaults", _gen_sdkconfig_defaults(data, rel_src))
+
+    part_csv = _gen_partition_csv(data, rel_src)
+    part_path = out_dir / "partitions.csv"
+    if part_csv:
+        _write_if_changed(part_path, part_csv)
+    elif part_path.exists():
+        part_path.unlink()
 
     io_cfg = _gen_io_config(data, rel_src)
     io_path = out_dir / "espd_board_io_config.h"

@@ -23,5 +23,10 @@ features:
     - ESPD_USE_WIFI
     - ESPD_USE_USB_OTG
 
+# Hardware flash size. The generator builds the partition table from this
+# (factory app fixed, storage = remainder) and sets ESPTOOLPY_FLASHSIZE, so it
+# overrides the chip's conservative 4 MB default. The ESP32-S3-AUDIO has 16 MB.
+flash: 16MB
+
 io:
   buttons: [VOLUP, PLAY, VOLDOWN]
