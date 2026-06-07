@@ -59,15 +59,20 @@ idf.py build flash monitor
 
 Set **Generic board I2S pins** in menuconfig if wiring differs. SPH0645 microphones are known **not** to work on ESP32.
 
-### Board kit (`boards/*.yaml`)
+### Board kit (external `boards/*.yaml`)
+
+espd itself ships only the generic board. Real board definitions live in
+[espd-kits](https://github.com/ben-wes/espd-kits) (or your own tree) — point
+`ESPD_BOARDS_DIR` at them so the kit shows up under **Target board** in menuconfig:
 
 ```bash
+export ESPD_BOARDS_DIR=~/dev/espd/espd-kits/boards   # external board YAMLs
 idf.py set-target esp32s3        # or the YAML `target:`
-idf.py menuconfig                # ESPD Configuration → Target board → your kit → Save
+idf.py menuconfig                # ESPD Configuration → Target board → e.g. Waveshare ESP32-S3-AUDIO → Save
 idf.py build flash monitor
 ```
 
-First build downloads esp-bsp into `managed_components/` (network required). Board definitions and prebuilt images live in [espd-kits](https://github.com/ben-wes/espd-kits).
+First build downloads esp-bsp into `managed_components/` (network required). Prebuilt images: [espd-kits](https://github.com/ben-wes/espd-kits). For non-interactive builds, set the board in `sdkconfig.defaults.local` instead of menuconfig (see [docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md)).
 
 **Required:** pick the board in menuconfig (chip defaults stay generic until the profile applies). Verify: `grep CONFIG_ESPD_BOARD_ sdkconfig` matches your kit — if wrong, delete `sdkconfig` and run `set-target` again.
 
