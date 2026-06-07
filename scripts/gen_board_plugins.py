@@ -64,11 +64,14 @@ _SUPPORTED_PERIPHERALS = {
 }
 
 def _gen_cmake_glue(data: dict, src: str) -> str:
+    # CMake REQUIRES uses the bare component name (no namespace slashes)
     bsp_component = data["bsp"]["component"]
     peripherals = data.get("peripherals") or []
+    no_ws2812 = data.get("bsp", {}).get("no_ws2812_leds", False)
     extra_srcs = ""
     if peripherals:
         extra_srcs = '\n            "espd_board_peripherals.c"'
+    no_led_block = ""
     return f"""# Auto-generated from {src} — do not edit.
 
 if(CONFIG_ESPD_BOARD_ESP_BSP_GLUE)
@@ -78,7 +81,7 @@ if(CONFIG_ESPD_BOARD_ESP_BSP_GLUE)
             "espd_bsp_io_glue.c"{extra_srcs}
         INCLUDE_DIRS "." "${{CMAKE_CURRENT_LIST_DIR}}"
         REQUIRES espd_integration {bsp_component}
-    )
+    ){no_led_block}
 else()
     idf_component_register()
 endif()
@@ -101,6 +104,22 @@ IO_GLUE_C = """\
  * Board-owned glue TU to keep component source ownership clean while
  * reusing shared espd_integration implementation.
  */
+#include "../espd_integration/espd_bsp_esp_bsp_io.c"
+"""
+
+# Variant (selected by bsp.no_ws2812_leds) for boards that own bsp_led_set()
+# themselves: suppress the WS2812-style bsp_led_* declarations in bsp_io.h so
+# they don't conflict with the BSP's own declaration.
+IO_GLUE_C_NO_LED = """\
+/*
+ * Auto-generated from {src} — do not edit.
+ *
+ * Like espd_bsp_esp_bsp_io.c but suppresses the WS2812 bsp_led_* declarations
+ * in bsp/bsp_io.h to avoid conflicts with BSPs that define their own
+ * bsp_led_set() (e.g. boards using led_indicator instead of a LED strip).
+ */
+/* Suppress WS2812 bsp_led_* declarations — the BSP defines its own. */
+#define ESPD_BSP_IO_NO_LED_DECL
 #include "../espd_integration/espd_bsp_esp_bsp_io.c"
 """
 
@@ -312,6 +331,9 @@ def _gen_kconfig(data: dict, src: str) -> str:
 def _gen_idf_component_yml(data: dict, src: str) -> str:
     bsp = data["bsp"]
     comp = bsp["component"]
+    # registry_component allows a namespaced key like "espressif/foo" for the
+    # idf_component.yml dependency entry, while cmake REQUIRES uses comp (no /)
+    registry_comp = bsp.get("registry_component", comp)
     lines = [
         GENERATED_HEADER.format(src=src),
         'version: "0.1.0"\n',
@@ -320,7 +342,7 @@ def _gen_idf_component_yml(data: dict, src: str) -> str:
         '  idf: ">=6.0.1,<6.1"\n',
         "  espd_integration:\n",
         "    path: ../espd_integration\n",
-        f"  {comp}:\n",
+        f"  {registry_comp}:\n",
     ]
     if "git" in bsp:
         lines.append(f'    git: {bsp["git"]}\n')
@@ -606,7 +628,12 @@ def _generate_board(repo: Path, yaml_path: Path) -> Path:
         _gen_cmake_glue(data, rel_src),
     )
     _write_if_changed(out_dir / "espd_bsp_audio_glue.c", AUDIO_GLUE_C.format(src=rel_src))
-    _write_if_changed(out_dir / "espd_bsp_io_glue.c", IO_GLUE_C.format(src=rel_src))
+    io_tmpl = (
+        IO_GLUE_C_NO_LED
+        if data.get("bsp", {}).get("no_ws2812_leds")
+        else IO_GLUE_C
+    )
+    _write_if_changed(out_dir / "espd_bsp_io_glue.c", io_tmpl.format(src=rel_src))
     _write_if_changed(out_dir / "sdkconfig.defaults", _gen_sdkconfig_defaults(data, rel_src))
 
     part_csv = _gen_partition_csv(data, rel_src)
