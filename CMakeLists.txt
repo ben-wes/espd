@@ -56,7 +56,7 @@ function(_espd_collect_config_text _out_var)
     set(${_out_var} "${_text}" PARENT_SCOPE)
 endfunction()
 
-# Active board suffix (e.g. waveshare_s3), or "generic", or "" if unknown.
+# Active board suffix (e.g. mykit), or "generic", or "" if unknown.
 # Reads the board choice (CONFIG_ESPD_BOARD_*) from sdkconfig or the base/overlay
 # defaults; skips choices that do not match the current IDF target.
 function(_espd_resolve_active_board _config_text _out_var)

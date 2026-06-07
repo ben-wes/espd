@@ -10,7 +10,6 @@ Requires [ESP-IDF v6.0.1](https://docs.espressif.com/projects/esp-idf/en/latest/
 |-----|-----|
 | **README.md** (this file) | Build, flash, configuration, features |
 | [docs/DEV_SYNC.md](docs/DEV_SYNC.md) | Rapid dev — `espd_sync.py`, CDC protocol, ports |
-| [docs/BOARD_EXAMPLE_WAVESHARE_S3.md](docs/BOARD_EXAMPLE_WAVESHARE_S3.md) | Waveshare ESP32-S3-AUDIO build shortcut |
 | [docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md) | Adding a kit (`boards/*.yaml`) |
 | [main/espd.h](main/espd.h) | `config.txt` keys (comments in source) |
 | [test-patch/](test-patch/) | Example `main.pd` + `config.txt` |
@@ -68,7 +67,7 @@ idf.py menuconfig                # ESPD Configuration → Target board → your 
 idf.py build flash monitor
 ```
 
-First build downloads esp-bsp into `managed_components/` (network required). Worked example: [docs/BOARD_EXAMPLE_WAVESHARE_S3.md](docs/BOARD_EXAMPLE_WAVESHARE_S3.md). Prebuilt images: [espd-kits](https://github.com/ben-wes/espd-kits).
+First build downloads esp-bsp into `managed_components/` (network required). Board definitions and prebuilt images live in [espd-kits](https://github.com/ben-wes/espd-kits).
 
 **Required:** pick the board in menuconfig (chip defaults stay generic until the profile applies). Verify: `grep CONFIG_ESPD_BOARD_ sdkconfig` matches your kit — if wrong, delete `sdkconfig` and run `set-target` again.
 

@@ -131,7 +131,7 @@ menu "USB device (OTG)"
             (Pd printf, ESP_LOG on cu.usbmodem*) and, by default, internal-flash
             USB mass storage. Uncheck MSC if you do not want a host-visible data partition.
             Patch sync (espd_sync) is a separate option and needs microSD.
-            Requires CONFIG_ESP_CONSOLE_NONE (Waveshare board profile sets this).
+            Requires CONFIG_ESP_CONSOLE_NONE (a board profile may set this).
 
             Reflash: BOOT + RESET (download mode), then idf.py flash — not
             cu.debug-console on macOS (esptool often gets no data there). App
@@ -203,8 +203,8 @@ config ESPD_USE_WIFI
     help
         Native Wi-Fi on ESP32/ESP32-S3 (ESP_WIFI_ENABLED), IDF host Wi-Fi on
         some targets (ESP_HOST_WIFI_ENABLED), or P4 SDIO coprocessor Wi-Fi via
-        esp_wifi_remote + esp_hosted (ESP_WIFI_REMOTE_ENABLED). Waveshare P4-NANO
-        uses the latter. Runtime: non-empty wifi_ssid= in config.txt.
+        esp_wifi_remote + esp_hosted (ESP_WIFI_REMOTE_ENABLED), e.g. P4 boards with
+        an SDIO Wi-Fi coprocessor. Runtime: non-empty wifi_ssid= in config.txt.
 
 config ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     bool "Legacy espd TCP/UDP transport (port 4498)"

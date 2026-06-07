@@ -24,15 +24,15 @@ echo CONFIG_ESPD_BOARD_MYKIT=y >> sdkconfig.defaults.esp32s3   # optional pre-se
 idf.py menuconfig build flash monitor
 ```
 
-**Worked example:** [boards/waveshare_s3.yaml](../boards/waveshare_s3.yaml) →
-[BOARD_EXAMPLE_WAVESHARE_S3.md](BOARD_EXAMPLE_WAVESHARE_S3.md).
+**Worked example:** real board definitions live in the
+[espd-kits](https://github.com/ben-wes/espd-kits) repo (e.g. `boards/waveshare_s3.yaml`);
+espd itself ships only the generic board.
 
 ## Naming convention
 
 | YAML `id:` | Kconfig symbol | Generated folder |
 |------------|----------------|------------------|
 | `mykit` | `ESPD_BOARD_MYKIT` | `components/espd_board_mykit/` |
-| `waveshare_s3` | `ESPD_BOARD_WAVESHARE_S3` | `components/espd_board_waveshare_s3/` |
 | *(built-in)* | `ESPD_BOARD_GENERIC` | *(none — pure Kconfig, the default choice)* |
 
 `id` must be lowercase `[a-z][a-z0-9_]*`. Root **CMakeLists.txt** runs
@@ -98,10 +98,10 @@ policy:
 | `bsp_*` init / mount APIs | `io.buttons` → `espd/din/N` map (optional) |
 | IDF / API updates for new IDF releases | Help text, `target:` |
 
-**Worked example:** [boards/waveshare_s3.yaml](../boards/waveshare_s3.yaml) pulls
-[`ben-wes/esp-bsp@espd-bsp`](https://github.com/ben-wes/esp-bsp/tree/espd-bsp)
-(`bsp/waveshare_esp32_s3_audio`). Hardware deps and IDF 6 fixes live in that fork,
-not in espd.
+**Example:** a board's `bsp:` git points at an esp-bsp fork such as
+[`ben-wes/esp-bsp`](https://github.com/ben-wes/esp-bsp/tree/espd-bsp). Hardware deps
+and IDF 6 fixes live in that fork, not in espd. See
+[espd-kits](https://github.com/ben-wes/espd-kits) for a complete board.
 
 ## YAML schema
 
@@ -159,8 +159,8 @@ Classic **ESP32** keeps smaller flash partitions and IDF’s default 512-byte WL
 
 ### USB OTG + `/storage` (board YAML only)
 
-Copy from [boards/waveshare_s3.yaml](../boards/waveshare_s3.yaml) **only if**
-the kit has OTG, internal-flash MSC, and `espd_sync`:
+Add this to your board YAML **only if** the kit has OTG, internal-flash MSC, and
+`espd_sync` (see [espd-kits](https://github.com/ben-wes/espd-kits) for a full example):
 
 ```yaml
 features:
@@ -220,7 +220,7 @@ chip files) in the main tree — that file stays board-neutral.
 | **`ESPD_BOARDS_DIR`** | Optional env: external `boards/` tree (default `./boards`) |
 
 ```bash
-echo 'CONFIG_ESPD_BOARD_WAVESHARE_S3=y' > sdkconfig.defaults.local
+echo 'CONFIG_ESPD_BOARD_MYKIT=y' > sdkconfig.defaults.local
 idf.py set-target esp32s3 build
 ```
 
