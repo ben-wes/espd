@@ -299,7 +299,7 @@ esp_err_t espd_usb_ensure_msc_app_mount(void)
 #endif /* CONFIG_ESPD_USE_USB_MSC */
 
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
-esp_err_t espd_usb_msc_disable_and_remount_vfs(void)
+esp_err_t espd_usb_msc_unmount_storage(void)
 {
     if (!msc_handle) {
         return ESP_OK; /* Already disabled */
@@ -315,8 +315,13 @@ esp_err_t espd_usb_msc_disable_and_remount_vfs(void)
         return err;
     }
 
+    return ESP_OK;
+}
+
+esp_err_t espd_usb_msc_reinstall_driver_with_auto_mount_off(void)
+{
     /* Uninstall MSC driver */
-    err = tinyusb_msc_uninstall_driver();
+    esp_err_t err = tinyusb_msc_uninstall_driver();
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "MSC driver uninstalled");
     } else if (err == ESP_ERR_NOT_SUPPORTED) {
@@ -339,8 +344,13 @@ esp_err_t espd_usb_msc_disable_and_remount_vfs(void)
         ESP_LOGW(TAG, "MSC driver reinstall failed: %s", esp_err_to_name(err));
     }
 
+    return err;
+}
+
+esp_err_t espd_usb_msc_remount_vfs(void)
+{
     /* Remount storage using direct VFS */
-    err = espd_usb_mount_flash_early_vfs();
+    esp_err_t err = espd_usb_mount_flash_early_vfs();
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Storage remounted via direct VFS");
         s_msc_disabled_after_eject = true;
@@ -348,6 +358,22 @@ esp_err_t espd_usb_msc_disable_and_remount_vfs(void)
         ESP_LOGE(TAG, "Failed to remount storage via direct VFS: %s", esp_err_to_name(err));
     }
 
+    return err;
+}
+
+esp_err_t espd_usb_msc_disable_and_remount_vfs(void)
+{
+    esp_err_t err = espd_usb_msc_unmount_storage();
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = espd_usb_msc_reinstall_driver_with_auto_mount_off();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "MSC driver reinstall failed, continuing anyway");
+    }
+
+    err = espd_usb_msc_remount_vfs();
     return err;
 }
 
@@ -361,8 +387,7 @@ void espd_usb_msc_disable_after_eject()
 
 static void espd_usb_release_usj_for_otg(void)
 {
-#if CONFIG_ESPD_USE_USB_OTG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED \
-        && CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED
+#if CONFIG_ESPD_DEV_SERIAL_SYNC && SOC_USB_SERIAL_JTAG_SUPPORTED
     fflush(stdout);
     fflush(stderr);
     (void)usb_serial_jtag_driver_uninstall();
