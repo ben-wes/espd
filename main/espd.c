@@ -339,10 +339,18 @@ void app_main(void)
 
 #ifdef ESPD_USE_WIFI
     if (espd_wifi_net_enabled) {
-        wifi_wait_sta(pdMS_TO_TICKS(2000));
+        bool sta_connected = wifi_wait_sta(pdMS_TO_TICKS(2000));
 #if ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
-        net_init();
-        net_hello();
+        /* Only stand up the legacy TCP/UDP transport once STA is actually
+         * connected. Starting it with no network (e.g. the fallback SSID not
+         * found) wastes the receiver task stacks + socket buffers — on the tiny
+         * classic-ESP32 RAM that pushed Pd into an out-of-memory panic at boot. */
+        if (sta_connected) {
+            net_init();
+            net_hello();
+        } else {
+            ESP_LOGI(TAG, "WiFi not connected — skipping legacy net transport");
+        }
 #endif
     }
 #endif
@@ -356,19 +364,30 @@ void app_main(void)
     esp_log_set_vprintf(espd_serial_sync_log);
 #endif
 
-    /* Drive mode (expose flash to host, Pd suspended until eject) only on a real
-     * power-on with a host attached. A software reset — notably the dev-sync RESET
-     * command's esp_restart() — returns straight to Pd with the flash internal, so
-     * the host can't re-grab it and the host-side sync reconnects cleanly. */
-    if (esp_reset_reason() == ESP_RST_POWERON
-        && espd_usb_msc_storage_present()
-        && espd_usb_wait_for_host(pdMS_TO_TICKS(2000))) {
-        espd_usb_drive_mode_wait();
+#ifdef ESPD_USE_SDCARD
+    if (espd_storage_sdcard_ready()) {
+        /* SD card is the patch store, so the internal flash is NOT Pd's — there is
+         * no conflict. Expose the internal flash to the host as a USB drive AND run
+         * Pd from /sdcard concurrently; never halt for an eject. (No-op if no host
+         * is attached; the drive stays available for whenever one shows up.) */
+        (void)espd_usb_expose_msc_to_host();
+        ESP_LOGI(TAG, "SD card is the store: internal flash exposed to host, Pd runs");
+    } else
+#endif
+    {
+        /* Internal flash is Pd's only store: it cannot be both a host USB drive and
+         * the app's /storage at once. On a real power-on with a host attached, enter
+         * drive mode (Pd suspended until eject); a software reset — notably the
+         * dev-sync RESET — returns straight to Pd so the host can't re-grab it. Then
+         * hand the flash to the app (direct VFS) so the host can never auto-mount it
+         * while Pd is running. */
+        if (esp_reset_reason() == ESP_RST_POWERON
+            && espd_usb_msc_storage_present()
+            && espd_usb_wait_for_host(pdMS_TO_TICKS(2000))) {
+            espd_usb_drive_mode_wait();
+        }
+        espd_usb_msc_disable_and_remount_vfs();
     }
-
-    /* Always hand the flash to the app (auto_mount_off=1, direct VFS) before Pd
-     * starts, so the host can never (auto-)mount it while Pd is running. */
-    espd_usb_msc_disable_and_remount_vfs();
 #endif
 
     espd_initdacs();
