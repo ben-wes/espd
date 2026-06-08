@@ -22,6 +22,7 @@ esp_err_t espd_usb_expose_msc_to_host(void);
 esp_err_t espd_usb_ensure_msc_app_mount(void);
 bool espd_usb_wait_for_host(uint32_t timeout_ticks);
 void espd_usb_drive_mode_wait(void);
+void espd_usb_request_drive_exit(void);
 esp_err_t espd_usb_msc_disable_and_remount_vfs(void);
 #endif
 

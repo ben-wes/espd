@@ -678,6 +678,19 @@ static void dev_handle_line(char *line)
         esp_restart();
         return;
     }
+    if (!strcmp(line, "MSC_SYNC")) {
+        /* Leave USB drive mode in place (hand /storage back to the app) so the
+         * host can sync without a reboot. No-op if not in drive mode. The app
+         * task remounts /storage shortly after; the host polls STATUS until
+         * internal=yes. */
+#if CONFIG_ESPD_USE_USB_MSC
+        espd_usb_request_drive_exit();
+        dev_reply("+OK MSC_SYNC leaving drive mode");
+#else
+        dev_reply("+OK MSC_SYNC no-op");
+#endif
+        return;
+    }
     if (!strcmp(line, "RELOAD")) {
         dev_do_reload();
         return;

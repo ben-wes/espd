@@ -316,13 +316,20 @@ void app_main(void)
         "ESP System Settings → Main task stack size",
         CONFIG_ESP_MAIN_TASK_STACK_SIZE);
 #endif
+#if CONFIG_SPIRAM
     heap_caps_malloc_extmem_enable(16384);
+#endif
 
     esp_pthread_cfg_t pth_cfg = esp_pthread_get_default_config();
     pth_cfg.stack_size = 8192;
     pth_cfg.prio = 5;
     pth_cfg.pin_to_core = 0;
+#if CONFIG_SPIRAM
+    /* Pd's pthreads (e.g. [pd~]/clone) take stacks from PSRAM where available, to
+     * spare scarce internal RAM. On a no-PSRAM chip keep the default internal
+     * stack — requesting MALLOC_CAP_SPIRAM there would simply fail to allocate. */
     pth_cfg.stack_alloc_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+#endif
     if (esp_pthread_set_cfg(&pth_cfg) != ESP_OK)
         ESP_LOGW(TAG, "esp_pthread_set_cfg failed; using IDF defaults");
 
@@ -341,6 +348,14 @@ void app_main(void)
 #endif
 
 #if CONFIG_ESPD_USE_USB_MSC
+#if CONFIG_ESPD_DEV_CDC_SYNC
+    /* Start dev-sync before drive mode so the host can issue CDC commands while
+     * the flash is exposed — notably MSC_SYNC, which makes drive_mode_wait hand
+     * /storage back to the app in place (no reboot, CDC stays connected). */
+    espd_dev_init();
+    esp_log_set_vprintf(espd_serial_sync_log);
+#endif
+
     /* Drive mode (expose flash to host, Pd suspended until eject) only on a real
      * power-on with a host attached. A software reset — notably the dev-sync RESET
      * command's esp_restart() — returns straight to Pd with the flash internal, so
@@ -354,11 +369,6 @@ void app_main(void)
     /* Always hand the flash to the app (auto_mount_off=1, direct VFS) before Pd
      * starts, so the host can never (auto-)mount it while Pd is running. */
     espd_usb_msc_disable_and_remount_vfs();
-
-#if CONFIG_ESPD_DEV_CDC_SYNC
-    espd_dev_init();
-    esp_log_set_vprintf(espd_serial_sync_log);
-#endif
 #endif
 
     espd_initdacs();

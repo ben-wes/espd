@@ -464,22 +464,35 @@ bool espd_usb_wait_for_host(uint32_t timeout_ticks)
     return true;
 }
 
+static volatile bool s_drive_exit_requested;
+
+void espd_usb_request_drive_exit(void)
+{
+    /* Set from the dev-sync task (MSC_SYNC command): break drive_mode_wait so the
+     * flash is handed back to the app in place — no reboot, CDC stays connected. */
+    s_drive_exit_requested = true;
+}
+
 void espd_usb_drive_mode_wait(void)
 {
+    s_drive_exit_requested = false;
     (void)espd_usb_expose_msc_to_host();
-    ESP_LOGI(TAG, "USB drive mode -- eject to start audio");
+    ESP_LOGI(TAG, "USB drive mode -- eject (or dev-sync MSC_SYNC) to start audio");
 
     /* Poll the live mount point rather than trusting a single MOUNT_COMPLETE
      * event: with auto-mount enabled the driver emits spurious APP-mount events
      * during boot/expose that would otherwise start Pd before the host has even
      * taken the drive. Phase 1 waits until the host actually mounts it (USB);
-     * phase 2 waits until the host ejects (driver auto-remounts to APP). */
-    while (!espd_usb_msc_host_mounted())
+     * phase 2 waits until the host ejects (driver auto-remounts to APP). Either
+     * phase also breaks on a dev-sync MSC_SYNC request (flasher wants /storage). */
+    while (!espd_usb_msc_host_mounted() && !s_drive_exit_requested)
         vTaskDelay(pdMS_TO_TICKS(100));
-    while (espd_usb_msc_host_mounted())
+    while (espd_usb_msc_host_mounted() && !s_drive_exit_requested)
         vTaskDelay(pdMS_TO_TICKS(100));
 
-    ESP_LOGI(TAG, "USB drive ejected by host");
+    ESP_LOGI(TAG, "%s", s_drive_exit_requested
+        ? "drive mode exited by dev-sync (MSC_SYNC)"
+        : "USB drive ejected by host");
 }
 #endif
 
