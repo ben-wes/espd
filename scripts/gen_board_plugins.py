@@ -594,6 +594,17 @@ def _parse_args(argv: list[str]) -> tuple[Path, Path]:
     return repo, boards_dir
 
 
+def _write_kconfig_inc(repo: Path) -> None:
+    """Emit components/espd_boards/Kconfig.inc so idf.py set-target sees board choices."""
+    components = repo / "components"
+    kconfigs = sorted(components.glob("espd_board_*/Kconfig.board"))
+    lines = ["# Auto-generated from boards/*.yaml — do not edit.\n"]
+    for path in kconfigs:
+        rel = path.relative_to(components).as_posix()
+        lines.append(f'orsource "../{rel}"\n')
+    _write_if_changed(components / "espd_boards" / "Kconfig.inc", "".join(lines))
+
+
 def main(argv: list[str]) -> int:
     repo, boards_dir = _parse_args(argv)
     if not boards_dir.is_dir():
@@ -609,6 +620,7 @@ def main(argv: list[str]) -> int:
         out = _generate_board(repo, yaml_path)
         print(f"gen_board_plugins: {yaml_path} -> {out.relative_to(repo)}")
 
+    _write_kconfig_inc(repo)
     return 0
 
 
