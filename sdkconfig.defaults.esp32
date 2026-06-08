@@ -26,6 +26,18 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 # Networking limits
 CONFIG_LWIP_MAX_SOCKETS=8
 
+# WiFi memory: classic ESP32 has no PSRAM and only ~250 KB usable internal RAM,
+# yet without this it would run the *larger* IDF-default WiFi buffers (bigger than
+# the S3's). Trim them so WiFi + legacy net + Pd + audio fit (lower WiFi throughput
+# is fine for control traffic / dev fallback; it avoids the out-of-memory panic
+# seen booting the generic-DAC firmware with no patch loaded).
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_RX_BA_WIN=4
+CONFIG_LWIP_TCP_WND_DEFAULT=2880
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=2880
+
 # Classic ESP32 does not support hardware DS (Digital Signature) or HMAC peripherals
 CONFIG_ESP_TLS_USE_DS_PERIPHERAL=n
 CONFIG_MBEDTLS_HARDWARE_RSA_DS_PERIPHERAL=n
