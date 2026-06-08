@@ -1,12 +1,13 @@
 /*
- * Generic esp-bsp I/O glue (LED strip, iot_button, SD card).
+ * Generic esp-bsp I/O glue (LED strip, iot_button).
  *
- * Optional per-board overrides in espd_board_io_config.h (button map, etc.).
- * Compiled from espd_boards when a non-Generic board is selected.
+ * SD card mount glue is in espd_bsp_sdcard.c (included alongside this file into
+ * the same board-plugin TU). Optional per-board overrides in
+ * espd_board_io_config.h (button map, etc.). Compiled from espd_boards when a
+ * non-Generic board is selected.
  */
 
 #include "bsp/esp-bsp.h"
-#include "espd_bsp_sdcard.h"
 
 #define ESPD_BSP_IO_NO_SDCARD_DECL
 #include "bsp/bsp_io.h"
@@ -305,41 +306,5 @@ void bsp_button_poll(void)
 }
 #endif /* BSP_CAPS_BUTTONS */
 
-esp_err_t espd_bsp_sdcard_mount(const char *mount_point)
-{
-#ifdef BSP_SD_MOUNT_POINT
-    if (mount_point && strcmp(mount_point, BSP_SD_MOUNT_POINT) != 0)
-        ESP_LOGW(TAG, "mount_point %s ignored (BSP uses %s)",
-            mount_point, BSP_SD_MOUNT_POINT);
-#endif
-
-#ifdef BSP_SD_DET
-    if (BSP_SD_DET != GPIO_NUM_NC) {
-        esp_io_expander_handle_t exp = bsp_io_expander_init();
-
-        if (exp) {
-            esp_io_expander_set_dir(exp, BSP_SD_DET, IO_EXPANDER_OUTPUT);
-            esp_io_expander_set_level(exp, BSP_SD_DET, 1);
-        }
-    }
-#endif
-
-#if __has_include("bsp/esp_bsp_sdcard.h")
-    if (bsp_sdcard_get_handle() != NULL)
-        return ESP_OK;
-    bsp_sdcard_cfg_t cfg = {0};
-    return bsp_sdcard_sdmmc_mount(&cfg);
-#elif BSP_CAPS_SDCARD && defined(BSP_SDCARD_HAS_GET_HANDLE)
-    if (bsp_sdcard_get_handle() != NULL)
-        return ESP_OK;
-    (void)mount_point;
-    bsp_sdcard_cfg_t cfg = {0};
-    return bsp_sdcard_sdmmc_mount(&cfg);
-#elif BSP_CAPS_SDCARD
-    (void)mount_point;
-    bsp_sdcard_cfg_t cfg = {0};
-    return bsp_sdcard_sdmmc_mount(&cfg);
-#else
-    return ESP_ERR_NOT_SUPPORTED;
-#endif
-}
+/* espd_bsp_sdcard_mount() lives in espd_bsp_sdcard.c (included into this same
+ * board-plugin TU by the generated io glue shim). */

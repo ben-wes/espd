@@ -90,6 +90,7 @@ IO_GLUE_C = """\
  * reusing shared espd_integration implementation.
  */
 #include "../espd_integration/espd_bsp_esp_bsp_io.c"
+#include "../espd_integration/espd_bsp_sdcard.c"
 """
 
 # Variant (selected by bsp.no_ws2812_leds) for boards that own bsp_led_set()
@@ -106,6 +107,7 @@ IO_GLUE_C_NO_LED = """\
 /* Suppress WS2812 bsp_led_* declarations — the BSP defines its own. */
 #define ESPD_BSP_IO_NO_LED_DECL
 #include "../espd_integration/espd_bsp_esp_bsp_io.c"
+#include "../espd_integration/espd_bsp_sdcard.c"
 """
 
 
