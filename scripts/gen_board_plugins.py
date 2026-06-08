@@ -39,7 +39,16 @@ _SUPPORTED_PERIPHERALS = {
     "actuator": PeripheralSchema(required=["bsp_setter", "inputs"]),
 }
 
+def _is_generic_board(data: dict) -> bool:
+    return bool(data.get("generic"))
+
+
 def _gen_cmake_glue(data: dict, src: str) -> str:
+    if _is_generic_board(data):
+        return f"""# Auto-generated from {src} — do not edit.
+
+idf_component_register()
+"""
     # CMake REQUIRES uses the bare component name (no namespace slashes)
     bsp_component = data["bsp"]["component"]
     peripherals = data.get("peripherals") or []
@@ -159,19 +168,16 @@ def _otg_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str,
     by putting any ESP_CONSOLE_* member in its profile (e.g. keep a UART
     primary on a board that exposes one), and the matching default is skipped.
     """
-    # Check if profile explicitly disables USB OTG (overrides features.imply)
+    # Profile may explicitly disable USB OTG (overrides features.imply).
     profile = data.get("profile") or {}
     usb_otg_disabled = False
-    usb_otg_explicit = False
     for options in profile.values():
         if isinstance(options, dict):
             val = options.get("ESPD_USE_USB_OTG")
-            if val is not None:
-                usb_otg_explicit = True
-                if not _kconfig_value(val):
-                    usb_otg_disabled = True
-                    break
-    
+            if val is not None and not _kconfig_value(val):
+                usb_otg_disabled = True
+                break
+
     if not _profile_has_usb_otg(data) or usb_otg_disabled or str(data.get("target")) not in _USB_OTG_TARGETS:
         return []
     
@@ -188,24 +194,12 @@ def _otg_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str,
     }
     
     extras: list[tuple[str, object]] = []
-    # Skip console handoff if profile explicitly sets any console option or dev sync option
-    # (allows boards to override features.imply for console configuration)
-    if profile_keys & _CONSOLE_PRIMARY_MEMBERS:
-        # Profile has explicit console setting, skip handoff
-        return []
-    if "ESPD_DEV_SYNC" in profile_keys or "ESPD_DEV_SERIAL_SYNC" in profile_keys or "ESPD_DEV_CDC_SYNC" in profile_keys:
-        # Profile has explicit dev sync setting, skip console handoff (may come from chip defaults)
-        return []
-    # If USB OTG is only in features.imply (not explicit in profile), be conservative
-    # and don't disable console to allow chip defaults (e.g., serial sync) to work
-    if not usb_otg_explicit:
-        return []
+    # Board profile may override individual console/USJ settings; fill the rest.
     if not (profile_keys & _CONSOLE_PRIMARY_MEMBERS):
         extras.append(("ESP_CONSOLE_NONE", True))
     if not (profile_keys & _CONSOLE_SECONDARY_MEMBERS):
         extras.append(("ESP_CONSOLE_SECONDARY_NONE", True))
-    usj_in_profile = "USJ_ENABLE_USB_SERIAL_JTAG" in profile_keys
-    if not usj_in_profile and (
+    if "USJ_ENABLE_USB_SERIAL_JTAG" not in profile_keys and (
         "ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG" not in profile_keys
         and "ESP_CONSOLE_USB_SERIAL_JTAG" not in profile_keys
     ):
@@ -267,9 +261,10 @@ def _validate_board(data: dict, path: Path) -> None:
         raise ValueError(f"{path}: missing name")
     if not data.get("target"):
         raise ValueError(f"{path}: missing target")
-    bsp = data.get("bsp")
-    if not isinstance(bsp, dict) or not bsp.get("component"):
-        raise ValueError(f"{path}: bsp.component is required")
+    if not _is_generic_board(data):
+        bsp = data.get("bsp")
+        if not isinstance(bsp, dict) or not bsp.get("component"):
+            raise ValueError(f"{path}: bsp.component is required (or set generic: true)")
     _validate_peripherals(data, path)
 
 
@@ -283,10 +278,9 @@ def _gen_kconfig(data: dict, src: str) -> str:
     name = data["name"]
     help_text = (data.get("help") or name).strip()
     bsp = data.get("bsp", {})
-    
-    # Only select ESPD_BOARD_ESP_BSP_GLUE for non-local BSPs
-    # Local BSPs (path: local) don't provide bsp/esp-bsp.h
-    select_bsp_glue = bsp.get("path") != "local"
+
+    # Only select ESPD_BOARD_ESP_BSP_GLUE for esp-bsp kits (not generic or local).
+    select_bsp_glue = not _is_generic_board(data) and bsp.get("path") != "local"
     
     lines = [
         GENERATED_HEADER.format(src=src),
@@ -305,6 +299,14 @@ def _gen_kconfig(data: dict, src: str) -> str:
 
 
 def _gen_idf_component_yml(data: dict, src: str) -> str:
+    if _is_generic_board(data):
+        return (
+            GENERATED_HEADER.format(src=src)
+            + 'version: "0.1.0"\n'
+            + f'description: {data["name"]} board plugin for espd\n'
+            + "dependencies:\n"
+            + '  idf: ">=6.0.1,<6.1"\n'
+        )
     bsp = data["bsp"]
     comp = bsp["component"]
     # registry_component allows a namespaced key like "espressif/foo" for the
@@ -550,13 +552,19 @@ def _generate_board(repo: Path, yaml_path: Path) -> Path:
         out_dir / "CMakeLists.txt",
         _gen_cmake_glue(data, rel_src),
     )
-    _write_if_changed(out_dir / "espd_bsp_audio_glue.c", AUDIO_GLUE_C.format(src=rel_src))
-    io_tmpl = (
-        IO_GLUE_C_NO_LED
-        if data.get("bsp", {}).get("no_ws2812_leds")
-        else IO_GLUE_C
-    )
-    _write_if_changed(out_dir / "espd_bsp_io_glue.c", io_tmpl.format(src=rel_src))
+    if not _is_generic_board(data):
+        _write_if_changed(out_dir / "espd_bsp_audio_glue.c", AUDIO_GLUE_C.format(src=rel_src))
+        io_tmpl = (
+            IO_GLUE_C_NO_LED
+            if data.get("bsp", {}).get("no_ws2812_leds")
+            else IO_GLUE_C
+        )
+        _write_if_changed(out_dir / "espd_bsp_io_glue.c", io_tmpl.format(src=rel_src))
+    else:
+        for glue in ("espd_bsp_audio_glue.c", "espd_bsp_io_glue.c"):
+            glue_path = out_dir / glue
+            if glue_path.exists():
+                glue_path.unlink()
     _write_if_changed(out_dir / "sdkconfig.defaults", _gen_sdkconfig_defaults(data, rel_src))
 
     io_cfg = _gen_io_config(data, rel_src)

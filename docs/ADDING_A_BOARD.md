@@ -223,8 +223,9 @@ echo 'CONFIG_ESPD_BOARD_MYKIT=y' > sdkconfig.defaults.local
 idf.py set-target esp32s3 build
 ```
 
-**espd-kits** CI writes `espd/sdkconfig.defaults.local` and syncs board YAML into
-`espd/boards/` before build — the **`espd` submodule** is not committed with those changes.
+**espd-kits** CI sets **`ESPD_BOARDS_DIR`** to the kits `boards/` tree and writes
+`espd/sdkconfig.defaults.local` before build — the **`espd` submodule** is not committed
+with those changes.
 
 Activate IDF v6.0.1 per [README.md](../README.md).
 
