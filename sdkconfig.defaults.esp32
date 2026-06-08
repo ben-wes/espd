@@ -3,9 +3,10 @@
 # (defaults to generic, override in menuconfig or sdkconfig.defaults.local).
 # Flash size is detected at flash time; /storage is registered at runtime.
 
-# Pd on app_main; IDF default 3584 overflows on FFT-heavy patches. Same need as
-# S3, but internal RAM is much tighter here — avoid large static allocations.
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=65536
+# Pd on app_main; IDF default 3584 overflows on FFT-heavy patches. 32 KiB fits
+# typical patches on tight internal RAM; use 65536 for FFT-heavy work if headroom.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=32768
+CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=y
 
 # Audio loop on CPU1; WiFi/pthread workers on CPU0 (see main/espd.c, espd_dev.c).
 # Crucial on dual-core ESP32 to prevent Wi-Fi/IP interrupts from glitching real-time audio.
