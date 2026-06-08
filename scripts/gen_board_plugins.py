@@ -150,7 +150,8 @@ def _feature_implied(data: dict, symbol: str) -> bool:
             val = options.get(symbol)
             if val is not None:
                 return bool(_kconfig_value(val))
-    return symbol in (data.get("features") or {}).get("imply") or []
+    imply = (data.get("features") or {}).get("imply") or []
+    return symbol in imply
 
 
 def _profile_has_usb_otg(data: dict) -> bool:
