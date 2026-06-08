@@ -87,6 +87,7 @@ set(MAIN_REQUIRES
     esp_adc
     nvs_flash
     spi_flash
+    esp_partition
     fatfs
     wear_levelling
     esp_timer

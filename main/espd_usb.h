@@ -8,6 +8,7 @@
 #include <stddef.h>
 #include <stdarg.h>
 
+esp_err_t espd_usb_register_dynamic_storage(void);
 esp_err_t espd_usb_mount_flash_early_vfs(void);
 
 #if CONFIG_ESPD_USE_USB_OTG

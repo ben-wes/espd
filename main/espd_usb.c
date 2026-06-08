@@ -11,6 +11,7 @@
 #include "esp_err.h"
 #include "esp_system.h"
 #include "esp_partition.h"
+#include "esp_flash.h"
 #include "esp_vfs_fat.h"
 #include "wear_levelling.h"
 #include "freertos/FreeRTOS.h"
@@ -75,6 +76,56 @@ static esp_err_t espd_usb_unmount_flash_early_vfs(void)
     s_flash_vfs_early = false;
     wl_handle = WL_INVALID_HANDLE;
     return err;
+}
+
+/* ─── Dynamic storage partition ─── */
+
+/* Register a FAT "storage" partition spanning all flash after the last partition
+ * in the table. The base table ships NO storage partition, so one firmware fills
+ * whatever flash the chip actually has — espd stays flash-size-agnostic. Runs once
+ * at boot, before /storage is first looked up (early VFS / MSC). Requires
+ * CONFIG_ESPTOOLPY_FLASHSIZE_DETECT so the flash driver reports the real size. */
+esp_err_t espd_usb_register_dynamic_storage(void)
+{
+    if (esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
+            ESP_PARTITION_SUBTYPE_DATA_FAT, "storage"))
+        return ESP_OK;   /* already present */
+
+    uint32_t flash_size = 0;
+    esp_err_t err = esp_flash_get_size(NULL, &flash_size);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "flash size query failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    uint32_t used_end = 0;
+    esp_partition_iterator_t it = esp_partition_find(
+        ESP_PARTITION_TYPE_ANY, ESP_PARTITION_SUBTYPE_ANY, NULL);
+    while (it) {
+        const esp_partition_t *p = esp_partition_get(it);
+        uint32_t end = p->address + p->size;
+        if (end > used_end)
+            used_end = end;
+        it = esp_partition_next(it);
+    }
+
+    if (used_end == 0 || used_end >= flash_size) {
+        ESP_LOGW(TAG, "no free flash for /storage (used=0x%x flash=0x%x)",
+            (unsigned)used_end, (unsigned)flash_size);
+        return ESP_OK;
+    }
+
+    const esp_partition_t *part = NULL;
+    err = esp_partition_register_external(NULL, used_end, flash_size - used_end,
+        "storage", ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, &part);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "register /storage failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    ESP_LOGI(TAG, "/storage: %u KiB at 0x%x (flash %u KiB)",
+        (unsigned)((flash_size - used_end) / 1024), (unsigned)used_end,
+        (unsigned)(flash_size / 1024));
+    return ESP_OK;
 }
 
 /* ─── FAT volume label ─── */

@@ -270,6 +270,11 @@ void app_main(void)
     esp_event_loop_create_default();
 
 
+    /* Register a full-flash /storage partition at runtime, so one firmware uses
+     * whatever flash the chip has (no per-board flash size). Must run before the
+     * storage partition is first looked up below. */
+    (void)espd_usb_register_dynamic_storage();
+
     /* /storage for config.txt before USB takes over the flash partition. */
     esp_err_t mnt = espd_usb_mount_flash_early_vfs();
     if (mnt != ESP_OK)

@@ -1,0 +1,8 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# Base table (all boards, all flash sizes): bootloader + nvs + phy + the espd app.
+# There is NO storage partition here — espd registers a FAT "storage" partition at
+# runtime spanning the rest of the physical flash (see espd_usb_register_dynamic_storage),
+# so one firmware fills whatever flash the chip actually has. Requires FLASHSIZE_DETECT.
+nvs,      data, nvs,     ,        0x6000,
+phy_init, data, phy,     ,        0x1000,
+factory,  app,  factory, ,        1536K,

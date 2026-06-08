@@ -120,11 +120,6 @@ bsp:                               # required — esp-bsp Component Manager dep
   # — or registry instead of git: —
   # version: "^1.0.0"
 
-flash: 16MB                        # hardware flash size → generated partition
-                                   # table (factory app fixed, storage = the
-                                   # rest) + ESPTOOLPY_FLASHSIZE. Omit to inherit
-                                   # the chip/base partition table.
-
 features:                          # ESPD features → Kconfig `imply` on the board
   imply:                           # choice; enabled when the board is selected
     - ESPD_USE_ADC
@@ -134,16 +129,20 @@ io:                                # optional — omit if BSP button order is fi
   buttons: [VOLUP, PLAY, VOLDOWN]  # → BSP_BUTTON_* for espd/din/0..N
 
 profile:                           # optional extra IDF tuning Kconfig can't
-  Pd runtime tuning:               # express (flash/partitions come from `flash:`)
+  Pd runtime tuning:               # express (PSRAM, BSP Kconfig, CPU/Wi-Fi tuning)
     ESP_DEFAULT_CPU_FREQ_MHZ_240: y
 ```
+
+There is **no flash-size key**: the base partition table has no storage partition
+and espd registers a full-flash `storage` (FAT) partition at runtime, so one
+firmware fills whatever flash the chip has (the bootloader header size is
+auto-detected at flash time via `ESPTOOLPY_HEADER_FLASHSIZE_UPDATE`).
 
 Feature flags belong in `features.imply` (board-following Kconfig), **not** in
 `profile:` — a value pinned in `sdkconfig.defaults` is sticky and leaks across
 board switches. `profile:` is for IDF tuning only. Keys may omit the `CONFIG_`
 prefix; values are `y`/`n`, numbers, or quoted strings (e.g. `'"/sdcard"'`,
-`"0x1"`). Setting `ESPTOOLPY_FLASHSIZE_*` or `PARTITION_TABLE_*` in `profile:`
-overrides the `flash:`-generated table.
+`"0x1"`).
 
 ### Chip defaults (do not repeat in YAML)
 

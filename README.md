@@ -39,7 +39,7 @@ Activate IDF in every new shell:
 
 | Layer | Where | When | Examples |
 |-------|--------|------|----------|
-| **Board profile** | `boards/*.yaml` → generated `sdkconfig.defaults` | CMake configure | PSRAM, flash size, codec drivers |
+| **Board profile** | `boards/*.yaml` → generated `sdkconfig.defaults` | CMake configure | PSRAM, codec drivers, BSP tuning |
 | **Compile-time** | `idf.py menuconfig` → **ESPD Configuration** | Rebuild to change | Target board, WiFi, `espd/ain`, sample rate |
 | **Runtime** | `config.txt` on the active store | Every boot | `wifi_ssid=`, `ain_pins=`, `audio_sample_rate=` |
 
