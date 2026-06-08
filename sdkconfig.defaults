@@ -1,11 +1,13 @@
 # Project-wide defaults (all targets). Board choice and profile defaults are
 # merged in CMakeLists.txt; target tuning in sdkconfig.defaults.<target>.
 
-# Board-agnostic storage: the bootloader header flash size is auto-detected and
-# patched at flash time (HEADER_FLASHSIZE_UPDATE), so the runtime SPI driver sees
-# the real chip. The base table has no storage partition; espd registers a
-# full-flash FAT "storage" at runtime (espd_usb_register_dynamic_storage). The
-# FLASHSIZE below is only a build-time placeholder for the partition-fits check.
+# Board-agnostic storage: the base table has no storage partition; at boot espd
+# detects the TRUE physical flash size (esp_flash_get_physical_size) and registers
+# a full-flash FAT "storage" spanning the remainder (espd_usb_register_dynamic_storage),
+# so one firmware fits any chip independent of the flashing tool. The FLASHSIZE
+# below is only a build-time placeholder for the app-size-fits check.
+# HEADER_FLASHSIZE_UPDATE patches the header at flash time when the tool honors it
+# (esptool.py) — a nicety for esptool's own size reporting, not relied upon at runtime.
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE=y
 CONFIG_PARTITION_TABLE_CUSTOM=y

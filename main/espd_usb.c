@@ -12,6 +12,10 @@
 #include "esp_system.h"
 #include "esp_partition.h"
 #include "esp_flash.h"
+/* Full esp_flash_t definition (size field): grow the default chip's recorded
+ * size from the build placeholder to the detected physical size so the whole
+ * chip is addressable (see espd_usb_register_dynamic_storage). */
+#include "esp_flash_chips/esp_flash_types.h"
 #include "esp_vfs_fat.h"
 #include "wear_levelling.h"
 #include "freertos/FreeRTOS.h"
@@ -91,12 +95,24 @@ esp_err_t espd_usb_register_dynamic_storage(void)
             ESP_PARTITION_SUBTYPE_DATA_FAT, "storage"))
         return ESP_OK;   /* already present */
 
+    /* True physical chip size via live SFDP detection — NOT esp_flash_get_size(),
+     * which returns the *configured* size baked from the bootloader header (a fixed
+     * build placeholder). The header is only patched to the real size at flash time
+     * if the flashing tool honors HEADER_FLASHSIZE_UPDATE + detect; the web flasher
+     * (esptool.js) does not, so we must detect at runtime to be flasher-independent. */
     uint32_t flash_size = 0;
-    esp_err_t err = esp_flash_get_size(NULL, &flash_size);
+    esp_err_t err = esp_flash_get_physical_size(NULL, &flash_size);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "flash size query failed: %s", esp_err_to_name(err));
         return err;
     }
+
+    /* esp_partition_register_external() bounds-checks the region against the default
+     * chip's configured ->size (still the placeholder). Grow it to the detected
+     * physical size so the check passes and FAT/wear-levelling I/O can reach the
+     * whole chip. Only ever grows toward the real size; a no-op on a smaller chip. */
+    if (esp_flash_default_chip && esp_flash_default_chip->size < flash_size)
+        esp_flash_default_chip->size = flash_size;
 
     uint32_t used_end = 0;
     esp_partition_iterator_t it = esp_partition_find(
@@ -433,6 +449,21 @@ static void espd_usb_release_usj_for_otg(void)
 }
 
 #if CONFIG_ESPD_USE_USB_MSC
+bool espd_usb_wait_for_host(uint32_t timeout_ticks)
+{
+    /* On a cold power-on app_main can reach the drive-mode gate before the host
+     * has finished USB enumeration, so a bare tud_mounted() check loses the race
+     * and the drive never appears. Poll until enumerated or the timeout elapses
+     * (a host-less / battery boot just waits out the timeout, then runs Pd). */
+    TickType_t start = xTaskGetTickCount();
+    while (!tud_mounted()) {
+        if ((TickType_t)(xTaskGetTickCount() - start) >= (TickType_t)timeout_ticks)
+            return false;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    return true;
+}
+
 void espd_usb_drive_mode_wait(void)
 {
     (void)espd_usb_expose_msc_to_host();

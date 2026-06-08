@@ -346,7 +346,8 @@ void app_main(void)
      * command's esp_restart() — returns straight to Pd with the flash internal, so
      * the host can't re-grab it and the host-side sync reconnects cleanly. */
     if (esp_reset_reason() == ESP_RST_POWERON
-        && espd_usb_msc_storage_present() && tud_mounted()) {
+        && espd_usb_msc_storage_present()
+        && espd_usb_wait_for_host(pdMS_TO_TICKS(2000))) {
         espd_usb_drive_mode_wait();
     }
 
