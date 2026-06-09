@@ -287,6 +287,7 @@ static int dev_target_ready(dev_target_t target)
 static int dev_rel_path_ok(const char *rel)
 {
     size_t n;
+    const unsigned char *p;
 
     if (!rel || !rel[0] || rel[0] == '/')
         return 0;
@@ -295,6 +296,27 @@ static int dev_rel_path_ok(const char *rel)
     n = strlen(rel);
     if (n >= ESPD_DEV_PATH_MAX)
         return 0;
+    for (p = (const unsigned char *)rel; *p; p++) {
+        if (*p < 0x20 || *p >= 0x7f)
+            return 0;
+        if (*p == '\\')
+            return 0;
+    }
+    return 1;
+}
+
+static int dev_name_component_ok(const char *name)
+{
+    const unsigned char *p;
+
+    if (!name || !name[0] || name[0] == '.')
+        return 0;
+    for (p = (const unsigned char *)name; *p; p++) {
+        if (*p < 0x20 || *p >= 0x7f)
+            return 0;
+        if (*p == '\\' || *p == ':')
+            return 0;
+    }
     return 1;
 }
 
@@ -592,6 +614,8 @@ static size_t dev_list_dir(const char *dir_full, const char *rel_prefix)
 
         if (ent->d_name[0] == '.')
             continue;
+        if (!dev_name_component_ok(ent->d_name))
+            continue;
         if (rel_prefix[0]) {
             n = snprintf(child_rel, sizeof(child_rel), "%s/%s", rel_prefix, ent->d_name);
         } else {
@@ -609,6 +633,8 @@ static size_t dev_list_dir(const char *dir_full, const char *rel_prefix)
         } else if (S_ISREG(st.st_mode)) {
             char line[ESPD_DEV_PATH_MAX + 16];
 
+            if (!dev_rel_path_ok(child_rel))
+                continue;
             snprintf(line, sizeof(line), "+FILE %s", child_rel);
             dev_reply(line);
             count++;

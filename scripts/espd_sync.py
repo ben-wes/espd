@@ -53,6 +53,25 @@ _ANSI_RE = re.compile(rb"\x1b\[[0-9;]*m")
 _ESP_LOG_RE = re.compile(rb"^[IWEDV] \([^)]+\) [^:\n]+: ")
 _PUT_DONE_RE = re.compile(rb"^\+OK PUT done ([0-9a-fA-F]{8})$")
 _LIST_DONE_RE = re.compile(rb"^\+OK LIST done (\d+)$")
+
+
+def _dev_path_ok(rel: str) -> bool:
+    if not rel or rel.startswith("/") or "\\" in rel:
+        return False
+    if ".." in rel.split("/"):
+        return False
+    if len(rel) >= 384:
+        return False
+    try:
+        rel.encode("ascii")
+    except UnicodeEncodeError:
+        return False
+    for part in rel.split("/"):
+        if not part or part.startswith("."):
+            return False
+        if any(ord(c) < 0x20 for c in part):
+            return False
+    return True
 _STATUS_INFO_RE = re.compile(
     rb"^\+OK STATUS sdcard=(yes|no) internal=(yes|no)$"
 )
@@ -264,8 +283,6 @@ def wait_serial_ready(pattern: str, timeout: float = 45.0) -> str:
             continue
         try:
             ser = _serial_open_retry(port, min(8.0, remaining))
-            ser.dtr = True
-            ser.rts = True
             ser.close()
             return port
         except EspdDisconnected:
@@ -278,8 +295,6 @@ class EspdCdc:
         self.port = port
         self.last_status: bytes | None = None
         self._ser = _serial_open_retry(port, open_timeout)
-        self._ser.dtr = True
-        self._ser.rts = True
 
         self._lock = threading.Lock()
         self._cmd_lock = threading.Lock()
@@ -349,8 +364,17 @@ class EspdCdc:
                     continue
                 if self._list_active:
                     if line.startswith(b"+FILE "):
-                        with self._lock:
-                            self._list_paths.append(line[6:].decode())
+                        raw = line[6:]
+                        try:
+                            rel = raw.decode("ascii")
+                        except UnicodeDecodeError:
+                            log_script(f"warning: ignore device path {raw!r}")
+                        else:
+                            if _dev_path_ok(rel):
+                                with self._lock:
+                                    self._list_paths.append(rel)
+                            else:
+                                log_script(f"warning: ignore device path {raw!r}")
                         log_dev_rx(line)
                         continue
                     proto = _extract_protocol_line(line)
@@ -477,8 +501,8 @@ class EspdCdc:
         except (EspdDisconnected, TimeoutError):
             pass  # reboot disconnects CDC — expected
 
-    def status(self) -> bytes:
-        return self.command("STATUS", timeout=10.0)
+    def status(self, timeout: float = 10.0) -> bytes:
+        return self.command("STATUS", timeout=timeout)
 
     def list_files(self, timeout: float = 120.0) -> list[str]:
         self._check_alive()
@@ -592,9 +616,7 @@ def ensure_storage_for_write(cdc: EspdCdc, port: str) -> EspdCdc:
     log_script("internal storage not available -- resetting device")
     cdc.reset_device()
     cdc.close()
-    time.sleep(0.5)
     wait_port_gone(port, timeout=25.0)
-    time.sleep(2.0)
     log_script("waiting for CDC after reboot (up to 60s)…")
     cdc = connect_cdc(port, ready_timeout=60.0)
     info = wait_for_storage_ready(cdc)
@@ -622,23 +644,20 @@ def connect_cdc(port_pattern: str, ready_timeout: float = 8.0) -> EspdCdc:
                 log_script(f"port: {port}")
                 _LAST_PORT_LOGGED = port
             cdc = EspdCdc(port)
-            time.sleep(0.25)
-            for _ in range(15):
+            for _ in range(5):
                 try:
-                    last = cdc.status()
+                    last = cdc.status(timeout=3.0)
                     if b"+OK STATUS" in last:
                         log_script(f"connected ({port}): {last.decode(errors='replace')}")
                         connected = cdc
                         connected.last_status = last
                         cdc = None
                         return connected
-                    if last.startswith(b"-ERR"):
-                        time.sleep(0.25)
-                        continue
                 except EspdDisconnected as e:
                     last_err = str(e)
                     break
-                time.sleep(0.4)
+                except TimeoutError:
+                    pass
         except (TimeoutError, EspdDisconnected, serial.serialutil.SerialException, OSError) as e:
             last_err = str(e)
         finally:
@@ -692,7 +711,10 @@ def mirror_prune(cdc: EspdCdc, keep: set[str], port: str) -> EspdCdc:
             log_script(f"{kind} during LIST; reconnecting…")
             cdc.close()
             cdc = connect_and_prepare(port, exit_on_fail=True)
-    orphans = sorted(on_device - keep_norm)
+    orphans = sorted(p for p in (on_device - keep_norm) if _dev_path_ok(p))
+    skipped = sorted(p for p in (on_device - keep_norm) if not _dev_path_ok(p))
+    for rel in skipped:
+        log_script(f"warning: cannot mirror-remove invalid device path {rel!r}")
     if not orphans:
         return cdc
     log_script(f"mirror: removing {len(orphans)} file(s) not in project")
@@ -708,11 +730,15 @@ def mirror_prune(cdc: EspdCdc, keep: set[str], port: str) -> EspdCdc:
                 cdc.close()
                 cdc = connect_and_prepare(port, exit_on_fail=True)
             except RuntimeError as e:
-                if "not mounted" in str(e):
+                msg = str(e)
+                if "not mounted" in msg:
                     log_script("storage not ready during RM; reconnecting…")
                     cdc.close()
                     cdc = connect_and_prepare(port, exit_on_fail=True)
                     continue
+                if "not found" in msg or "bad path" in msg:
+                    log_script(f"skip {rel} ({msg.strip()})")
+                    break
                 raise
     return cdc
 
