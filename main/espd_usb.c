@@ -46,6 +46,8 @@ static const char *TAG = "espd_usb";
 
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
 static tinyusb_msc_storage_handle_t msc_handle = NULL;
+static volatile bool s_msc_should_exit_drive_mode = false;
+static bool s_msc_disabled_after_eject = false;
 #endif
 static wl_handle_t wl_handle = WL_INVALID_HANDLE;
 static bool s_flash_vfs_early;
@@ -81,7 +83,6 @@ static esp_err_t espd_usb_unmount_flash_early_vfs(void)
     wl_handle = WL_INVALID_HANDLE;
     return err;
 }
-
 /* ─── Dynamic storage partition ─── */
 
 /* Register a FAT "storage" partition spanning all flash after the last partition
@@ -219,6 +220,9 @@ static void espd_usb_msc_event_callback(tinyusb_msc_storage_handle_t handle,
         break;
     case TINYUSB_MSC_EVENT_MOUNT_COMPLETE:
         ESP_LOGI(TAG, "MSC mount complete (mount_point=%d)", event->mount_point);
+        if (event->mount_point == TINYUSB_MSC_STORAGE_MOUNT_APP) {
+            s_msc_should_exit_drive_mode = true;
+        }
         break;
     case TINYUSB_MSC_EVENT_MOUNT_FAILED:
         ESP_LOGW(TAG, "MSC mount failed (mount_point=%d)", event->mount_point);
@@ -361,7 +365,7 @@ esp_err_t espd_usb_ensure_msc_app_mount(void)
 #endif /* CONFIG_ESPD_USE_USB_MSC */
 
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
-static esp_err_t espd_usb_msc_unmount_storage(void)
+esp_err_t espd_usb_msc_unmount_storage(void)
 {
     if (!msc_handle) {
         return ESP_OK; /* Already disabled */
@@ -380,7 +384,7 @@ static esp_err_t espd_usb_msc_unmount_storage(void)
     return ESP_OK;
 }
 
-static esp_err_t espd_usb_msc_reinstall_driver_with_auto_mount_off(void)
+esp_err_t espd_usb_msc_reinstall_driver_with_auto_mount_off(void)
 {
     /* Uninstall MSC driver */
     esp_err_t err = tinyusb_msc_uninstall_driver();
@@ -409,31 +413,39 @@ static esp_err_t espd_usb_msc_reinstall_driver_with_auto_mount_off(void)
     return err;
 }
 
-static esp_err_t espd_usb_msc_remount_vfs(void)
+esp_err_t espd_usb_msc_remount_vfs(void)
 {
     /* Remount storage using direct VFS */
     esp_err_t err = espd_usb_mount_flash_early_vfs();
-    if (err == ESP_OK)
+    if (err == ESP_OK) {
         ESP_LOGI(TAG, "Storage remounted via direct VFS");
-    else
+        s_msc_disabled_after_eject = true;
+    } else {
         ESP_LOGE(TAG, "Failed to remount storage via direct VFS: %s", esp_err_to_name(err));
+    }
+
     return err;
 }
 
-/* Take the flash from the host: drop the MSC storage, reinstall the driver with
- * auto_mount_off=1 (so a USB (re)connect can't auto-expose it), and remount it for
- * the app via direct VFS. Called before Pd starts and to reclaim from drive mode. */
 esp_err_t espd_usb_msc_disable_and_remount_vfs(void)
 {
     esp_err_t err = espd_usb_msc_unmount_storage();
-    if (err != ESP_OK)
+    if (err != ESP_OK) {
         return err;
+    }
 
     err = espd_usb_msc_reinstall_driver_with_auto_mount_off();
-    if (err != ESP_OK)
+    if (err != ESP_OK) {
         ESP_LOGW(TAG, "MSC driver reinstall failed, continuing anyway");
+    }
 
-    return espd_usb_msc_remount_vfs();
+    err = espd_usb_msc_remount_vfs();
+    return err;
+}
+
+void espd_usb_msc_disable_after_eject()
+{
+    s_msc_disabled_after_eject = true;
 }
 #endif /* CONFIG_ESPD_USE_USB_MSC */
 
@@ -449,50 +461,17 @@ static void espd_usb_release_usj_for_otg(void)
 }
 
 #if CONFIG_ESPD_USE_USB_MSC
-bool espd_usb_wait_for_host(uint32_t timeout_ticks)
-{
-    /* On a cold power-on app_main can reach the drive-mode gate before the host
-     * has finished USB enumeration, so a bare tud_mounted() check loses the race
-     * and the drive never appears. Poll until enumerated or the timeout elapses
-     * (a host-less / battery boot just waits out the timeout, then runs Pd). */
-    TickType_t start = xTaskGetTickCount();
-    while (!tud_mounted()) {
-        if ((TickType_t)(xTaskGetTickCount() - start) >= (TickType_t)timeout_ticks)
-            return false;
-        vTaskDelay(pdMS_TO_TICKS(20));
-    }
-    return true;
-}
-
-static volatile bool s_drive_exit_requested;
-
-void espd_usb_request_drive_exit(void)
-{
-    /* Set from the dev-sync task (MSC_SYNC command): break drive_mode_wait so the
-     * flash is handed back to the app in place — no reboot, CDC stays connected. */
-    s_drive_exit_requested = true;
-}
-
 void espd_usb_drive_mode_wait(void)
 {
-    s_drive_exit_requested = false;
     (void)espd_usb_expose_msc_to_host();
-    ESP_LOGI(TAG, "USB drive mode -- eject (or dev-sync MSC_SYNC) to start audio");
+    ESP_LOGI(TAG, "USB drive mode -- eject to start audio");
 
-    /* Poll the live mount point rather than trusting a single MOUNT_COMPLETE
-     * event: with auto-mount enabled the driver emits spurious APP-mount events
-     * during boot/expose that would otherwise start Pd before the host has even
-     * taken the drive. Phase 1 waits until the host actually mounts it (USB);
-     * phase 2 waits until the host ejects (driver auto-remounts to APP). Either
-     * phase also breaks on a dev-sync MSC_SYNC request (flasher wants /storage). */
-    while (!espd_usb_msc_host_mounted() && !s_drive_exit_requested)
+    s_msc_should_exit_drive_mode = false;
+    while (!s_msc_should_exit_drive_mode) {
         vTaskDelay(pdMS_TO_TICKS(100));
-    while (espd_usb_msc_host_mounted() && !s_drive_exit_requested)
-        vTaskDelay(pdMS_TO_TICKS(100));
+    }
 
-    ESP_LOGI(TAG, "%s", s_drive_exit_requested
-        ? "drive mode exited by dev-sync (MSC_SYNC)"
-        : "USB drive ejected by host");
+    ESP_LOGI(TAG, "USB drive ejected by host");
 }
 #endif
 
@@ -547,7 +526,7 @@ static bool usb_init_on_core0(void)
 #endif
 
 #if CONFIG_ESPD_USE_USB_MSC
-    if (msc_handle == NULL) {
+    if (msc_handle == NULL && !s_msc_disabled_after_eject) {
         err = espd_usb_mount_storage_app();
         if (err != ESP_OK)
             ESP_LOGW(TAG, "/storage mount failed: %s", esp_err_to_name(err));

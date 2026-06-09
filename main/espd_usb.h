@@ -20,10 +20,9 @@ bool espd_usb_msc_storage_present(void);
 bool espd_usb_msc_host_mounted(void);
 esp_err_t espd_usb_expose_msc_to_host(void);
 esp_err_t espd_usb_ensure_msc_app_mount(void);
-bool espd_usb_wait_for_host(uint32_t timeout_ticks);
 void espd_usb_drive_mode_wait(void);
-void espd_usb_request_drive_exit(void);
 esp_err_t espd_usb_msc_disable_and_remount_vfs(void);
+void espd_usb_msc_disable_after_eject();
 #endif
 
 void espd_serial_sync_write(const void *data, size_t len);

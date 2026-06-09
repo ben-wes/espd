@@ -54,10 +54,10 @@ static const char *TAG = "espd_dev";
 #define ESPD_DEV_TASK_CORE          0
 /* Below TinyUSB device task (4) so CDC RX is not starved during PUT payload. */
 #define ESPD_DEV_TASK_PRIO          3
-#define ESPD_DEV_RX_CHUNK           4096
-#define ESPD_DEV_PUT_FILEBUF        16384
-#define ESPD_DEV_HASH_CHUNK         4096
-#define ESPD_DEV_RX_RING            16384
+#define ESPD_DEV_RX_CHUNK           2048   // 4KB → 2KB (CDC read buffer)
+#define ESPD_DEV_PUT_FILEBUF        8192   // 16KB → 8KB (file write buffer)
+#define ESPD_DEV_HASH_CHUNK         2048   // 4KB → 2KB (hash buffer)
+#define ESPD_DEV_RX_RING            8192   // 16KB → 8KB (ring buffer)
 /* fwrite/fsync + 4 KiB CDC read buffer; 6 KiB stack overflowed after RX_CHUNK bump. */
 #define ESPD_DEV_TASK_STACK         12288
 /* Room for PUT <path-with-spaces> <size> <crc> (path up to ESPD_DEV_PATH_MAX). */
@@ -676,19 +676,6 @@ static void dev_handle_line(char *line)
         dev_reply("+OK RESET rebooting");
         vTaskDelay(pdMS_TO_TICKS(100));
         esp_restart();
-        return;
-    }
-    if (!strcmp(line, "MSC_SYNC")) {
-        /* Leave USB drive mode in place (hand /storage back to the app) so the
-         * host can sync without a reboot. No-op if not in drive mode. The app
-         * task remounts /storage shortly after; the host polls STATUS until
-         * internal=yes. */
-#if CONFIG_ESPD_USE_USB_MSC
-        espd_usb_request_drive_exit();
-        dev_reply("+OK MSC_SYNC leaving drive mode");
-#else
-        dev_reply("+OK MSC_SYNC no-op");
-#endif
         return;
     }
     if (!strcmp(line, "RELOAD")) {

@@ -212,7 +212,10 @@ void pdmain_print(const char *s)
     if (!s || !*s)
         return;
 
-#if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_DEV_CDC_SYNC
+
+#if CONFIG_ESPD_DEV_SERIAL_SYNC && SOC_USB_SERIAL_JTAG_SUPPORTED
+        espd_serial_sync_write(s, strlen(s));
+#elif CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_DEV_CDC_SYNC
     if (tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
         espd_serial_sync_write(s, strlen(s));
     else
@@ -306,7 +309,9 @@ void app_main(void)
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
     espd_dev_init();
+#if SOC_USB_SERIAL_JTAG_SUPPORTED
     esp_log_set_vprintf(espd_serial_sync_log);
+#endif
 #endif
 
 #if CONFIG_ESP_MAIN_TASK_STACK_SIZE < 16384
@@ -381,9 +386,7 @@ void app_main(void)
          * dev-sync RESET — returns straight to Pd so the host can't re-grab it. Then
          * hand the flash to the app (direct VFS) so the host can never auto-mount it
          * while Pd is running. */
-        if (esp_reset_reason() == ESP_RST_POWERON
-            && espd_usb_msc_storage_present()
-            && espd_usb_wait_for_host(pdMS_TO_TICKS(2000))) {
+        if (espd_usb_msc_storage_present() && tud_mounted()) {
             espd_usb_drive_mode_wait();
         }
         espd_usb_msc_disable_and_remount_vfs();
