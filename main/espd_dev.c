@@ -6,6 +6,8 @@
  *   PUT <relpath> <nbytes> <crc32hex>
  *       -> +OK PUT skip (file already matches) or +OK PUT ready then <nbytes>
  *          raw bytes -> +OK PUT done <crc> (writes to <path>.tmp, rename on success)
+ *   LIST  (recursive file list under active sync target)
+ *   RM <relpath>  (delete one file)
  *   RELOAD
  *   MSG <pd-message>  (queued; evaluated on audio thread via pd_sendmsg)
  *   RESET  (reboot ESP after reply)
@@ -48,6 +50,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <unistd.h>
+#include <dirent.h>
 
 static const char *TAG = "espd_dev";
 
@@ -571,6 +574,125 @@ static void dev_queue_pdmsg(const char *text)
     dev_reply("+OK MSG queued");
 }
 
+static size_t dev_list_dir(const char *dir_full, const char *rel_prefix)
+{
+    DIR *d;
+    struct dirent *ent;
+    size_t count = 0;
+
+    d = opendir(dir_full);
+    if (!d)
+        return 0;
+
+    while ((ent = readdir(d)) != NULL) {
+        char child_rel[ESPD_DEV_PATH_MAX];
+        char child_full[ESPD_DEV_PATH_MAX];
+        struct stat st;
+        int n;
+
+        if (ent->d_name[0] == '.')
+            continue;
+        if (rel_prefix[0]) {
+            n = snprintf(child_rel, sizeof(child_rel), "%s/%s", rel_prefix, ent->d_name);
+        } else {
+            n = snprintf(child_rel, sizeof(child_rel), "%s", ent->d_name);
+        }
+        if (n < 0 || (size_t)n >= sizeof(child_rel))
+            continue;
+        n = snprintf(child_full, sizeof(child_full), "%s/%s", dir_full, ent->d_name);
+        if (n < 0 || (size_t)n >= sizeof(child_full))
+            continue;
+        if (stat(child_full, &st) != 0)
+            continue;
+        if (S_ISDIR(st.st_mode)) {
+            count += dev_list_dir(child_full, child_rel);
+        } else if (S_ISREG(st.st_mode)) {
+            char line[ESPD_DEV_PATH_MAX + 16];
+
+            snprintf(line, sizeof(line), "+FILE %s", child_rel);
+            dev_reply(line);
+            count++;
+        }
+    }
+    closedir(d);
+    return count;
+}
+
+static void dev_do_list(void)
+{
+    char root[64];
+    char reply[48];
+    size_t n;
+
+    dev_refresh_target();
+#if CONFIG_ESPD_USE_USB_MSC
+    if (s_target == DEV_TARGET_FLASH && espd_usb_msc_storage_present()) {
+        esp_err_t mnt = espd_usb_ensure_msc_app_mount();
+        if (mnt != ESP_OK) {
+            dev_reply("-ERR reclaim /storage from host failed (eject USB volume on host)");
+            return;
+        }
+    }
+#endif
+    if (!dev_target_ready(s_target)) {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "-ERR target %s not mounted", dev_target_name(s_target));
+        dev_reply(msg);
+        return;
+    }
+    strncpy(root, dev_target_mount(s_target), sizeof(root) - 1);
+    root[sizeof(root) - 1] = '\0';
+    dev_reply("+OK LIST begin");
+    n = dev_list_dir(root, "");
+    snprintf(reply, sizeof(reply), "+OK LIST done %u", (unsigned)n);
+    dev_reply(reply);
+}
+
+static void dev_do_rm(const char *rel)
+{
+    char full[ESPD_DEV_PATH_MAX];
+    struct stat st;
+
+    dev_refresh_target();
+#if CONFIG_ESPD_USE_USB_MSC
+    if (s_target == DEV_TARGET_FLASH && espd_usb_msc_storage_present()) {
+        esp_err_t mnt = espd_usb_ensure_msc_app_mount();
+        if (mnt != ESP_OK) {
+            dev_reply("-ERR reclaim /storage from host failed (eject USB volume on host)");
+            return;
+        }
+    }
+#endif
+    if (!dev_target_ready(s_target)) {
+        char msg[96];
+        snprintf(msg, sizeof(msg), "-ERR target %s not mounted", dev_target_name(s_target));
+        dev_reply(msg);
+        return;
+    }
+    if (!dev_rel_path_ok(rel)) {
+        dev_reply("-ERR bad path");
+        return;
+    }
+    if (!dev_build_path(full, sizeof(full), rel)) {
+        dev_reply("-ERR path too long");
+        return;
+    }
+    if (stat(full, &st) != 0) {
+        dev_reply("-ERR not found");
+        return;
+    }
+    if (!S_ISREG(st.st_mode)) {
+        dev_reply("-ERR not a file");
+        return;
+    }
+    if (unlink(full) != 0) {
+        dev_reply("-ERR unlink failed");
+        return;
+    }
+    dev_reply("+OK RM done");
+    espd_storage_resolve_paths();
+}
+
 static void dev_do_reload(void)
 {
     dev_refresh_target();
@@ -676,6 +798,17 @@ static void dev_handle_line(char *line)
         dev_reply("+OK RESET rebooting");
         vTaskDelay(pdMS_TO_TICKS(100));
         esp_restart();
+        return;
+    }
+    if (!strcmp(line, "LIST")) {
+        dev_do_list();
+        return;
+    }
+    if (!strncmp(line, "RM ", 3)) {
+        const char *rel = line + 3;
+        while (*rel == ' ' || *rel == '\t')
+            rel++;
+        dev_do_rm(rel);
         return;
     }
     if (!strcmp(line, "RELOAD")) {
