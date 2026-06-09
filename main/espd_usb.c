@@ -461,6 +461,17 @@ static void espd_usb_release_usj_for_otg(void)
 }
 
 #if CONFIG_ESPD_USE_USB_MSC
+bool espd_usb_wait_for_host(uint32_t timeout_ticks)
+{
+    TickType_t start = xTaskGetTickCount();
+    while (!tud_mounted()) {
+        if ((TickType_t)(xTaskGetTickCount() - start) >= (TickType_t)timeout_ticks)
+            return false;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    return true;
+}
+
 void espd_usb_drive_mode_wait(void)
 {
     (void)espd_usb_expose_msc_to_host();
