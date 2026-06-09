@@ -176,10 +176,11 @@ config ESPD_DEV_SYNC
             Select the communication backend for Dev Sync.
 
         config ESPD_DEV_SERIAL_SYNC
-            bool "Standard UART console serial port"
+            bool "Serial port (UART or USB Serial JTAG)"
             help
-                Uses UART0 (standard console port) for communicating with the host.
-                Supported on all chips, including generic ESP32. Communicates at 921600 BPS.
+                Uses UART0 or USB Serial JTAG (automatically selected based on platform support)
+                for communicating with the host. USB Serial JTAG is used when available
+                (ESP32-S3, ESP32-P4, etc.) for USB-speed communication, otherwise UART0 is used.
                 CDC and USB Mass Storage are not supported/required.
 
         config ESPD_DEV_CDC_SYNC
