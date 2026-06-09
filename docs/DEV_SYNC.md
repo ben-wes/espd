@@ -146,6 +146,7 @@ On connect the script **syncs the project tree** (patches, `config.txt`, samples
 | `--status` | STATUS and exit |
 | `--pd-msg TEXT` | Send one `MSG` to Pd and exit (e.g. `'; pd dsp 1'` or `'print hello'`) |
 | `--reset` | Reboot device |
+| `--reload` | Reload `main.pd` from active store |
 | `--resync-on-reconnect` | Full sync after unplug/reset |
 | `--no-reconnect` | Exit when port goes away |
 | `--no-color` / `--no-esp-log` | Quieter terminal output |
