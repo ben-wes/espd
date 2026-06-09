@@ -759,6 +759,11 @@ def main() -> int:
         help="send one MSG to Pd and exit (e.g. '; pd dsp 1' or 'print hello')",
     )
     ap.add_argument("--reset", action="store_true", help="RESET device over CDC and exit")
+    ap.add_argument(
+        "--reload",
+        action="store_true",
+        help="RELOAD main.pd from active store over CDC and exit",
+    )
     ap.add_argument("--no-color", action="store_true", help="disable ANSI colors")
     ap.add_argument(
         "--no-esp-log",
@@ -825,6 +830,12 @@ def main() -> int:
             cdc = connect_and_prepare(port_pattern)
             if not args.no_initial_sync:
                 run_sync("sync after reset")
+            return 0
+
+        if args.reload:
+            cdc = connect_cdc(port_pattern, ready_timeout=30.0)
+            line = cdc.reload()
+            log_script(line.decode(errors="replace").strip())
             return 0
 
         if args.status:
