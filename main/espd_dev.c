@@ -147,7 +147,7 @@ static size_t dev_rx_pop(uint8_t *out, size_t max)
 static void dev_drain_cdc_hw(void)
 {
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
-#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG
+#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
     int rx;
     while ((rx = usb_serial_jtag_read_bytes(s_cdc_rx_buf, sizeof(s_cdc_rx_buf), pdMS_TO_TICKS(0))) > 0)
         dev_rx_push(s_cdc_rx_buf, rx);
@@ -173,7 +173,7 @@ static void dev_drain_cdc_hw(void)
 static void dev_drain_cdc_put(void)
 {
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
-#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG
+#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
     int rx;
     while ((rx = usb_serial_jtag_read_bytes(s_cdc_rx_buf, sizeof(s_cdc_rx_buf), pdMS_TO_TICKS(0))) > 0)
         dev_put_data(s_cdc_rx_buf, rx);
@@ -943,7 +943,7 @@ void espd_dev_init(void)
     dev_refresh_target();
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
-#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG
+#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
     /* Initialize USB Serial JTAG driver for chips with USJ support */
     usb_serial_jtag_driver_config_t usj_config = {
         .rx_buffer_size = 2048,
@@ -951,21 +951,8 @@ void espd_dev_init(void)
     };
     usb_serial_jtag_driver_install(&usj_config);
 #else
-    /* Initialize UART driver only if console is not using UART0 */
-#if !(CONFIG_ESP_CONSOLE_UART && CONFIG_ESP_CONSOLE_UART_NUM == 0)
+    /* Initialize UART driver - safe to call even if console already installed it */
     uart_driver_install(UART_NUM_0, 2048, 2048, 0, NULL, 0);
-    
-    /* Reconfigure baud rate to 921600 for dev sync */
-    uart_config_t uart_config = {
-        .baud_rate = 921600,
-        .data_bits = UART_DATA_8_BITS,
-        .parity = UART_PARITY_DISABLE,
-        .stop_bits = UART_STOP_BITS_1,
-        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-        .source_clk = UART_SCLK_DEFAULT,
-    };
-    uart_param_config(UART_NUM_0, &uart_config);
-#endif
 #endif
 #endif
 
@@ -979,7 +966,7 @@ void espd_dev_init(void)
     ESP_LOGI(TAG, "CDC dev sync: PUT/RELOAD -> %s (USB CDC)",
         dev_target_mount(s_target));
 #elif CONFIG_ESPD_DEV_SERIAL_SYNC
-#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG
+#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
     ESP_LOGI(TAG, "Serial dev sync: PUT/RELOAD -> %s (USB Serial JTAG)",
         dev_target_mount(s_target));
 #else
