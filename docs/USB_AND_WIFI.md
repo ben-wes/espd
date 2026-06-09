@@ -9,16 +9,15 @@
 
 Do not monitor `101` while the app uses `1234561`.
 
-## `msc_sync` (RTC flag)
+## Internal flash and MSC
 
-| `STATUS mode=` | Host USB disk | ESP `/storage` |
-|----------------|---------------|----------------|
-| **normal** | USB disk after Pd boot | APP for boot/config; then host; `PUT` reclaims APP briefly |
-| **msc_sync** | Hidden | APP mount (legacy dev-sync reboot) |
+When internal flash is the only store (no SD card), boot may expose it as a USB
+drive until the host ejects it once. After that, MSC is disabled and `/storage`
+stays on the app side while Pd runs — dev sync is **CDC PUT** only, not a
+host-mounted volume.
 
-- **`MODE MSC_SYNC`** — reboot into protected dev sync (`mode=msc_sync`).
-- **Leave dev sync** — **reset or power-cycle** the board (clears the RTC flag). `MODE NORMAL` over CDC does the same without a button press.
-- **`MODE NORMAL`** — optional CDC command (soft reboot, clears flag).
+There is no separate “sync mode” RTC flag and no `MODE` / `MSC_SYNC` CDC
+commands — use **`RESET`** (or power-cycle) if `STATUS` reports `internal=no`.
 
 ## Boot order
 
@@ -27,7 +26,7 @@ Do not monitor `101` while the app uses `1234561`.
 → SD optional → wifi_start_sta → board/audio init → wifi_wait_sta → pdmain
 ```
 
-Wi‑Fi credentials always come from `config.txt` before STA. USB never auto-mounts internal flash on the host at plug-in.
+Wi‑Fi credentials always come from `config.txt` before STA.
 
 ## Flash and monitor
 

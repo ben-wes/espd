@@ -11,9 +11,10 @@ Works on **macOS, Linux, and Windows** — Python 3 + [pyserial](https://pyseria
 ## Boot order (firmware)
 
 See **[USB_AND_WIFI.md](USB_AND_WIFI.md)** for OTG + Wi‑Fi boot order.
-Summary: **early `/storage`** → read **`config.txt`** → **Wi‑Fi PHY + CDC** → MSC **APP**
-mount (`msc_sync` hides host USB disk) →
-`wifi_start_sta` → **`wifi_wait_sta`** → **Pd**. Dev sync: `MODE MSC_SYNC` + reboot, then `PUT`.
+Summary: **early `/storage`** → read **`config.txt`** → **Wi‑Fi PHY + CDC** → (optional
+first-boot USB drive mode until host ejects) → MSC handed to the app →
+`wifi_start_sta` → **`wifi_wait_sta`** → **Pd**. Dev sync: **`STATUS`**, then
+**`PUT`** (host script sends **`RESET`** only when `internal=no`).
 
 ### Monitor (OTG CDC kits)
 
@@ -33,17 +34,19 @@ Boot and CDC sync use the same rule as firmware storage ([espd_storage.c](../mai
 | SD card | `/sdcard` | Preferred when present |
 | Internal flash | `/storage` | When SD is absent and MSC partition is mounted |
 
-The host script does **not** pick the store itself. On connect it sends `STATUS` and syncs to whatever the device reports (`sdcard=yes` → SD, else internal flash → **`MODE MSC_SYNC`** then **PUT**). SD does not need the mode switch.
+The host script does **not** pick the store itself. On connect it sends `STATUS` and syncs to whatever the device reports (`sdcard=yes` → `/sdcard`, else `internal=yes` → `/storage`). If `internal=no` (boot still in progress or stuck in USB drive mode), the script sends **`RESET`**, reconnects, and polls until `internal=yes`.
 
 ### Flasher / Web Serial (dev mode UI)
 
 1. Open CDC (`cu.usbmodem*123456*1` on typical OTG BSP kits).
-2. Internal flash, `mode=normal` + `internal=yes`: **PUT** directly (no reboot; host MSC stays hidden).
-3. Legacy / stuck boot: **`MODE MSC_SYNC`** (one reboot) then **PUT**; or power-cycle back to `normal`.
+2. `internal=yes`: **PUT** directly.
+3. `internal=no`: **`RESET`** (or power-cycle / eject the USB drive on first boot), wait for reconnect, then **PUT**.
 4. On USB disconnect, re-request the serial port; do not share the port with `idf.py monitor`.
-5. Leaving dev: **reset or power-cycle** the board (or optional `MODE NORMAL` over CDC).
 
-**Do not** edit the same files on the host USB volume while `espd_sync` is **PUT**ting to `/storage` (risk corrupt FAT). In **normal** mode the mass-storage volume appears on the host after Pd boots; sync **reclaims** `/storage` for each `PUT` (eject/unmount on the host if reclaim fails). **`MODE MSC_SYNC`** is optional; power-cycle clears it.
+On **internal-flash-only** boards (no SD), `/storage` is **app-only** after boot —
+the host USB data volume is torn down, so there is nothing to edit in Finder
+during `espd_sync`. Sync is **CDC PUT** only, not drag-and-drop. The host may
+see a drive only during the **first-boot** window (until you eject once).
 
 ## Reformat internal flash (`/storage`)
 
@@ -85,9 +88,9 @@ Then reset the board so firmware mounts and formats an empty FAT volume.
 
 ### Option D — format from the host (normal MSC mode)
 
-1. Quit `espd_sync.py` (not in `msc_sync`).
+1. Quit `espd_sync.py`.
 2. Reset the board; `python3 scripts/espd_sync.py --status` should show
-   `mode=normal`.
+   `internal=yes`.
 3. Erase/format the USB mass-storage volume on the host (FAT).
 
 Then sync patches again with `espd_sync.py`.
@@ -116,7 +119,7 @@ USB product strings: **Component config → TinyUSB**.
 
 Host → device:
 
-- `STATUS` — `+OK STATUS sdcard=yes|no internal=yes|no mode=normal|msc_sync` (`internal` = internal flash available; in **normal** the host USB volume appears after Pd boot)
+- `STATUS` — `+OK STATUS sdcard=yes|no internal=yes|no` (`internal` = `/storage` mounted for the app)
 - `PUT <relpath> <nbytes> <crc32hex>` — path may contain spaces; `+OK PUT skip` if unchanged
 - `RELOAD` — reload `main.pd` from the active sync target (`.pd` only; not enough for `config.txt`)
 - `MSG <pd-message>` — queue one Pd message (`pd_sendmsg` on the audio thread; `;` appended if omitted)
@@ -157,6 +160,6 @@ python3 scripts/espd_sync.py --status
 
 **CRC mismatch / disconnect during PUT:** often USB pacing or re-enumeration — script reconnects when possible; see firmware `espd_dev` task priority and host chunk pacing in script source.
 
-**Throughput:** host pacing in `espd_sync.py` (~800 KB/s) helps SD most. **ESP32-S3** builds use **4 KiB wear-levelling** and aligned MSC/PUT buffers (`sdkconfig.defaults.esp32s3` + `espd_dev.c`); internal flash (`msc_sync`) is still slower than SD because of wear levelling + per-file `fsync`.
+**Throughput:** host pacing in `espd_sync.py` (~800 KB/s) helps SD most. **ESP32-S3** builds use **4 KiB wear-levelling** and aligned MSC/PUT buffers (`sdkconfig.defaults.esp32s3` + `espd_dev.c`); internal flash is still slower than SD because of wear levelling + per-file `fsync`.
 
 **Logs:** stderr shows `→` / `←` dev traffic; stdout is mostly Pd `print:`.

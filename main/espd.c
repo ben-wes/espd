@@ -362,9 +362,7 @@ void app_main(void)
 
 #if CONFIG_ESPD_USE_USB_MSC
 #if CONFIG_ESPD_DEV_CDC_SYNC
-    /* Start dev-sync before drive mode so the host can issue CDC commands while
-     * the flash is exposed — notably MSC_SYNC, which makes drive_mode_wait hand
-     * /storage back to the app in place (no reboot, CDC stays connected). */
+    /* Dev-sync CDC is up before drive-mode gate so STATUS/RESET work if needed. */
     espd_dev_init();
     esp_log_set_vprintf(espd_serial_sync_log);
 #endif
