@@ -65,6 +65,10 @@ esp_err_t espd_audio_init(espd_audio_t **out) {
       .desc_num = (uint32_t)espd_audio_dma_desc_num(),
       .buf_size = (uint32_t)espd_audio_dma_frame_num() * 8, // 8-bit samples
       .freq_hz = a->sample_rate,
+      /* Interleaved L/R from Pd needs ALTER; default SIMUL plays 2x samples/block. */
+      .chan_mode = (a->chan_mask == (DAC_CHANNEL_MASK_CH0 | DAC_CHANNEL_MASK_CH1))
+          ? DAC_CHANNEL_MODE_ALTER
+          : DAC_CHANNEL_MODE_SIMUL,
   };
 
   ret = dac_continuous_new_channels(&dac_cfg, &a->dac_handle);
@@ -119,15 +123,13 @@ esp_err_t espd_audio_write(espd_audio_t *audio, const int16_t *pcm,
       dac_buf[i] = int16_to_dac(pcm[i]);
     }
   } else if (stereo_dac) {
-    // Stereo input with stereo DAC: output true stereo
-    // Left channel to CH0, Right channel to CH1
+    /* Interleaved L,R,... — ALTER mode maps even bytes→CH0, odd→CH1 (64 frames/block). */
     dac_samples = samples;
     dac_buf = malloc(dac_samples);
     if (!dac_buf)
       return ESP_ERR_NO_MEM;
-    for (size_t i = 0; i < samples; i++) {
+    for (size_t i = 0; i < samples; i++)
       dac_buf[i] = int16_to_dac(pcm[i]);
-    }
   } else {
     // Stereo input with mono DAC: mix to mono
     dac_samples = samples / 2;
