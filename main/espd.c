@@ -213,7 +213,7 @@ void pdmain_print(const char *s)
         return;
 
 
-#if CONFIG_ESPD_DEV_SERIAL_SYNC && CONFIG_USJ_ENABLE_USB_SERIAL_JTAG
+#if CONFIG_ESPD_DEV_SERIAL_SYNC && CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
         espd_serial_sync_write(s, strlen(s));
 #elif CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_DEV_CDC_SYNC
     if (tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
@@ -309,7 +309,7 @@ void app_main(void)
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
     espd_dev_init();
-#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG
+#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
     esp_log_set_vprintf(espd_serial_sync_log);
 #endif
 #endif

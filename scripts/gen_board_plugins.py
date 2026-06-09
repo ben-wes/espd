@@ -25,6 +25,7 @@ GENERATED_HEADER = "# Auto-generated from {src} — do not edit.\n"
 
 _USB_OTG_TARGETS = {"esp32s3", "esp32c3", "esp32c6", "esp32h2", "esp32c5", "esp32p4"}
 _WIFI_USB_TARGETS = {"esp32s3", "esp32c3", "esp32c6", "esp32h2", "esp32c5"}
+_USJ_SUPPORTED_TARGETS = {"esp32s3", "esp32p4"}
 
 # Flash/partitions are NOT generated per board: the base table (no storage
 # partition) + a runtime full-flash "storage" registration handle every flash
@@ -204,10 +205,11 @@ def _otg_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str,
         extras.append(("ESP_CONSOLE_UART_NUM", 0))
     if not (profile_keys & _CONSOLE_SECONDARY_MEMBERS):
         extras.append(("ESP_CONSOLE_SECONDARY_NONE", True))
-    # Auto-enable USB Serial JTAG on platforms that support it
+    # Auto-enable USB Serial JTAG only on platforms that support it
     if "USJ_ENABLE_USB_SERIAL_JTAG" not in profile_keys and (
         "ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG" not in profile_keys
         and "ESP_CONSOLE_USB_SERIAL_JTAG" not in profile_keys
+        and str(data.get("target")) in _USJ_SUPPORTED_TARGETS
     ):
         extras.append(("USJ_ENABLE_USB_SERIAL_JTAG", True))
     return extras
