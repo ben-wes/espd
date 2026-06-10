@@ -951,14 +951,14 @@ void espd_dev_init(void)
 #if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
     /* Initialize USB Serial JTAG driver for chips with USJ support */
     usb_serial_jtag_driver_config_t usj_config = {
-        .rx_buffer_size = 2048,
-        .tx_buffer_size = 2048,
+        .rx_buffer_size = 8192,
+        .tx_buffer_size = 8192,
     };
     usb_serial_jtag_driver_install(&usj_config);
 #else
     /* UART0 may already be installed by console; check before installing */
     if (!uart_is_driver_installed(UART_NUM_0)) {
-        uart_driver_install(UART_NUM_0, 2048, 2048, 0, NULL, 0);
+        uart_driver_install(UART_NUM_0, 8192, 8192, 0, NULL, 0);
     }
 #endif
 #endif
