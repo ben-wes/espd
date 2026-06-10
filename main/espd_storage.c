@@ -109,15 +109,7 @@ void espd_storage_init(void) {
   s_main_pd_mount = NULL;
 
   espd_storage_resolve_paths();
-
-  const char *active_mount = espd_storage_main_pd_mount_dir();
-  if (active_mount) {
-    espd_storage_stats_t stats;
-    if (espd_storage_get_stats(active_mount, &stats) == ESP_OK) {
-        ESP_LOGI(TAG, "%s: %lu KB total, %lu KB used, %lu KB free",
-          active_mount, stats.total_kb, stats.used_kb, stats.free_kb);
-    }
-  }
+  espd_print_storage_stats();
 
   if (s_config_path)
     ESP_LOGI(TAG, "using config.txt at %s", s_config_path);
@@ -182,6 +174,16 @@ bool espd_sdcard_main_pd_exists(void) {
 bool espd_storage_main_pd_exists(void) {
   return espd_storage_flash_ready() &&
          espd_storage_file_exists(ESPD_STORAGE_MAIN_PD_PATH);
+}
+
+esp_err_t espd_print_storage_stats(void) {    
+  espd_storage_stats_t stats;
+  esp_err_t err = espd_storage_get_stats( espd_storage_main_pd_mount_dir(), &stats);
+  if (err == ESP_OK) {
+      ESP_LOGI(TAG, "%s: %lu KB total, %lu KB used, %lu KB free",
+        espd_storage_main_pd_mount_dir(), stats.total_kb, stats.used_kb, stats.free_kb);
+  }
+  return err;
 }
 
 esp_err_t espd_storage_get_stats(const char *path, espd_storage_stats_t *stats)

@@ -35,3 +35,4 @@ typedef struct {
 } espd_storage_stats_t;
 
 esp_err_t espd_storage_get_stats(const char *path, espd_storage_stats_t *stats);
+esp_err_t espd_print_storage_stats(void);
