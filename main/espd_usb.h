@@ -19,7 +19,6 @@ bool espd_usb_start_after_wifi(void);
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
 bool espd_usb_msc_storage_present(void);
 bool espd_usb_msc_host_mounted(void);
-bool espd_usb_wait_for_host(uint32_t timeout_ticks);
 esp_err_t espd_usb_expose_msc_to_host(void);
 esp_err_t espd_usb_ensure_msc_app_mount(void);
 void espd_usb_drive_mode_wait(void);
