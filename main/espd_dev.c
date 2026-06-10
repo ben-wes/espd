@@ -951,8 +951,10 @@ void espd_dev_init(void)
     };
     usb_serial_jtag_driver_install(&usj_config);
 #else
-    /* Initialize UART driver - safe to call even if console already installed it */
-    uart_driver_install(UART_NUM_0, 2048, 2048, 0, NULL, 0);
+    /* UART0 may already be installed by console; check before installing */
+    if (!uart_is_driver_installed(UART_NUM_0)) {
+        uart_driver_install(UART_NUM_0, 2048, 2048, 0, NULL, 0);
+    }
 #endif
 #endif
 
