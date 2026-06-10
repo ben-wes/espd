@@ -7,6 +7,8 @@
 #include "espd_storage.h"
 #include "espd_runtime_config.h"
 
+#include <strings.h>
+
 static const char *TAG = "espd_config";
 
 espd_config_t g_espd_cfg;
@@ -50,6 +52,7 @@ void espd_config_load(void)
 
     /* Defaults: -1 means "not set in config.txt, use compiled default". */
     memset(&g_espd_cfg, 0, sizeof(g_espd_cfg));
+    g_espd_cfg.usb_role            = ESPD_USB_ROLE_DEVICE;
     g_espd_cfg.audio_dma_desc_num  = -1;
     g_espd_cfg.audio_dma_frame_num = -1;
     g_espd_cfg.audio_sample_rate   = -1;
@@ -90,8 +93,17 @@ void espd_config_load(void)
         v = cfg_trim(eq);
         k = cfg_trim(k);
 
+        /* USB MIDI role: device (default) | host */
+        if (!strcmp(k, "usb_midi_role"))
+        {
+            if (!strcasecmp(v, "host"))
+                g_espd_cfg.usb_role = ESPD_USB_ROLE_HOST;
+            else
+                g_espd_cfg.usb_role = ESPD_USB_ROLE_DEVICE;
+        }
+
         /* WiFi */
-        if (!strcmp(k, "wifi_ssid"))
+        else if (!strcmp(k, "wifi_ssid"))
         {
             snprintf(g_espd_cfg.wifi_ssid, sizeof(g_espd_cfg.wifi_ssid), "%s", v);
             g_espd_cfg.wifi_have_ssid = (g_espd_cfg.wifi_ssid[0] != '\0');
