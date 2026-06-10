@@ -386,7 +386,7 @@ void app_main(void)
          * while Pd is running. */
         if (esp_reset_reason() == ESP_RST_POWERON
             && espd_usb_msc_storage_present()
-            && (espd_usb_msc_storage_present() && tud_mounted())) {
+            && espd_usb_wait_for_host(pdMS_TO_TICKS(2000))) {
             espd_usb_drive_mode_wait();
         }
         espd_usb_msc_disable_and_remount_vfs();

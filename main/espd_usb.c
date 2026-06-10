@@ -249,7 +249,7 @@ static void espd_usb_msc_event_callback(tinyusb_msc_storage_handle_t handle,
 static esp_err_t espd_usb_msc_driver_ensure(void)
 {
     tinyusb_msc_driver_config_t msc_drv_cfg = {
-        .user_flags.auto_mount_off = (esp_reset_reason() == ESP_RST_POWERON) ? 0 : 1,
+        .user_flags.auto_mount_off = 0,
         .callback = espd_usb_msc_event_callback,
         .callback_arg = NULL,
     };
@@ -461,6 +461,17 @@ static void espd_usb_release_usj_for_otg(void)
 }
 
 #if CONFIG_ESPD_USE_USB_MSC
+bool espd_usb_wait_for_host(uint32_t timeout_ticks)
+{
+    TickType_t start = xTaskGetTickCount();
+    while (!tud_mounted()) {
+        if ((TickType_t)(xTaskGetTickCount() - start) >= (TickType_t)timeout_ticks)
+            return false;
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    return true;
+}
+
 void espd_usb_drive_mode_wait(void)
 {
     (void)espd_usb_expose_msc_to_host();
