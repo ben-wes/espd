@@ -249,7 +249,7 @@ static void espd_usb_msc_event_callback(tinyusb_msc_storage_handle_t handle,
 static esp_err_t espd_usb_msc_driver_ensure(void)
 {
     tinyusb_msc_driver_config_t msc_drv_cfg = {
-        .user_flags.auto_mount_off = 0,
+        .user_flags.auto_mount_off = (esp_reset_reason() != ESP_RST_POWERON),
         .callback = espd_usb_msc_event_callback,
         .callback_arg = NULL,
     };
