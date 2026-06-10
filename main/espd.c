@@ -384,7 +384,9 @@ void app_main(void)
          * dev-sync RESET — returns straight to Pd so the host can't re-grab it. Then
          * hand the flash to the app (direct VFS) so the host can never auto-mount it
          * while Pd is running. */
-        if (espd_usb_msc_storage_present() && tud_mounted()) {
+        if (esp_reset_reason() == ESP_RST_POWERON
+            && espd_usb_msc_storage_present()
+            && espd_usb_wait_for_host(pdMS_TO_TICKS(2000))) {
             espd_usb_drive_mode_wait();
         }
         espd_usb_msc_disable_and_remount_vfs();

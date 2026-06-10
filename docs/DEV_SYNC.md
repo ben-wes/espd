@@ -121,6 +121,8 @@ Host → device:
 
 - `STATUS` — `+OK STATUS sdcard=yes|no internal=yes|no` (`internal` = `/storage` mounted for the app)
 - `PUT <relpath> <nbytes> <crc32hex>` — path may contain spaces; `+OK PUT skip` if unchanged
+- `LIST` — recursive file list: `+OK LIST begin`, then one `+FILE <relpath>` per file, then `+OK LIST done <n>`
+- `RM <relpath>` — delete one file under the active sync target
 - `RELOAD` — reload `main.pd` from the active sync target (`.pd` only; not enough for `config.txt`)
 - `MSG <pd-message>` — queue one Pd message (`pd_sendmsg` on the audio thread; `;` appended if omitted)
 - `RESET` — `+OK RESET` then reboot (host sends this after uploading `config.txt`)
@@ -137,11 +139,11 @@ python3 scripts/espd_sync.py
 
 Optional: `-p /dev/cu.usbmodem1234561` (or `/dev/ttyACM0`, `COM3`, …) if auto-detect fails.
 
-On connect the script **syncs the project tree** (patches, `config.txt`, samples by default). Unchanged files are skipped via CRC. Saving a `.pd` triggers `PUT` + `RELOAD`. Saving **`config.txt`** triggers `PUT` + **`RESET`** (Wi‑Fi, GPIO, audio rate, etc. are read only at boot).
+On connect the script **syncs the project tree** (patches, `config.txt`, samples by default). Unchanged files are skipped via CRC. By default it **mirrors** the folder: files on the device that are not in the local project are removed before PUT (full sync only; incremental watch passes skip mirror). Saving a `.pd` triggers `PUT` + `RELOAD`. Saving **`config.txt`** triggers `PUT` + **`RESET`** (Wi‑Fi, GPIO, audio rate, etc. are read only at boot).
 
 | Flag | Purpose |
 |------|---------|
-| `--patches-only` | Sync/watch without audio samples |
+| `--no-mirror` | Do not remove device files missing from the local project |
 | `--no-initial-sync` | Watch only |
 | `--status` | STATUS and exit |
 | `--pd-msg TEXT` | Send one `MSG` to Pd and exit (e.g. `'; pd dsp 1'` or `'print hello'`) |

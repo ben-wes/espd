@@ -52,6 +52,26 @@ _STYLES = {
 _ANSI_RE = re.compile(rb"\x1b\[[0-9;]*m")
 _ESP_LOG_RE = re.compile(rb"^[IWEDV] \([^)]+\) [^:\n]+: ")
 _PUT_DONE_RE = re.compile(rb"^\+OK PUT done ([0-9a-fA-F]{8})$")
+_LIST_DONE_RE = re.compile(rb"^\+OK LIST done (\d+)$")
+
+
+def _dev_path_ok(rel: str) -> bool:
+    if not rel or rel.startswith("/") or "\\" in rel:
+        return False
+    if ".." in rel.split("/"):
+        return False
+    if len(rel) >= 384:
+        return False
+    try:
+        rel.encode("ascii")
+    except UnicodeEncodeError:
+        return False
+    for part in rel.split("/"):
+        if not part or part.startswith("."):
+            return False
+        if any(ord(c) < 0x20 for c in part):
+            return False
+    return True
 _STATUS_INFO_RE = re.compile(
     rb"^\+OK STATUS sdcard=(yes|no) internal=(yes|no)$"
 )
@@ -263,8 +283,6 @@ def wait_serial_ready(pattern: str, timeout: float = 45.0) -> str:
             continue
         try:
             ser = _serial_open_retry(port, min(8.0, remaining))
-            ser.dtr = True
-            ser.rts = True
             ser.close()
             return port
         except EspdDisconnected:
@@ -277,8 +295,6 @@ class EspdCdc:
         self.port = port
         self.last_status: bytes | None = None
         self._ser = _serial_open_retry(port, open_timeout)
-        self._ser.dtr = True
-        self._ser.rts = True
 
         self._lock = threading.Lock()
         self._cmd_lock = threading.Lock()
@@ -287,6 +303,8 @@ class EspdCdc:
         self._stop = threading.Event()
         self._disconnected = threading.Event()
         self._put_active = False
+        self._list_active = False
+        self._list_paths: list[str] = []
         self._thread = threading.Thread(target=self._reader, daemon=True)
         self._thread.start()
 
@@ -343,6 +361,31 @@ class EspdCdc:
                             self._reply = line
                         self._reply_event.set()
                         log_dev_rx(line)
+                    continue
+                if self._list_active:
+                    if line.startswith(b"+FILE "):
+                        raw = line[6:]
+                        try:
+                            rel = raw.decode("ascii")
+                        except UnicodeDecodeError:
+                            log_script(f"warning: ignore device path {raw!r}")
+                        else:
+                            if _dev_path_ok(rel):
+                                with self._lock:
+                                    self._list_paths.append(rel)
+                            else:
+                                log_script(f"warning: ignore device path {raw!r}")
+                        log_dev_rx(line)
+                        continue
+                    proto = _extract_protocol_line(line)
+                    if proto is not None:
+                        if proto.startswith(b"+OK LIST done") or proto.startswith(b"-ERR"):
+                            with self._lock:
+                                self._reply = proto
+                            self._reply_event.set()
+                            log_dev_rx(proto)
+                        elif proto.startswith(b"+OK LIST"):
+                            log_dev_rx(proto)
                     continue
                 proto = _extract_protocol_line(line)
                 if proto is not None:
@@ -458,8 +501,41 @@ class EspdCdc:
         except (EspdDisconnected, TimeoutError):
             pass  # reboot disconnects CDC — expected
 
-    def status(self) -> bytes:
-        return self.command("STATUS", timeout=10.0)
+    def status(self, timeout: float = 10.0) -> bytes:
+        return self.command("STATUS", timeout=timeout)
+
+    def list_files(self, timeout: float = 120.0) -> list[str]:
+        self._check_alive()
+        with self._cmd_lock:
+            self._list_paths = []
+            self._list_active = True
+            self._reply_event.clear()
+            with self._lock:
+                self._reply = None
+            log_dev_tx("LIST")
+            try:
+                self._ser.write(b"LIST\n")
+                self._ser.flush()
+            except OSError as e:
+                self._list_active = False
+                self._mark_disconnected(str(e))
+                raise EspdDisconnected(str(e)) from e
+            try:
+                line = self._wait_reply(timeout)
+            finally:
+                self._list_active = False
+        if line.startswith(b"-ERR"):
+            raise RuntimeError(line.decode(errors="replace"))
+        m = _LIST_DONE_RE.match(line.strip())
+        if not m:
+            raise RuntimeError(f"unexpected LIST reply: {line.decode(errors='replace')}")
+        return list(self._list_paths)
+
+    def rm_file(self, rel_path: str, timeout: float = 10.0) -> None:
+        rel_path = rel_path.replace(os.sep, "/")
+        line = self.command(f"RM {rel_path}", timeout=timeout)
+        if line.startswith(b"-ERR"):
+            raise RuntimeError(line.decode(errors="replace"))
 
 
 def _extract_protocol_line(line: bytes) -> bytes | None:
@@ -540,9 +616,7 @@ def ensure_storage_for_write(cdc: EspdCdc, port: str) -> EspdCdc:
     log_script("internal storage not available -- resetting device")
     cdc.reset_device()
     cdc.close()
-    time.sleep(0.5)
     wait_port_gone(port, timeout=25.0)
-    time.sleep(2.0)
     log_script("waiting for CDC after reboot (up to 60s)…")
     cdc = connect_cdc(port, ready_timeout=60.0)
     info = wait_for_storage_ready(cdc)
@@ -570,23 +644,20 @@ def connect_cdc(port_pattern: str, ready_timeout: float = 8.0) -> EspdCdc:
                 log_script(f"port: {port}")
                 _LAST_PORT_LOGGED = port
             cdc = EspdCdc(port)
-            time.sleep(0.25)
-            for _ in range(15):
+            for _ in range(5):
                 try:
-                    last = cdc.status()
+                    last = cdc.status(timeout=3.0)
                     if b"+OK STATUS" in last:
                         log_script(f"connected ({port}): {last.decode(errors='replace')}")
                         connected = cdc
                         connected.last_status = last
                         cdc = None
                         return connected
-                    if last.startswith(b"-ERR"):
-                        time.sleep(0.25)
-                        continue
                 except EspdDisconnected as e:
                     last_err = str(e)
                     break
-                time.sleep(0.4)
+                except TimeoutError:
+                    pass
         except (TimeoutError, EspdDisconnected, serial.serialutil.SerialException, OSError) as e:
             last_err = str(e)
         finally:
@@ -629,7 +700,59 @@ def local_file_hash(path: str) -> tuple[int, int]:
     return os.path.getsize(path), crc & 0xFFFFFFFF
 
 
-def sync_files(cdc: EspdCdc, watch_dir: str, rels: list[str], port: str) -> EspdCdc:
+def mirror_prune(cdc: EspdCdc, keep: set[str], port: str) -> EspdCdc:
+    keep_norm = {r.replace(os.sep, "/") for r in keep}
+    while True:
+        try:
+            on_device = set(cdc.list_files())
+            break
+        except (EspdDisconnected, TimeoutError) as e:
+            kind = "timeout" if isinstance(e, TimeoutError) else "disconnect"
+            log_script(f"{kind} during LIST; reconnecting…")
+            cdc.close()
+            cdc = connect_and_prepare(port, exit_on_fail=True)
+    orphans = sorted(p for p in (on_device - keep_norm) if _dev_path_ok(p))
+    skipped = sorted(p for p in (on_device - keep_norm) if not _dev_path_ok(p))
+    for rel in skipped:
+        log_script(f"warning: cannot mirror-remove invalid device path {rel!r}")
+    if not orphans:
+        return cdc
+    log_script(f"mirror: removing {len(orphans)} file(s) not in project")
+    for rel in orphans:
+        while True:
+            try:
+                log_script(f"remove {rel}")
+                cdc.rm_file(rel)
+                break
+            except (EspdDisconnected, TimeoutError) as e:
+                kind = "timeout" if isinstance(e, TimeoutError) else "disconnect"
+                log_script(f"{kind} during RM {rel}; reconnecting…")
+                cdc.close()
+                cdc = connect_and_prepare(port, exit_on_fail=True)
+            except RuntimeError as e:
+                msg = str(e)
+                if "not mounted" in msg:
+                    log_script("storage not ready during RM; reconnecting…")
+                    cdc.close()
+                    cdc = connect_and_prepare(port, exit_on_fail=True)
+                    continue
+                if "not found" in msg or "bad path" in msg:
+                    log_script(f"skip {rel} ({msg.strip()})")
+                    break
+                raise
+    return cdc
+
+
+def sync_files(
+    cdc: EspdCdc,
+    watch_dir: str,
+    rels: list[str],
+    port: str,
+    *,
+    mirror: bool = True,
+) -> EspdCdc:
+    if mirror:
+        cdc = mirror_prune(cdc, set(rels), port)
     reload_needed = False
     reset_needed = False
     uploaded = 0
@@ -712,7 +835,7 @@ _PATCH_SUFFIXES = (".pd",)
 _ASSET_SUFFIXES = (".wav", ".aiff", ".aif", ".flac", ".ogg", ".mp3", ".raw")
 
 
-def _sync_name_ok(name: str, include_assets: bool) -> bool:
+def _sync_name_ok(name: str) -> bool:
     if not name or name.startswith("."):
         return False
     if name == "config.txt":
@@ -720,14 +843,14 @@ def _sync_name_ok(name: str, include_assets: bool) -> bool:
     low = name.lower()
     if low.endswith(_PATCH_SUFFIXES):
         return True
-    return include_assets and low.endswith(_ASSET_SUFFIXES)
+    return low.endswith(_ASSET_SUFFIXES)
 
 
-def collect_files(root: str, include_assets: bool = False) -> dict[str, float]:
+def collect_files(root: str) -> dict[str, float]:
     out: dict[str, float] = {}
     for dirpath, _dirnames, filenames in os.walk(root):
         for name in filenames:
-            if not _sync_name_ok(name, include_assets):
+            if not _sync_name_ok(name):
                 continue
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, root).replace(os.sep, "/")
@@ -776,14 +899,14 @@ def main() -> int:
         help="exit when USB disconnects instead of waiting for the port",
     )
     ap.add_argument(
-        "--patches-only",
-        action="store_true",
-        help="initial/resync sync: only .pd and config.txt (default includes samples)",
-    )
-    ap.add_argument(
         "--no-initial-sync",
         action="store_true",
         help="skip the sync pass on connect (watch for saves only)",
+    )
+    ap.add_argument(
+        "--no-mirror",
+        action="store_true",
+        help="do not remove device files missing from the local project (default: mirror)",
     )
     ap.add_argument(
         "--resync-on-reconnect",
@@ -807,16 +930,16 @@ def main() -> int:
 
     cdc: EspdCdc | None = None
     try:
-        include_assets = not args.patches_only
-
         def run_sync(label: str) -> None:
             nonlocal cdc
-            rels = list(collect_files(watch_dir, include_assets))
+            rels = list(collect_files(watch_dir))
             if not rels:
                 log_script(f"{label}: nothing to send")
                 return
             log_script(f"{label} ({len(rels)} files)")
-            cdc = sync_files(cdc, watch_dir, rels, port_pattern)
+            cdc = sync_files(
+                cdc, watch_dir, rels, port_pattern, mirror=not args.no_mirror
+            )
 
         if args.reset:
             try:
@@ -857,10 +980,9 @@ def main() -> int:
         if not args.no_initial_sync:
             run_sync("sync")
 
-        mtimes = collect_files(watch_dir, include_assets=include_assets)
-        watch_kind = "patches" if args.patches_only else "files"
+        mtimes = collect_files(watch_dir)
         log_script(
-            f"watching {watch_dir} ({len(mtimes)} {watch_kind}) — sync to {store}"
+            f"watching {watch_dir} ({len(mtimes)} files) — sync to {store}"
         )
 
         while True:
@@ -882,25 +1004,27 @@ def main() -> int:
                     log_script(f"sync target: {store}")
                     if not args.no_initial_sync:
                         run_sync("sync after reconnect")
-                    mtimes = collect_files(watch_dir, include_assets=include_assets)
+                    mtimes = collect_files(watch_dir)
                 elif args.resync_on_reconnect and not args.no_initial_sync:
                     run_sync("resync after reconnect")
-                    mtimes = collect_files(watch_dir, include_assets=include_assets)
+                    mtimes = collect_files(watch_dir)
 
             time.sleep(0.2)
             try:
-                now = collect_files(watch_dir, include_assets=include_assets)
+                now = collect_files(watch_dir)
                 changed = [rel for rel in now if rel not in mtimes or now[rel] != mtimes[rel]]
                 if not changed:
                     continue
                 time.sleep(args.debounce)
-                now2 = collect_files(watch_dir, include_assets=include_assets)
+                now2 = collect_files(watch_dir)
                 changed = [
                     rel for rel in now2 if rel not in mtimes or now2[rel] != mtimes[rel]
                 ]
                 if not changed:
                     continue
-                cdc = sync_files(cdc, watch_dir, changed, port_pattern)
+                cdc = sync_files(
+                    cdc, watch_dir, changed, port_pattern, mirror=False
+                )
                 mtimes = now2
             except (EspdDisconnected, TimeoutError):
                 log_script("timeout/disconnect during watch sync; staying in watch mode")
