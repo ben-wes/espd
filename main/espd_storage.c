@@ -8,6 +8,8 @@
 #include "esp_log.h"
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
+#include "ff.h"
 
 static const char *TAG = "espd_storage";
 
@@ -108,6 +110,15 @@ void espd_storage_init(void) {
 
   espd_storage_resolve_paths();
 
+  const char *active_mount = espd_storage_main_pd_mount_dir();
+  if (active_mount) {
+    espd_storage_stats_t stats;
+    if (espd_storage_get_stats(active_mount, &stats) == ESP_OK) {
+        ESP_LOGI(TAG, "%s: %lu KB total, %lu KB used, %lu KB free",
+          active_mount, stats.total_kb, stats.used_kb, stats.free_kb);
+    }
+  }
+
   if (s_config_path)
     ESP_LOGI(TAG, "using config.txt at %s", s_config_path);
   else if (espd_storage_active_mount())
@@ -171,4 +182,35 @@ bool espd_sdcard_main_pd_exists(void) {
 bool espd_storage_main_pd_exists(void) {
   return espd_storage_flash_ready() &&
          espd_storage_file_exists(ESPD_STORAGE_MAIN_PD_PATH);
+}
+
+esp_err_t espd_storage_get_stats(const char *path, espd_storage_stats_t *stats)
+{
+    /* statvfs fails on wear-levelling filesystem, use FatFS directly */
+    FATFS *fs;
+    DWORD free_clusters;
+    FRESULT res = f_getfree(path, &free_clusters, &fs);
+    if (res != FR_OK) {
+        return ESP_FAIL;
+    }
+
+    /* Sector size is not fixed at 512: WL/FAT here uses 4096-byte sectors
+     * (CONFIG_FATFS_SECTOR_4096). Use the volume's actual sector size so the
+     * reported totals match the real partition size. */
+#if FF_MAX_SS != FF_MIN_SS
+    uint32_t sector_size = fs->ssize;
+#else
+    uint32_t sector_size = FF_MIN_SS;
+#endif
+    uint64_t total_bytes = (uint64_t)fs->n_fatent * fs->csize * sector_size;
+    uint64_t free_bytes  = (uint64_t)free_clusters * fs->csize * sector_size;
+    uint32_t total_kb = (uint32_t)(total_bytes / 1024);
+    uint32_t free_kb  = (uint32_t)(free_bytes / 1024);
+    uint32_t used_kb = total_kb - free_kb;
+
+    stats->total_kb = total_kb;
+    stats->free_kb = free_kb;
+    stats->used_kb = used_kb;
+
+    return ESP_OK;
 }

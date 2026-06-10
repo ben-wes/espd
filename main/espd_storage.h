@@ -27,3 +27,11 @@ bool espd_storage_main_pd_exists(void);
 void espd_storage_resolve_paths(void);
 bool espd_storage_sdcard_ready(void);
 bool espd_storage_flash_ready(void);
+
+typedef struct {
+    uint32_t total_kb;
+    uint32_t free_kb;
+    uint32_t used_kb;
+} espd_storage_stats_t;
+
+esp_err_t espd_storage_get_stats(const char *path, espd_storage_stats_t *stats);
