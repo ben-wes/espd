@@ -57,10 +57,10 @@ static const char *TAG = "espd_dev";
 #define ESPD_DEV_TASK_CORE          0
 /* Below TinyUSB device task (4) so CDC RX is not starved during PUT payload. */
 #define ESPD_DEV_TASK_PRIO          3
-#define ESPD_DEV_RX_CHUNK           2048   // 4KB → 2KB (CDC read buffer)
-#define ESPD_DEV_PUT_FILEBUF        8192   // 16KB → 8KB (file write buffer)
-#define ESPD_DEV_HASH_CHUNK         2048   // 4KB → 2KB (hash buffer)
-#define ESPD_DEV_RX_RING            8192   // 16KB → 8KB (ring buffer)
+#define ESPD_DEV_RX_CHUNK           4096   // 4KB → 2KB (CDC read buffer)
+#define ESPD_DEV_PUT_FILEBUF        16384   // 16KB → 8KB (file write buffer)
+#define ESPD_DEV_HASH_CHUNK         4096   // 4KB → 2KB (hash buffer)
+#define ESPD_DEV_RX_RING            16384   // 16KB → 8KB (ring buffer)
 /* fwrite/fsync + 4 KiB CDC read buffer; 6 KiB stack overflowed after RX_CHUNK bump. */
 #define ESPD_DEV_TASK_STACK         12288
 /* Room for PUT <path-with-spaces> <size> <crc> (path up to ESPD_DEV_PATH_MAX). */
