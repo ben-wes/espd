@@ -97,6 +97,7 @@ static FILE *s_put_fp;
 static char s_put_tmp[ESPD_DEV_PATH_MAX];
 static SemaphoreHandle_t s_put_mux;
 static dev_target_t s_target = DEV_TARGET_SD;
+static volatile bool s_sync_active = false;
 /* Single drain buffer (espd_dev task only — not re-entrant). */
 static uint8_t s_cdc_rx_buf[ESPD_DEV_RX_CHUNK];
 
@@ -501,6 +502,7 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     s_put_expect_crc = expect_crc;
     s_put_crc = 0;
     s_cmd = DEV_CMD_PUT;
+    s_sync_active = true;
     dev_reply("+OK PUT ready");
 }
 
@@ -525,6 +527,7 @@ static void dev_put_data(const uint8_t *data, size_t len)
             s_put_fp = NULL;
             s_put_remain = 0;
             s_cmd = DEV_CMD_NONE;
+            s_sync_active = false;
             dev_put_cleanup_temp();
             xSemaphoreGive(s_put_mux);
             dev_reply("-ERR write failed");
@@ -551,6 +554,7 @@ static void dev_put_data(const uint8_t *data, size_t len)
         fclose(s_put_fp);
         s_put_fp = NULL;
         s_cmd = DEV_CMD_NONE;
+        s_sync_active = false;
 
         if (s_put_crc != s_put_expect_crc) {
             dev_put_cleanup_temp();
@@ -935,6 +939,7 @@ void espd_dev_init(void)
         return;
     s_cmd = DEV_CMD_NONE;
     s_reload_pending = false;
+    s_sync_active = false;
     s_rx_head = 0;
     s_rx_tail = 0;
     s_put_tmp[0] = '\0';
@@ -1008,6 +1013,11 @@ bool espd_dev_pdmsg_take(char *out, size_t outsz)
     return true;
 }
 
+bool espd_dev_sync_active(void)
+{
+    return s_sync_active;
+}
+
 void espd_dev_sync_poll(void)
 {
     if (espd_dev_reload_pending()) {
@@ -1040,6 +1050,7 @@ bool espd_dev_pdmsg_take(char *out, size_t outsz)
     (void)outsz;
     return false;
 }
+bool espd_dev_sync_active(void) { return false; }
 void espd_dev_sync_poll(void) {}
 
 #endif /* CONFIG_ESPD_DEV_SYNC */

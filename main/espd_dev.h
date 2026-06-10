@@ -24,4 +24,7 @@ bool espd_dev_pdmsg_take(char *out, size_t outsz);
 /** Poll dev sync reload/messages. Must be called on the audio thread synchronously with Pd. */
 void espd_dev_sync_poll(void);
 
+/** Returns true if a SYNC operation (PUT) is currently in progress. */
+bool espd_dev_sync_active(void);
+
 extern bool g_espd_pd_running;
