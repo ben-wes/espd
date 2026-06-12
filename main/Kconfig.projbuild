@@ -113,52 +113,48 @@ config ESPD_USE_SDCARD
     bool "Enable SD card"
     default n
 
-menu "USB device (OTG)"
+config ESPD_USE_USB_CDC
+    bool
+    depends on SOC_USB_OTG_SUPPORTED && ESPD_USE_USB_OTG && TINYUSB_CDC_ENABLED
+    help
+        Internal: always on when OTG is enabled. Serial on cu.usbmodem* for
+        Pd printf/print and ESP_LOG (see docs/DEV_SYNC.md).
+
+config ESPD_USE_USB_OTG
+    bool "Enable TinyUSB device stack on OTG port"
     depends on SOC_USB_OTG_SUPPORTED
+    default n
+    help
+        USB device on the OTG port (ESP32-S3, ESP32-P4). Enables OTG CDC
+        (Pd printf, ESP_LOG on cu.usbmodem*) and, by default, internal-flash
+        USB mass storage. Uncheck MSC if you do not want a host-visible data partition.
+        Patch sync (espd_sync) is a separate option and needs microSD.
+        Requires CONFIG_ESP_CONSOLE_NONE (a board profile may set this).
 
-    config ESPD_USE_USB_CDC
+        Reflash: BOOT + RESET (download mode), then idf.py flash — not
+        cu.debug-console on macOS (esptool often gets no data there). App
+        serial is OTG cu.usbmodem* while running. See docs/DEV_SYNC.md.
+    select TINYUSB_CDC_ENABLED
+    select ESPD_USE_USB_CDC
+
+if ESPD_USE_USB_OTG
+
+    config ESPD_USE_USB_MSC
+        bool "USB mass storage (internal flash drive)"
+        select TINYUSB_MSC_ENABLED
+        default y
+        help
+            Expose the "storage" partition as a USB drive. Slow; shares flash
+            with the CPU. Rapid dev uses SD only — uncheck if you do not need
+            the drive on the same cable.
+
+    config ESPD_USB_CONSOLE_CDC
         bool
-        depends on ESPD_USE_USB_OTG && TINYUSB_CDC_ENABLED
+        default ESPD_USE_USB_CDC
         help
-            Internal: always on when OTG is enabled. Serial on cu.usbmodem* for
-            Pd printf/print and ESP_LOG (see docs/DEV_SYNC.md).
+            Internal: stdout/printf routing via tinyusb_console_init.
 
-    config ESPD_USE_USB_OTG
-        bool "Enable TinyUSB device stack on OTG port"
-        default n
-        help
-            USB device on the OTG port (ESP32-S3, ESP32-P4). Enables OTG CDC
-            (Pd printf, ESP_LOG on cu.usbmodem*) and, by default, internal-flash
-            USB mass storage. Uncheck MSC if you do not want a host-visible data partition.
-            Patch sync (espd_sync) is a separate option and needs microSD.
-            Requires CONFIG_ESP_CONSOLE_NONE (a board profile may set this).
-
-            Reflash: BOOT + RESET (download mode), then idf.py flash — not
-            cu.debug-console on macOS (esptool often gets no data there). App
-            serial is OTG cu.usbmodem* while running. See docs/DEV_SYNC.md.
-        select TINYUSB_CDC_ENABLED
-        select ESPD_USE_USB_CDC
-
-    if ESPD_USE_USB_OTG
-
-        config ESPD_USE_USB_MSC
-            bool "USB mass storage (internal flash drive)"
-            select TINYUSB_MSC_ENABLED
-            default y
-            help
-                Expose the "storage" partition as a USB drive. Slow; shares flash
-                with the CPU. Rapid dev uses SD only — uncheck if you do not need
-                the drive on the same cable.
-
-        config ESPD_USB_CONSOLE_CDC
-            bool
-            default ESPD_USE_USB_CDC
-            help
-                Internal: stdout/printf routing via tinyusb_console_init.
-
-    endif
-
-endmenu
+endif
 
 config ESPD_DEV_SYNC
     bool "Enable Developer Patch Sync (espd_sync)"
