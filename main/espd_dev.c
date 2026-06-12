@@ -412,6 +412,24 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         }
     }
 
+    /* If updating an existing file, remove it now so the .tmp only competes
+     * with free space, not with the old copy. On failure (new file) this is a
+     * no-op. Then check free space against the full payload. */
+    if (stat(full, &st) == 0 && S_ISREG(st.st_mode))
+        unlink(full);
+    {
+        espd_storage_stats_t stats;
+        if (espd_storage_get_stats(dev_target_mount(s_target), &stats) == ESP_OK
+                && (uint64_t)stats.free_kb * 1024u < (uint64_t)nbytes) {
+            char msg[96];
+            snprintf(msg, sizeof(msg),
+                "-ERR no space: need %zu bytes, %lu KB free",
+                nbytes, (unsigned long)stats.free_kb);
+            dev_reply(msg);
+            return;
+        }
+    }
+
     /* Drop any bytes already in the driver queue before binary PUT. */
     while (dev_put_read_hw(s_cdc_rx_buf, sizeof(s_cdc_rx_buf)) > 0)
         continue;

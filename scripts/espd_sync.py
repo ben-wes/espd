@@ -827,6 +827,9 @@ def sync_files(
                     cdc.close()
                     cdc = connect_and_prepare(port, exit_on_fail=True)
                     continue
+                if "no space" in str(e):
+                    log_script(f"skip {rel} (device full)")
+                    break
                 raise
             if sent:
                 uploaded += 1
@@ -1028,7 +1031,8 @@ def main() -> int:
                 if args.no_reconnect:
                     log_script("device disconnected — exiting")
                     return 1
-                cdc.close()
+                if cdc is not None:
+                    cdc.close()
                 cdc = None
                 prev_store = store
                 try:
