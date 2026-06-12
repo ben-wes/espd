@@ -371,7 +371,8 @@ class EspdCdc:
                         with self._lock:
                             self._reply = line
                         self._reply_event.set()
-                        log_dev_rx(line)
+                        if not line.startswith(b"+OK PUT ack"):
+                            log_dev_rx(line)
                     continue
                 if self._list_active:
                     if line.startswith(b"+FILE "):
@@ -465,13 +466,17 @@ class EspdCdc:
         except RuntimeError:
             if line.startswith(b"-ERR"):
                 raise RuntimeError(line.decode(errors="replace"))
+            if line.strip().startswith(b"+OK PUT ready"):
+                raise RuntimeError("PUT ready missing window= (update firmware)")
             raise
         ack_timeout = max(30.0, nbytes / 40000.0)
+        progress_prefix = f"{rel_path}: "
         log_script(f"sending {nbytes} bytes for {rel_path} (window {put_window})")
         try:
             with self._cmd_lock:
                 self._put_active = True
                 acked = 0
+                last_pct = -1
                 for off in range(0, len(data), put_window):
                     part = data[off : off + put_window]
                     self._reply_event.clear()
@@ -492,8 +497,14 @@ class EspdCdc:
                         raise RuntimeError(
                             f"PUT ack mismatch: expected {off + len(part)}, got {acked}"
                         )
-                    if nbytes > 512 * 1024 and acked % (1024 * 1024) == 0 and acked < nbytes:
-                        log_script(f"  … {acked // (1024 * 1024)} MiB on device")
+                    pct = round((acked / nbytes) * 100)
+                    if pct != last_pct:
+                        last_pct = pct
+                        sys.stderr.write(f"\r{progress_prefix}{pct}%")
+                        sys.stderr.flush()
+                if last_pct >= 0:
+                    sys.stderr.write("\n")
+                    sys.stderr.flush()
         except OSError as e:
             self._put_active = False
             self._mark_disconnected(str(e))
@@ -824,7 +835,6 @@ def sync_files(
                 elif rel.endswith(".pd"):
                     reload_needed = True
             else:
-                log_script(f"skip {rel} (unchanged)")
                 skipped += 1
             break
     if reset_needed:
@@ -852,6 +862,10 @@ def sync_files(
         f"sync done in {time.time() - t0:.2f}s "
         f"({uploaded} uploaded, {skipped} unchanged)"
     )
+    try:
+        cdc.status()
+    except (EspdDisconnected, TimeoutError):
+        pass
     return cdc
 
 
