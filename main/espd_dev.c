@@ -4,8 +4,8 @@
  * Protocol (host -> device):
  *   STATUS
  *   PUT <relpath> <nbytes> <crc32hex>
- *       -> +OK PUT skip (file already matches) or +OK PUT ready
- *          host sends <=32KiB raw bytes per window, device replies +OK PUT ack <received>
+ *       -> +OK PUT skip (file already matches) or +OK PUT ready window=<bytes>
+ *          host sends <=window raw bytes per round, device replies +OK PUT ack <received>
  *          repeat until all bytes received -> +OK PUT done <crc>
  *   LIST  (recursive file list under active sync target)
  *   RM <relpath>  (delete one file)
@@ -41,9 +41,6 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_crc.h"
-#if CONFIG_ESPD_DEV_CDC_SYNC
-#include "tinyusb_cdc_acm.h"
-#endif
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -58,11 +55,8 @@ static const char *TAG = "espd_dev";
 #define ESPD_DEV_TASK_CORE          0
 /* Below TinyUSB device task (4) so CDC RX is not starved during PUT. */
 #define ESPD_DEV_TASK_PRIO          3
-#define ESPD_DEV_RX_CHUNK           4096   // 4KB → 2KB (CDC read buffer)
-#define ESPD_DEV_PUT_FILEBUF        16384   // 16KB → 8KB (file write buffer)
-#define ESPD_DEV_HASH_CHUNK         4096   // 4KB → 2KB (hash buffer)
-#define ESPD_DEV_RX_RING            8192
-/* fwrite/fsync + 4 KiB CDC read buffer; 6 KiB stack overflowed after RX_CHUNK bump. */
+#define ESPD_DEV_RX_CHUNK           4096
+/* PUT recv + stdio; 6 KiB stack overflowed before RX_CHUNK was 4 KiB. */
 #define ESPD_DEV_TASK_STACK         12288
 /* Room for PUT <path-with-spaces> <size> <crc> (path up to ESPD_DEV_PATH_MAX). */
 #define ESPD_DEV_LINE_MAX           256
@@ -77,8 +71,6 @@ static const char *TAG = "espd_dev";
 typedef enum {
     DEV_CMD_NONE = 0,
     DEV_CMD_PUT,
-    DEV_CMD_RELOAD,
-    DEV_CMD_STATUS,
 } dev_cmd_t;
 
 typedef enum {
@@ -90,10 +82,6 @@ static TaskHandle_t s_dev_task;
 static volatile bool s_reload_pending;
 static volatile bool s_pdmsg_pending;
 static char s_pdmsg[ESPD_DEV_LINE_MAX];
-static portMUX_TYPE s_rx_lock = portMUX_INITIALIZER_UNLOCKED;
-static uint8_t s_rx_ring[ESPD_DEV_RX_RING];
-static size_t s_rx_head;
-static size_t s_rx_tail;
 
 static dev_cmd_t s_cmd;
 static char s_put_rel[ESPD_DEV_PATH_MAX];
@@ -105,7 +93,7 @@ static FILE *s_put_fp;
 static char s_put_tmp[ESPD_DEV_PATH_MAX];
 static dev_target_t s_target = DEV_TARGET_SD;
 static volatile bool s_sync_active = false;
-/* Single drain buffer (espd_dev task only — not re-entrant). */
+/* Shared HW read buffer for line commands and PUT windows (espd_dev task only). */
 static uint8_t s_cdc_rx_buf[ESPD_DEV_RX_CHUNK];
 
 static void dev_reply(const char *msg);
@@ -133,72 +121,6 @@ static void dev_maybe_suspend(void)
     vTaskSuspend(NULL);
 }
 #endif
-
-static void dev_rx_flush(void)
-{
-    portENTER_CRITICAL(&s_rx_lock);
-    s_rx_head = 0;
-    s_rx_tail = 0;
-    portEXIT_CRITICAL(&s_rx_lock);
-}
-
-static void dev_rx_push(const uint8_t *data, size_t len)
-{
-    size_t i;
-    size_t dropped = 0;
-
-    portENTER_CRITICAL(&s_rx_lock);
-    for (i = 0; i < len; i++) {
-        size_t next = (s_rx_head + 1) % ESPD_DEV_RX_RING;
-        if (next == s_rx_tail) {
-            dropped++;
-            continue;
-        }
-        s_rx_ring[s_rx_head] = data[i];
-        s_rx_head = next;
-    }
-    portEXIT_CRITICAL(&s_rx_lock);
-    if (dropped)
-        ESP_LOGW(TAG, "CDC RX ring overflow, dropped %u bytes", (unsigned)dropped);
-}
-
-static size_t dev_rx_pop(uint8_t *out, size_t max)
-{
-    size_t n = 0;
-
-    portENTER_CRITICAL(&s_rx_lock);
-    while (n < max && s_rx_tail != s_rx_head) {
-        out[n++] = s_rx_ring[s_rx_tail];
-        s_rx_tail = (s_rx_tail + 1) % ESPD_DEV_RX_RING;
-    }
-    portEXIT_CRITICAL(&s_rx_lock);
-    return n;
-}
-
-static void dev_drain_cdc_hw(void)
-{
-#if CONFIG_ESPD_DEV_SERIAL_SYNC
-#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
-    int rx;
-    while ((rx = usb_serial_jtag_read_bytes(s_cdc_rx_buf, sizeof(s_cdc_rx_buf), pdMS_TO_TICKS(0))) > 0)
-        dev_rx_push(s_cdc_rx_buf, rx);
-#else
-    int rx;
-    while ((rx = uart_read_bytes(UART_NUM_0, s_cdc_rx_buf, sizeof(s_cdc_rx_buf), pdMS_TO_TICKS(0))) > 0)
-        dev_rx_push(s_cdc_rx_buf, rx);
-#endif
-#elif CONFIG_ESPD_DEV_CDC_SYNC
-    size_t rx;
-
-    if (!tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
-        return;
-
-    while (tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, s_cdc_rx_buf, sizeof(s_cdc_rx_buf), &rx)
-               == ESP_OK
-           && rx > 0)
-        dev_rx_push(s_cdc_rx_buf, rx);
-#endif
-}
 
 static int dev_put_read_hw(uint8_t *buf, size_t max)
 {
@@ -368,7 +290,7 @@ static int dev_build_path(char *out, size_t outsz, const char *rel)
 /* CRC-32 (same polynomial as Python zlib.crc32). Runs on espd_dev task only. */
 static int dev_file_hash(const char *full, size_t *out_size, uint32_t *out_crc)
 {
-    static uint8_t buf[ESPD_DEV_HASH_CHUNK];
+    static uint8_t buf[ESPD_DEV_RX_CHUNK];
     FILE *fp;
     size_t n, total = 0;
     uint32_t crc = 0;
@@ -499,8 +421,9 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         }
     }
 
-    dev_rx_flush();
-    dev_drain_cdc_hw();
+    /* Drop any bytes already in the driver queue before binary PUT. */
+    while (dev_put_read_hw(s_cdc_rx_buf, sizeof(s_cdc_rx_buf)) > 0)
+        continue;
 
     if (dev_mkdir_parents(full) != 0) {
         dev_reply("-ERR invalid parent path");
@@ -533,10 +456,8 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         }
         s_put_fp = fopen(s_put_tmp, "wb");
     }
-    if (s_put_fp) {
-        static char put_io_buf[4096];
-        setvbuf(s_put_fp, put_io_buf, _IOFBF, sizeof(put_io_buf));
-    }
+    if (s_put_fp)
+        setvbuf(s_put_fp, NULL, _IONBF, 0);
     if (!s_put_fp) {
         char msg[80];
         open_errno = errno;
@@ -555,7 +476,12 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     s_put_expect_crc = expect_crc;
     s_put_crc = 0;
     s_cmd = DEV_CMD_PUT;
-    dev_reply("+OK PUT ready");
+    {
+        char reply[48];
+        snprintf(reply, sizeof(reply), "+OK PUT ready window=%u",
+            (unsigned)ESPD_DEV_PUT_WINDOW);
+        dev_reply(reply);
+    }
 }
 
 static void dev_put_fail(const char *err)
@@ -884,8 +810,6 @@ static int dev_parse_put_line(char *line, char *rel, size_t relsz,
     return 1;
 }
 
-
-
 static void dev_handle_line(char *line)
 {
     if (!line)
@@ -944,14 +868,11 @@ static void dev_handle_line(char *line)
     dev_reply("-ERR unknown command");
 }
 
-static void dev_feed_bytes(const uint8_t *buf, size_t rx, int line_mode)
+static void dev_feed_bytes(const uint8_t *buf, size_t rx)
 {
     static char line[ESPD_DEV_LINE_MAX];
     static size_t line_len;
     size_t i;
-
-    if (!line_mode)
-        return;
 
     for (i = 0; i < rx; i++) {
         uint8_t c = buf[i];
@@ -973,11 +894,10 @@ static void dev_feed_bytes(const uint8_t *buf, size_t rx, int line_mode)
 
 static void dev_poll_rx(void)
 {
-    size_t n;
+    int n;
 
-    dev_drain_cdc_hw();
-    while ((n = dev_rx_pop(s_cdc_rx_buf, sizeof(s_cdc_rx_buf))) > 0)
-        dev_feed_bytes(s_cdc_rx_buf, n, 1);
+    while ((n = dev_put_read_hw(s_cdc_rx_buf, sizeof(s_cdc_rx_buf))) > 0)
+        dev_feed_bytes(s_cdc_rx_buf, (size_t)n);
 }
 
 static void espd_dev_task(void *arg)
@@ -1009,8 +929,6 @@ void espd_dev_init(void)
     s_cmd = DEV_CMD_NONE;
     s_reload_pending = false;
     dev_sync_set_active(false);
-    s_rx_head = 0;
-    s_rx_tail = 0;
     s_put_tmp[0] = '\0';
     dev_refresh_target();
 

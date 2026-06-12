@@ -26,9 +26,19 @@ import threading
 import time
 from dataclasses import dataclass
 
-_PUT_WINDOW = 32768
 _PUT_ACK_RE = re.compile(rb"^\+OK PUT ack (\d+)$")
+_PUT_READY_RE = re.compile(rb"^\+OK PUT ready window=(\d+)$")
 _SERIAL_BAUD = 921600
+
+
+def _put_window_from_ready(line: bytes) -> int:
+    m = _PUT_READY_RE.match(line.strip())
+    if not m:
+        raise RuntimeError(f"unexpected PUT reply: {line.decode(errors='replace')}")
+    w = int(m.group(1), 10)
+    if w <= 0:
+        raise RuntimeError(f"invalid PUT window: {w}")
+    return w
 
 
 @dataclass
@@ -450,18 +460,20 @@ class EspdCdc:
                 raise
         if line.startswith(b"+OK PUT skip"):
             return False
-        if not line.startswith(b"+OK PUT ready"):
+        try:
+            put_window = _put_window_from_ready(line)
+        except RuntimeError:
             if line.startswith(b"-ERR"):
                 raise RuntimeError(line.decode(errors="replace"))
-            raise RuntimeError(f"unexpected PUT reply: {line.decode(errors='replace')}")
+            raise
         ack_timeout = max(30.0, nbytes / 40000.0)
-        log_script(f"sending {nbytes} bytes for {rel_path}")
+        log_script(f"sending {nbytes} bytes for {rel_path} (window {put_window})")
         try:
             with self._cmd_lock:
                 self._put_active = True
                 acked = 0
-                for off in range(0, len(data), _PUT_WINDOW):
-                    part = data[off : off + _PUT_WINDOW]
+                for off in range(0, len(data), put_window):
+                    part = data[off : off + put_window]
                     self._reply_event.clear()
                     with self._lock:
                         self._reply = None
