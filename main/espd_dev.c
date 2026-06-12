@@ -61,8 +61,6 @@ static const char *TAG = "espd_dev";
 /* Room for PUT <path-with-spaces> <size> <crc> (path up to ESPD_DEV_PATH_MAX). */
 #define ESPD_DEV_LINE_MAX           256
 #define ESPD_DEV_PATH_MAX           384
-#define ESPD_DEV_PUT_SKIP_HASH_MAX  (256 * 1024)
-#define ESPD_DEV_PUT_WINDOW         (32 * 1024)
 #define ESPD_DEV_PUT_WINDOW         8192
 #if CONFIG_ESPD_DEV_CDC_SYNC
 #else
@@ -412,8 +410,7 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         return;
     }
 
-    if (stat(full, &st) == 0 && S_ISREG(st.st_mode) && (size_t)st.st_size == nbytes
-            && (size_t)st.st_size <= ESPD_DEV_PUT_SKIP_HASH_MAX) {
+    if (stat(full, &st) == 0 && S_ISREG(st.st_mode) && (size_t)st.st_size == nbytes) {
         err = dev_file_hash(full, &on_disk, &disk_crc);
         if (err == 0 && disk_crc == expect_crc) {
             dev_reply("+OK PUT skip");
