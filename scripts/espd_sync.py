@@ -26,11 +26,9 @@ import threading
 import time
 from dataclasses import dataclass
 
-from dev_sync_constants import (
-    PUT_STREAM_CHUNK,
-    SERIAL_BAUD,
-    put_stream_bps,
-)
+_PUT_WINDOW = 32768
+_PUT_ACK_RE = re.compile(rb"^\+OK PUT ack (\d+)$")
+_SERIAL_BAUD = 921600
 
 
 @dataclass
@@ -236,7 +234,7 @@ def _serial_open_retry(port: str, timeout: float):
     last_err: Exception | None = None
     while time.monotonic() < deadline:
         try:
-            return serial.Serial(port, SERIAL_BAUD, timeout=0.05)
+            return serial.Serial(port, _SERIAL_BAUD, timeout=0.05)
         except (serial.serialutil.SerialException, OSError) as e:
             last_err = e
             msg = str(e).lower()
@@ -355,7 +353,11 @@ class EspdCdc:
                 if not line:
                     continue
                 if self._put_active:
-                    if line.startswith(b"+OK PUT done") or line.startswith(b"-ERR"):
+                    if (
+                        line.startswith(b"+OK PUT ack")
+                        or line.startswith(b"+OK PUT done")
+                        or line.startswith(b"-ERR")
+                    ):
                         with self._lock:
                             self._reply = line
                         self._reply_event.set()
@@ -452,42 +454,46 @@ class EspdCdc:
             if line.startswith(b"-ERR"):
                 raise RuntimeError(line.decode(errors="replace"))
             raise RuntimeError(f"unexpected PUT reply: {line.decode(errors='replace')}")
-        info = device_status(self)
-        put_bps = put_stream_bps(sdcard=info["sdcard"] == "yes")
+        ack_timeout = max(30.0, nbytes / 40000.0)
         log_script(f"sending {nbytes} bytes for {rel_path}")
         try:
             with self._cmd_lock:
-                self._reply_event.clear()
-                with self._lock:
-                    self._reply = None
                 self._put_active = True
-                next_send = time.monotonic()
-                sent = 0
-                for off in range(0, len(data), PUT_STREAM_CHUNK):
-                    part = data[off : off + PUT_STREAM_CHUNK]
+                acked = 0
+                for off in range(0, len(data), _PUT_WINDOW):
+                    part = data[off : off + _PUT_WINDOW]
+                    self._reply_event.clear()
+                    with self._lock:
+                        self._reply = None
                     self._ser.write(part)
-                    sent += len(part)
-                    next_send += len(part) / put_bps
-                    sleep_for = next_send - time.monotonic()
-                    if sleep_for > 0:
-                        time.sleep(sleep_for)
-                    if sent % (1024 * 1024) == 0 and sent < nbytes:
-                        log_script(f"  … {sent // (1024 * 1024)} MiB sent")
-                self._ser.flush()
-                log_script("payload sent — waiting for device commit…")
+                    self._ser.flush()
+                    line = self._wait_reply(ack_timeout)
+                    m = _PUT_ACK_RE.match(line.strip())
+                    if not m:
+                        if line.startswith(b"-ERR"):
+                            raise RuntimeError(line.decode(errors="replace"))
+                        raise RuntimeError(
+                            f"unexpected PUT reply: {line.decode(errors='replace')}"
+                        )
+                    acked = int(m.group(1), 10)
+                    if acked != off + len(part):
+                        raise RuntimeError(
+                            f"PUT ack mismatch: expected {off + len(part)}, got {acked}"
+                        )
+                    if nbytes > 512 * 1024 and acked % (1024 * 1024) == 0 and acked < nbytes:
+                        log_script(f"  … {acked // (1024 * 1024)} MiB on device")
         except OSError as e:
             self._put_active = False
             self._mark_disconnected(str(e))
             raise EspdDisconnected(str(e)) from e
         try:
-            while True:
-                line = self._wait_reply(done_timeout)
-                m = _PUT_DONE_RE.match(line.strip())
-                if m and int(m.group(1), 16) == crc:
-                    return True
-                if line.startswith(b"-ERR"):
-                    raise RuntimeError(line.decode(errors="replace"))
-                raise RuntimeError(f"unexpected PUT reply: {line.decode(errors='replace')}")
+            line = self._wait_reply(done_timeout)
+            m = _PUT_DONE_RE.match(line.strip())
+            if m and int(m.group(1), 16) == crc:
+                return True
+            if line.startswith(b"-ERR"):
+                raise RuntimeError(line.decode(errors="replace"))
+            raise RuntimeError(f"unexpected PUT reply: {line.decode(errors='replace')}")
         finally:
             self._put_active = False
 
