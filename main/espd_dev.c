@@ -91,6 +91,22 @@ static uint32_t s_put_crc;
 static FILE *s_put_fp;
 static char s_put_tmp[ESPD_DEV_PATH_MAX];
 static dev_target_t s_target = DEV_TARGET_SD;
+
+/* Direct-mapped CRC cache: skip re-reading large unchanged files on PUT offer.
+ * Keyed on (path-hash, size, mtime); validated cheaply via stat(). RAM-only.
+ * Populated by dev_file_hash() after a real read, and for free by
+ * dev_put_finish() since we already know the CRC of what we just wrote. */
+#define ESPD_DEV_CRC_CACHE_SLOTS    128
+#define ESPD_DEV_CRC_CACHE_MIN_SIZE (128u * 1024u)
+struct dev_crc_cache_entry {
+    uint32_t path_hash;
+    uint32_t size;
+    uint32_t mtime;
+    uint32_t crc;
+    bool valid;
+};
+static struct dev_crc_cache_entry s_crc_cache[ESPD_DEV_CRC_CACHE_SLOTS];
+
 static volatile bool s_sync_active = false;
 /* Shared HW read buffer for line commands and PUT windows (espd_dev task only). */
 static uint8_t s_cdc_rx_buf[ESPD_DEV_RX_CHUNK];
@@ -286,6 +302,43 @@ static int dev_build_path(char *out, size_t outsz, const char *rel)
     return 1;
 }
 
+static struct dev_crc_cache_entry *dev_crc_cache_slot(const char *full, uint32_t *out_hash)
+{
+    uint32_t h = esp_crc32_le(0, (const uint8_t *)full, (uint32_t)strlen(full));
+    if (out_hash) *out_hash = h;
+    return &s_crc_cache[h % ESPD_DEV_CRC_CACHE_SLOTS];
+}
+
+static int dev_crc_cache_lookup(const char *full, uint32_t size, uint32_t mtime, uint32_t *out_crc)
+{
+    uint32_t h;
+    struct dev_crc_cache_entry *e = dev_crc_cache_slot(full, &h);
+    if (e->valid && e->path_hash == h && e->size == size && e->mtime == mtime) {
+        *out_crc = e->crc;
+        return 1;
+    }
+    return 0;
+}
+
+static void dev_crc_cache_store(const char *full, uint32_t size, uint32_t mtime, uint32_t crc)
+{
+    uint32_t h;
+    struct dev_crc_cache_entry *e = dev_crc_cache_slot(full, &h);
+    e->path_hash = h;
+    e->size = size;
+    e->mtime = mtime;
+    e->crc = crc;
+    e->valid = true;
+}
+
+static void dev_crc_cache_invalidate(const char *full)
+{
+    uint32_t h;
+    struct dev_crc_cache_entry *e = dev_crc_cache_slot(full, &h);
+    if (e->valid && e->path_hash == h)
+        e->valid = false;
+}
+
 /* CRC-32 (same polynomial as Python zlib.crc32). Runs on espd_dev task only. */
 static int dev_file_hash(const char *full, size_t *out_size, uint32_t *out_crc)
 {
@@ -298,6 +351,12 @@ static int dev_file_hash(const char *full, size_t *out_size, uint32_t *out_crc)
 
     if (stat(full, &st) != 0 || !S_ISREG(st.st_mode))
         return -1;
+    if ((uint32_t)st.st_size >= ESPD_DEV_CRC_CACHE_MIN_SIZE
+            && dev_crc_cache_lookup(full, (uint32_t)st.st_size, (uint32_t)st.st_mtime, &crc)) {
+        *out_size = (size_t)st.st_size;
+        *out_crc = crc;
+        return 0;
+    }
     fp = fopen(full, "rb");
     if (!fp)
         return -2;
@@ -310,6 +369,8 @@ static int dev_file_hash(const char *full, size_t *out_size, uint32_t *out_crc)
     fclose(fp);
     if (total != (size_t)st.st_size)
         return -2;
+    if ((uint32_t)st.st_size >= ESPD_DEV_CRC_CACHE_MIN_SIZE)
+        dev_crc_cache_store(full, (uint32_t)st.st_size, (uint32_t)st.st_mtime, crc);
     *out_size = total;
     *out_crc = crc;
     return 0;
@@ -415,8 +476,10 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     /* If updating an existing file, remove it now so the .tmp only competes
      * with free space, not with the old copy. On failure (new file) this is a
      * no-op. Then check free space against the full payload. */
-    if (stat(full, &st) == 0 && S_ISREG(st.st_mode))
+    if (stat(full, &st) == 0 && S_ISREG(st.st_mode)) {
+        dev_crc_cache_invalidate(full);
         unlink(full);
+    }
     {
         espd_storage_stats_t stats;
         if (espd_storage_get_stats(dev_target_mount(s_target), &stats) == ESP_OK
@@ -577,6 +640,13 @@ static void dev_put_finish(void)
             || dev_put_commit(final_full) != 0) {
         dev_reply("-ERR commit failed");
         return;
+    }
+    /* Cache the CRC we just computed during the write — free hit for next sync. */
+    if (s_put_total >= ESPD_DEV_CRC_CACHE_MIN_SIZE) {
+        struct stat st;
+        if (stat(final_full, &st) == 0 && S_ISREG(st.st_mode))
+            dev_crc_cache_store(final_full, (uint32_t)st.st_size,
+                (uint32_t)st.st_mtime, s_put_crc);
     }
     snprintf(reply, sizeof(reply), "+OK PUT done %08" PRIx32, s_put_crc);
     dev_reply(reply);
