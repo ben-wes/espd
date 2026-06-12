@@ -427,7 +427,7 @@ void app_main(void)
             espd_pd_io_poll();
             pdmain_tick();
         } else {
-            memset(soundout, 0, sizeof(soundout));
+            vTaskDelay(pdMS_TO_TICKS(1));
         }
         espd_dev_sync_poll();
         cputime += (unsigned int)((uint64_t)esp_timer_get_time() - t0);
