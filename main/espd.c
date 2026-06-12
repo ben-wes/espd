@@ -214,13 +214,15 @@ void pdmain_print(const char *s)
 
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC && CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
-        espd_serial_sync_write(s, strlen(s));
+    espd_serial_sync_write(s, strlen(s));
 #elif CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_DEV_CDC_SYNC
     if (tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
         espd_serial_sync_write(s, strlen(s));
     else
-#endif
         printf("%s", s);
+#else
+    printf("%s", s);
+#endif
 
 #if defined(ESPD_USE_WIFI) && ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
     if (espd_wifi_net_enabled && wifi_ipaddr[0] != '\0') {
