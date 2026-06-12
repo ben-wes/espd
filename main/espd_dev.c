@@ -375,14 +375,12 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     int err;
     struct stat st;
 
-    dev_sync_set_active(true);
     dev_refresh_target();
 #if CONFIG_ESPD_USE_USB_MSC
     if (s_target == DEV_TARGET_FLASH && espd_usb_msc_storage_present()) {
         esp_err_t mnt = espd_usb_ensure_msc_app_mount();
         if (mnt != ESP_OK) {
             dev_reply("-ERR reclaim /storage from host failed (eject USB volume on host)");
-            dev_sync_set_active(false);
             return;
         }
     }
@@ -391,22 +389,18 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         char msg[96];
         snprintf(msg, sizeof(msg), "-ERR target %s not mounted", dev_target_name(s_target));
         dev_reply(msg);
-        dev_sync_set_active(false);
         return;
     }
     if (!dev_rel_path_ok(rel)) {
         dev_reply("-ERR bad path");
-        dev_sync_set_active(false);
         return;
     }
     if (nbytes == 0) {
         dev_reply("-ERR bad size");
-        dev_sync_set_active(false);
         return;
     }
     if (!dev_build_path(full, sizeof(full), rel)) {
         dev_reply("-ERR path too long");
-        dev_sync_set_active(false);
         return;
     }
 
@@ -414,7 +408,6 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         err = dev_file_hash(full, &on_disk, &disk_crc);
         if (err == 0 && disk_crc == expect_crc) {
             dev_reply("+OK PUT skip");
-            dev_sync_set_active(false);
             return;
         }
     }
@@ -425,20 +418,17 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
 
     if (dev_mkdir_parents(full) != 0) {
         dev_reply("-ERR invalid parent path");
-        dev_sync_set_active(false);
         return;
     }
     dev_put_cleanup_temp();
     if (snprintf(s_put_tmp, sizeof(s_put_tmp), "%s.tmp", full) >= (int)sizeof(s_put_tmp)) {
         dev_reply("-ERR path too long");
-        dev_sync_set_active(false);
         return;
     }
     /* Parent creation for tmp path too (handles reconnect/mount races). */
     if (dev_mkdir_parents(s_put_tmp) != 0) {
         dev_reply("-ERR invalid parent path");
         s_put_tmp[0] = '\0';
-        dev_sync_set_active(false);
         return;
     }
     /* Drop a partial temp from an earlier attempt; keep s_put_tmp for fopen. */
@@ -449,7 +439,6 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         if (dev_mkdir_parents(s_put_tmp) != 0) {
             dev_reply("-ERR invalid parent path");
             s_put_tmp[0] = '\0';
-            dev_sync_set_active(false);
             return;
         }
         s_put_fp = fopen(s_put_tmp, "wb");
@@ -463,7 +452,6 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         dev_reply(msg);
         ESP_LOGW(TAG, "PUT open %s failed (%d)", s_put_tmp, open_errno);
         s_put_tmp[0] = '\0';
-        dev_sync_set_active(false);
         return;
     }
 
@@ -491,7 +479,6 @@ static void dev_put_fail(const char *err)
     s_put_remain = 0;
     s_cmd = DEV_CMD_NONE;
     dev_put_cleanup_temp();
-    dev_sync_set_active(false);
     dev_reply(err);
 }
 
@@ -562,7 +549,6 @@ static void dev_put_finish(void)
 
     if (s_put_crc != s_put_expect_crc) {
         dev_put_cleanup_temp();
-        dev_sync_set_active(false);
         snprintf(reply, sizeof(reply),
             "-ERR PUT crc exp %08" PRIx32 " got %08" PRIx32,
             s_put_expect_crc, s_put_crc);
@@ -571,13 +557,11 @@ static void dev_put_finish(void)
     }
     if (!dev_build_path(final_full, sizeof(final_full), s_put_rel)
             || dev_put_commit(final_full) != 0) {
-        dev_sync_set_active(false);
         dev_reply("-ERR commit failed");
         return;
     }
     snprintf(reply, sizeof(reply), "+OK PUT done %08" PRIx32, s_put_crc);
     dev_reply(reply);
-    dev_sync_set_active(false);
     espd_storage_resolve_paths();
 }
 
@@ -749,7 +733,6 @@ static void dev_do_reload(void)
         return;
     }
     s_reload_pending = true;
-    ESP_LOGI(TAG, "RELOAD pending (main.pd on %s)", dev_target_mount(s_target));
     dev_reply("+OK RELOAD pending");
 }
 
@@ -817,12 +800,30 @@ static void dev_handle_line(char *line)
         return;
 
     if (!strcmp(line, "STATUS")) {
+        // activate sync mode after STATUS command
+        dev_sync_set_active(false);
         char reply[128];
         dev_refresh_target();
         snprintf(reply, sizeof(reply), "+OK STATUS sdcard=%s internal=%s",
             dev_sdcard_available() ? "yes" : "no",
             dev_flash_available() ? "yes" : "no");
         dev_reply(reply);
+        return;
+    }
+    if (!strncmp(line, "MSG ", 4)) {
+        const char *body = line + 4;
+        while (*body == ' ' || *body == '\t')
+            body++;
+        dev_queue_pdmsg(body);
+        return;
+    }
+
+    // deactivate sync mode for all other commands
+    dev_sync_set_active(true);
+
+    if (!strcmp(line, "RELOAD")) {
+        dev_do_reload();
+        dev_sync_set_active(false);
         return;
     }
     if (!strcmp(line, "RESET")) {
@@ -840,17 +841,6 @@ static void dev_handle_line(char *line)
         while (*rel == ' ' || *rel == '\t')
             rel++;
         dev_do_rm(rel);
-        return;
-    }
-    if (!strcmp(line, "RELOAD")) {
-        dev_do_reload();
-        return;
-    }
-    if (!strncmp(line, "MSG ", 4)) {
-        const char *body = line + 4;
-        while (*body == ' ' || *body == '\t')
-            body++;
-        dev_queue_pdmsg(body);
         return;
     }
     if (!strncmp(line, "PUT ", 4)) {
@@ -1004,6 +994,7 @@ bool espd_dev_sync_active(void)
 void espd_dev_sync_poll(void)
 {
     if (espd_dev_reload_pending()) {
+        ESP_LOGI(TAG, "RELOAD executing from %s", espd_dev_reload_dir());
         pdmain_reload_patch_from(espd_dev_reload_dir());
         espd_dev_clear_reload_pending();
     }
