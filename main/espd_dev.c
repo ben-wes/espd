@@ -55,14 +55,15 @@ static const char *TAG = "espd_dev";
 #define ESPD_DEV_TASK_CORE          0
 /* Below TinyUSB device task (4) so CDC RX is not starved during PUT. */
 #define ESPD_DEV_TASK_PRIO          3
-#define ESPD_DEV_RX_CHUNK           4096
+#define ESPD_DEV_RX_CHUNK           4192
 /* PUT recv + stdio; 6 KiB stack overflowed before RX_CHUNK was 4 KiB. */
-#define ESPD_DEV_TASK_STACK         12288
+#define ESPD_DEV_TASK_STACK         8192
 /* Room for PUT <path-with-spaces> <size> <crc> (path up to ESPD_DEV_PATH_MAX). */
 #define ESPD_DEV_LINE_MAX           256
 #define ESPD_DEV_PATH_MAX           384
 #define ESPD_DEV_PUT_SKIP_HASH_MAX  (256 * 1024)
 #define ESPD_DEV_PUT_WINDOW         (32 * 1024)
+#define ESPD_DEV_PUT_WINDOW         8192
 #if CONFIG_ESPD_DEV_CDC_SYNC
 #else
 #define ESPD_DEV_IDLE_WAIT_MS       50
@@ -936,14 +937,14 @@ void espd_dev_init(void)
 #if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
     /* Initialize USB Serial JTAG driver for chips with USJ support */
     usb_serial_jtag_driver_config_t usj_config = {
-        .rx_buffer_size = 8192,
-        .tx_buffer_size = 8192,
+        .rx_buffer_size = ESPD_DEV_PUT_WINDOW,
+        .tx_buffer_size = 1024,
     };
     usb_serial_jtag_driver_install(&usj_config);
 #else
     /* UART0 may already be installed by console; check before installing */
     if (!uart_is_driver_installed(UART_NUM_0)) {
-        uart_driver_install(UART_NUM_0, 8192, 8192, 0, NULL, 0);
+        uart_driver_install(UART_NUM_0, ESPD_DEV_PUT_WINDOW, 1024, 0, NULL, 0);
     }
 #endif
 #endif
