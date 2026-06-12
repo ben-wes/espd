@@ -41,6 +41,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_crc.h"
+#include "esp_heap_caps.h"
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
@@ -90,6 +91,11 @@ static uint32_t s_put_expect_crc;
 static uint32_t s_put_crc;
 static FILE *s_put_fp;
 static char s_put_tmp[ESPD_DEV_PATH_MAX];
+#if CONFIG_SPIRAM
+#define ESPD_DEV_PSRAM_RESERVE (256u * 1024u)  /* headroom kept for Pd/audio */
+static uint8_t *s_put_buf;   /* PSRAM-backed receive buffer, or NULL */
+static size_t   s_put_buf_pos;
+#endif
 static dev_target_t s_target = DEV_TARGET_SD;
 
 /* Direct-mapped CRC cache: skip re-reading large unchanged files on PUT offer.
@@ -382,6 +388,14 @@ static void dev_put_cleanup_temp(void)
         unlink(s_put_tmp);
         s_put_tmp[0] = '\0';
     }
+#if CONFIG_SPIRAM
+    if (s_put_buf) {
+        ESP_LOGI(TAG, "dev_put_cleanup_temp: freeing PSRAM buf");
+        heap_caps_free(s_put_buf);
+        s_put_buf = NULL;
+        s_put_buf_pos = 0;
+    }
+#endif
 }
 
 static int dev_put_commit(const char *final_full)
@@ -502,6 +516,23 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         return;
     }
     dev_put_cleanup_temp();
+
+#if CONFIG_SPIRAM
+    /* Try to receive into a PSRAM buffer sized to the file — up to whatever the
+     * largest contiguous free PSRAM block is.  Falls through to the .tmp path
+     * if PSRAM is exhausted or the allocation fails. */
+    size_t psram_avail = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (psram_avail > ESPD_DEV_PSRAM_RESERVE && nbytes <= psram_avail - ESPD_DEV_PSRAM_RESERVE) {
+        s_put_buf = heap_caps_malloc(nbytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (s_put_buf) {
+            s_put_buf_pos = 0;
+            //ESP_LOGI(TAG, "PUT %s: using PSRAM buffer", rel);
+            goto put_ready;
+        }
+    }
+    ESP_LOGI(TAG, "PUT %s: using .tmp file", rel);
+#endif
+
     if (snprintf(s_put_tmp, sizeof(s_put_tmp), "%s.tmp", full) >= (int)sizeof(s_put_tmp)) {
         dev_reply("-ERR path too long");
         return;
@@ -535,6 +566,9 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         s_put_tmp[0] = '\0';
         return;
     }
+#if CONFIG_SPIRAM
+put_ready:
+#endif
 
     strncpy(s_put_rel, rel, sizeof(s_put_rel) - 1);
     s_put_rel[sizeof(s_put_rel) - 1] = '\0';
@@ -567,12 +601,23 @@ static bool dev_put_write(const uint8_t *data, size_t len)
 {
     size_t n = len;
 
-    if (!s_put_fp || s_cmd != DEV_CMD_PUT)
+    if (s_cmd != DEV_CMD_PUT)
         return false;
     if (n > s_put_remain)
         n = s_put_remain;
     if (!n)
         return true;
+#if CONFIG_SPIRAM
+    if (s_put_buf) {
+        memcpy(s_put_buf + s_put_buf_pos, data, n);
+        s_put_buf_pos += n;
+        s_put_crc = esp_crc32_le(s_put_crc, data, (uint32_t)n);
+        s_put_remain -= n;
+        return true;
+    }
+#endif
+    if (!s_put_fp)
+        return false;
     if (fwrite(data, 1, n, s_put_fp) != n)
         return false;
     s_put_crc = esp_crc32_le(s_put_crc, data, (uint32_t)n);
@@ -586,7 +631,14 @@ static void dev_put_recv_window(void)
     size_t need;
     size_t got;
 
-    if (!s_put_fp || s_cmd != DEV_CMD_PUT || s_put_remain == 0)
+#if CONFIG_SPIRAM
+    if (!s_put_fp && !s_put_buf)
+        return;
+#else
+    if (!s_put_fp)
+        return;
+#endif
+    if (s_cmd != DEV_CMD_PUT || s_put_remain == 0)
         return;
 
     need = s_put_remain;
@@ -617,16 +669,17 @@ static void dev_put_finish(void)
 {
     char final_full[ESPD_DEV_PATH_MAX];
     char reply[96];
-    FILE *fp;
 
-    if (!s_put_fp || s_cmd != DEV_CMD_PUT || s_put_remain > 0)
+#if CONFIG_SPIRAM
+    if (!s_put_buf && !s_put_fp)
         return;
-    fp = s_put_fp;
-    s_put_fp = NULL;
+#else
+    if (!s_put_fp)
+        return;
+#endif
+    if (s_cmd != DEV_CMD_PUT || s_put_remain > 0)
+        return;
     s_cmd = DEV_CMD_NONE;
-
-    fflush(fp);
-    fclose(fp);
 
     if (s_put_crc != s_put_expect_crc) {
         dev_put_cleanup_temp();
@@ -636,11 +689,45 @@ static void dev_put_finish(void)
         dev_reply(reply);
         return;
     }
-    if (!dev_build_path(final_full, sizeof(final_full), s_put_rel)
-            || dev_put_commit(final_full) != 0) {
+    if (!dev_build_path(final_full, sizeof(final_full), s_put_rel)) {
+        dev_put_cleanup_temp();
         dev_reply("-ERR commit failed");
         return;
     }
+
+#if CONFIG_SPIRAM
+    if (s_put_buf) {
+        /* Write validated buffer directly to the final path — no .tmp needed. */
+        FILE *fp = fopen(final_full, "wb");
+        if (!fp) {
+            dev_put_cleanup_temp();
+            dev_reply("-ERR commit failed");
+            return;
+        }
+        size_t written = fwrite(s_put_buf, 1, s_put_total, fp);
+        fclose(fp);
+        heap_caps_free(s_put_buf);
+        s_put_buf = NULL;
+        s_put_buf_pos = 0;
+        if (written != s_put_total) {
+            unlink(final_full);
+            dev_reply("-ERR commit failed");
+            return;
+        }
+    } else
+#endif
+    {
+        ESP_LOGI(TAG, "PUT commit %s via .tmp rename (%zu bytes)", final_full, s_put_total);
+        FILE *fp = s_put_fp;
+        s_put_fp = NULL;
+        fflush(fp);
+        fclose(fp);
+        if (dev_put_commit(final_full) != 0) {
+            dev_reply("-ERR commit failed");
+            return;
+        }
+    }
+
     /* Cache the CRC we just computed during the write — free hit for next sync. */
     if (s_put_total >= ESPD_DEV_CRC_CACHE_MIN_SIZE) {
         struct stat st;
@@ -983,7 +1070,11 @@ static void espd_dev_task(void *arg)
         if (s_cmd == DEV_CMD_PUT) {
             if (s_put_remain > 0)
                 dev_put_recv_window();
-            else if (s_put_fp)
+            else if (s_put_fp
+#if CONFIG_SPIRAM
+                     || s_put_buf
+#endif
+                    )
                 dev_put_finish();
             taskYIELD();
             (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(0));
