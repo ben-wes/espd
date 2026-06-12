@@ -421,12 +421,14 @@ void app_main(void)
     while (1)
     {
         uint64_t t0 = (uint64_t)esp_timer_get_time();
-        pd_pollhost();
-        espd_pd_io_poll();
-        espd_dev_sync_poll();
         if (!espd_dev_sync_active()) {
+            pd_pollhost();
+            espd_pd_io_poll();
             pdmain_tick();
+        } else {
+            memset(soundout, 0, sizeof(soundout));
         }
+        espd_dev_sync_poll();
         cputime += (unsigned int)((uint64_t)esp_timer_get_time() - t0);
         senddacs();
     }

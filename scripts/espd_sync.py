@@ -26,6 +26,12 @@ import threading
 import time
 from dataclasses import dataclass
 
+from dev_sync_constants import (
+    PUT_STREAM_CHUNK,
+    SERIAL_BAUD,
+    put_stream_bps,
+)
+
 
 @dataclass
 class OutputConfig:
@@ -76,13 +82,6 @@ _STATUS_INFO_RE = re.compile(
     rb"^\+OK STATUS sdcard=(yes|no) internal=(yes|no)$"
 )
 _LAST_PORT_LOGGED: str | None = None
-
-# USB CDC ignores baud. Pace payload so TinyUSB can drain (raise if stable on your port).
-# ~800k BPS helps SD a lot; MSC bulk is usually limited by flash write/fsync on device.
-_PUT_STREAM_BPS = 800000.0
-_PUT_STREAM_CHUNK = 4096
-_SERIAL_BAUD = 921600
-
 
 def _strip_ansi(line: bytes) -> bytes:
     return _ANSI_RE.sub(b"", line)
@@ -237,7 +236,7 @@ def _serial_open_retry(port: str, timeout: float):
     last_err: Exception | None = None
     while time.monotonic() < deadline:
         try:
-            return serial.Serial(port, _SERIAL_BAUD, timeout=0.05)
+            return serial.Serial(port, SERIAL_BAUD, timeout=0.05)
         except (serial.serialutil.SerialException, OSError) as e:
             last_err = e
             msg = str(e).lower()
@@ -453,6 +452,8 @@ class EspdCdc:
             if line.startswith(b"-ERR"):
                 raise RuntimeError(line.decode(errors="replace"))
             raise RuntimeError(f"unexpected PUT reply: {line.decode(errors='replace')}")
+        info = device_status(self)
+        put_bps = put_stream_bps(sdcard=info["sdcard"] == "yes")
         log_script(f"sending {nbytes} bytes for {rel_path}")
         try:
             with self._cmd_lock:
@@ -461,14 +462,19 @@ class EspdCdc:
                     self._reply = None
                 self._put_active = True
                 next_send = time.monotonic()
-                for off in range(0, len(data), _PUT_STREAM_CHUNK):
-                    part = data[off : off + _PUT_STREAM_CHUNK]
+                sent = 0
+                for off in range(0, len(data), PUT_STREAM_CHUNK):
+                    part = data[off : off + PUT_STREAM_CHUNK]
                     self._ser.write(part)
-                    next_send += len(part) / _PUT_STREAM_BPS
+                    sent += len(part)
+                    next_send += len(part) / put_bps
                     sleep_for = next_send - time.monotonic()
                     if sleep_for > 0:
                         time.sleep(sleep_for)
+                    if sent % (1024 * 1024) == 0 and sent < nbytes:
+                        log_script(f"  … {sent // (1024 * 1024)} MiB sent")
                 self._ser.flush()
+                log_script("payload sent — waiting for device commit…")
         except OSError as e:
             self._put_active = False
             self._mark_disconnected(str(e))

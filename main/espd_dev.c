@@ -40,6 +40,10 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_crc.h"
+#include "esp_timer.h"
+#if CONFIG_SPIRAM
+#include "esp_attr.h"
+#endif
 #if CONFIG_ESPD_DEV_CDC_SYNC
 #include "tinyusb_cdc_acm.h"
 #endif
@@ -55,8 +59,9 @@
 static const char *TAG = "espd_dev";
 
 #define ESPD_DEV_TASK_CORE          0
-/* Below TinyUSB device task (4) so CDC RX is not starved during PUT payload. */
+/* Idle: below TinyUSB (4). Boosted during PUT so audio (19) cannot starve CDC drain. */
 #define ESPD_DEV_TASK_PRIO          3
+#define ESPD_DEV_TASK_PRIO_BOOST    5
 #define ESPD_DEV_RX_CHUNK           4096   // 4KB → 2KB (CDC read buffer)
 #define ESPD_DEV_PUT_FILEBUF        16384   // 16KB → 8KB (file write buffer)
 #define ESPD_DEV_HASH_CHUNK         4096   // 4KB → 2KB (hash buffer)
@@ -66,6 +71,19 @@ static const char *TAG = "espd_dev";
 /* Room for PUT <path-with-spaces> <size> <crc> (path up to ESPD_DEV_PATH_MAX). */
 #define ESPD_DEV_LINE_MAX           256
 #define ESPD_DEV_PATH_MAX           384
+#define ESPD_DEV_PUT_SKIP_HASH_MAX  (256 * 1024)
+#if CONFIG_SPIRAM
+#define ESPD_DEV_PUT_RING           (64 * 1024)
+#else
+#define ESPD_DEV_PUT_RING           (16 * 1024)
+#endif
+#define ESPD_DEV_PUT_FLUSH_CHUNK    1024
+#define ESPD_DEV_PUT_BURST          64
+#if CONFIG_ESPD_DEV_CDC_SYNC
+#define ESPD_DEV_IDLE_WAIT_MS       500
+#else
+#define ESPD_DEV_IDLE_WAIT_MS       50
+#endif
 
 typedef enum {
     DEV_CMD_NONE = 0,
@@ -98,11 +116,76 @@ static char s_put_tmp[ESPD_DEV_PATH_MAX];
 static SemaphoreHandle_t s_put_mux;
 static dev_target_t s_target = DEV_TARGET_SD;
 static volatile bool s_sync_active = false;
+#if CONFIG_SPIRAM
+EXT_RAM_BSS_ATTR static uint8_t s_put_ring[ESPD_DEV_PUT_RING];
+#else
+static uint8_t s_put_ring[ESPD_DEV_PUT_RING];
+#endif
+static size_t s_put_ring_head;
+static size_t s_put_ring_tail;
 /* Single drain buffer (espd_dev task only — not re-entrant). */
 static uint8_t s_cdc_rx_buf[ESPD_DEV_RX_CHUNK];
 
 static void dev_reply(const char *msg);
+static void dev_put_cleanup_temp(void);
 static void dev_put_data(const uint8_t *data, size_t len);
+static void dev_put_ring_reset(void);
+static size_t dev_put_ring_used(void);
+static size_t dev_put_ring_push(const uint8_t *data, size_t len);
+static size_t dev_put_ring_pop(uint8_t *out, size_t max);
+static void dev_put_ingest_hw(void);
+static void dev_put_flush_once(void);
+static void dev_put_flush_pending(void);
+static void dev_sync_set_active(bool on);
+
+static void dev_put_ring_reset(void)
+{
+    s_put_ring_head = 0;
+    s_put_ring_tail = 0;
+}
+
+static size_t dev_put_ring_used(void)
+{
+    if (s_put_ring_head >= s_put_ring_tail)
+        return s_put_ring_head - s_put_ring_tail;
+    return ESPD_DEV_PUT_RING - s_put_ring_tail + s_put_ring_head;
+}
+
+static size_t dev_put_ring_space(void)
+{
+    return ESPD_DEV_PUT_RING - 1 - dev_put_ring_used();
+}
+
+static size_t dev_put_ring_push(const uint8_t *data, size_t len)
+{
+    size_t pushed = 0;
+
+    while (pushed < len && dev_put_ring_space() > 0) {
+        s_put_ring[s_put_ring_head] = data[pushed++];
+        s_put_ring_head = (s_put_ring_head + 1) % ESPD_DEV_PUT_RING;
+    }
+    if (pushed < len)
+        ESP_LOGW(TAG, "PUT ring overflow, dropped %u bytes", (unsigned)(len - pushed));
+    return pushed;
+}
+
+static size_t dev_put_ring_pop(uint8_t *out, size_t max)
+{
+    size_t n = 0;
+
+    while (n < max && s_put_ring_tail != s_put_ring_head) {
+        out[n++] = s_put_ring[s_put_ring_tail];
+        s_put_ring_tail = (s_put_ring_tail + 1) % ESPD_DEV_PUT_RING;
+    }
+    return n;
+}
+
+static void dev_sync_set_active(bool on)
+{
+    s_sync_active = on;
+    if (s_dev_task)
+        vTaskPrioritySet(s_dev_task, on ? ESPD_DEV_TASK_PRIO_BOOST : ESPD_DEV_TASK_PRIO);
+}
 
 static void dev_rx_flush(void)
 {
@@ -170,18 +253,20 @@ static void dev_drain_cdc_hw(void)
 #endif
 }
 
-/* PUT payload bypasses the 16 KiB line ring (large files overflow it otherwise). */
-static void dev_drain_cdc_put(void)
+/* PUT payload bypasses the line ring; stage in s_put_ring so USB reads stay fast. */
+static void dev_put_ingest_hw(void)
 {
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
 #if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
     int rx;
-    while ((rx = usb_serial_jtag_read_bytes(s_cdc_rx_buf, sizeof(s_cdc_rx_buf), pdMS_TO_TICKS(0))) > 0)
-        dev_put_data(s_cdc_rx_buf, rx);
+    while ((rx = usb_serial_jtag_read_bytes(s_cdc_rx_buf, sizeof(s_cdc_rx_buf), pdMS_TO_TICKS(0))) > 0) {
+        (void)dev_put_ring_push(s_cdc_rx_buf, (size_t)rx);
+    }
 #else
     int rx;
-    while ((rx = uart_read_bytes(UART_NUM_0, s_cdc_rx_buf, sizeof(s_cdc_rx_buf), pdMS_TO_TICKS(0))) > 0)
-        dev_put_data(s_cdc_rx_buf, rx);
+    while ((rx = uart_read_bytes(UART_NUM_0, s_cdc_rx_buf, sizeof(s_cdc_rx_buf), pdMS_TO_TICKS(0))) > 0) {
+        (void)dev_put_ring_push(s_cdc_rx_buf, (size_t)rx);
+    }
 #endif
 #elif CONFIG_ESPD_DEV_CDC_SYNC
     size_t rx;
@@ -190,9 +275,28 @@ static void dev_drain_cdc_put(void)
         return;
 
     while (tinyusb_cdcacm_read(TINYUSB_CDC_ACM_0, s_cdc_rx_buf, sizeof(s_cdc_rx_buf), &rx) == ESP_OK
-           && rx > 0)
-        dev_put_data(s_cdc_rx_buf, rx);
+           && rx > 0) {
+        (void)dev_put_ring_push(s_cdc_rx_buf, rx);
+    }
 #endif
+}
+
+static void dev_put_flush_once(void)
+{
+    uint8_t buf[ESPD_DEV_PUT_FLUSH_CHUNK];
+    size_t want = sizeof(buf);
+
+    if (s_put_remain > 0 && s_put_remain < want)
+        want = s_put_remain;
+    size_t n = dev_put_ring_pop(buf, want);
+    if (n > 0)
+        dev_put_data(buf, n);
+}
+
+static void dev_put_flush_pending(void)
+{
+    while (s_put_remain > 0 && dev_put_ring_used() > 0)
+        dev_put_flush_once();
 }
 
 #if CONFIG_ESPD_DEV_CDC_SYNC
@@ -416,13 +520,16 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     size_t on_disk = 0;
     uint32_t disk_crc = 0;
     int err;
+    struct stat st;
 
+    dev_sync_set_active(true);
     dev_refresh_target();
 #if CONFIG_ESPD_USE_USB_MSC
     if (s_target == DEV_TARGET_FLASH && espd_usb_msc_storage_present()) {
         esp_err_t mnt = espd_usb_ensure_msc_app_mount();
         if (mnt != ESP_OK) {
             dev_reply("-ERR reclaim /storage from host failed (eject USB volume on host)");
+            dev_sync_set_active(false);
             return;
         }
     }
@@ -431,43 +538,55 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         char msg[96];
         snprintf(msg, sizeof(msg), "-ERR target %s not mounted", dev_target_name(s_target));
         dev_reply(msg);
+        dev_sync_set_active(false);
         return;
     }
     if (!dev_rel_path_ok(rel)) {
         dev_reply("-ERR bad path");
+        dev_sync_set_active(false);
         return;
     }
     if (nbytes == 0) {
         dev_reply("-ERR bad size");
+        dev_sync_set_active(false);
         return;
     }
     if (!dev_build_path(full, sizeof(full), rel)) {
         dev_reply("-ERR path too long");
+        dev_sync_set_active(false);
         return;
     }
 
-    err = dev_file_hash(full, &on_disk, &disk_crc);
-    if (err == 0 && on_disk == nbytes && disk_crc == expect_crc) {
-        dev_reply("+OK PUT skip");
-        return;
+    if (stat(full, &st) == 0 && S_ISREG(st.st_mode) && (size_t)st.st_size == nbytes
+            && (size_t)st.st_size <= ESPD_DEV_PUT_SKIP_HASH_MAX) {
+        err = dev_file_hash(full, &on_disk, &disk_crc);
+        if (err == 0 && disk_crc == expect_crc) {
+            dev_reply("+OK PUT skip");
+            dev_sync_set_active(false);
+            return;
+        }
     }
 
     dev_rx_flush();
+    dev_put_ring_reset();
     dev_drain_cdc_hw();
 
     if (dev_mkdir_parents(full) != 0) {
         dev_reply("-ERR invalid parent path");
+        dev_sync_set_active(false);
         return;
     }
     dev_put_cleanup_temp();
     if (snprintf(s_put_tmp, sizeof(s_put_tmp), "%s.tmp", full) >= (int)sizeof(s_put_tmp)) {
         dev_reply("-ERR path too long");
+        dev_sync_set_active(false);
         return;
     }
     /* Parent creation for tmp path too (handles reconnect/mount races). */
     if (dev_mkdir_parents(s_put_tmp) != 0) {
         dev_reply("-ERR invalid parent path");
         s_put_tmp[0] = '\0';
+        dev_sync_set_active(false);
         return;
     }
     /* Drop a partial temp from an earlier attempt; keep s_put_tmp for fopen. */
@@ -478,12 +597,13 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         if (dev_mkdir_parents(s_put_tmp) != 0) {
             dev_reply("-ERR invalid parent path");
             s_put_tmp[0] = '\0';
+            dev_sync_set_active(false);
             return;
         }
         s_put_fp = fopen(s_put_tmp, "wb");
     }
     if (s_put_fp) {
-        static char put_io_buf[ESPD_DEV_PUT_FILEBUF];
+        static char put_io_buf[4096];
         setvbuf(s_put_fp, put_io_buf, _IOFBF, sizeof(put_io_buf));
     }
     if (!s_put_fp) {
@@ -493,6 +613,7 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         dev_reply(msg);
         ESP_LOGW(TAG, "PUT open %s failed (%d)", s_put_tmp, open_errno);
         s_put_tmp[0] = '\0';
+        dev_sync_set_active(false);
         return;
     }
 
@@ -502,7 +623,6 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     s_put_expect_crc = expect_crc;
     s_put_crc = 0;
     s_cmd = DEV_CMD_PUT;
-    s_sync_active = true;
     dev_reply("+OK PUT ready");
 }
 
@@ -527,7 +647,7 @@ static void dev_put_data(const uint8_t *data, size_t len)
             s_put_fp = NULL;
             s_put_remain = 0;
             s_cmd = DEV_CMD_NONE;
-            s_sync_active = false;
+            dev_sync_set_active(false);
             dev_put_cleanup_temp();
             xSemaphoreGive(s_put_mux);
             dev_reply("-ERR write failed");
@@ -542,19 +662,11 @@ static void dev_put_data(const uint8_t *data, size_t len)
     }
 
     {
-        int fd = fileno(s_put_fp);
         fflush(s_put_fp);
-#if CONFIG_ESPD_USE_USB_MSC
-        /* fsync on internal flash is slow and can stall CDC; SD commit is fine after fflush. */
-        if (fd >= 0 && s_target == DEV_TARGET_FLASH && espd_usb_msc_storage_present())
-            fsync(fd);
-#else
-        (void)fd;
-#endif
         fclose(s_put_fp);
         s_put_fp = NULL;
         s_cmd = DEV_CMD_NONE;
-        s_sync_active = false;
+        dev_sync_set_active(false);
 
         if (s_put_crc != s_put_expect_crc) {
             dev_put_cleanup_temp();
@@ -572,6 +684,7 @@ static void dev_put_data(const uint8_t *data, size_t len)
             return;
         }
         xSemaphoreGive(s_put_mux);
+        dev_put_ring_reset();
         snprintf(reply, sizeof(reply), "+OK PUT done %08" PRIx32, s_put_crc);
         dev_reply(reply);
         espd_storage_resolve_paths();
@@ -916,19 +1029,26 @@ static void dev_poll_rx(void)
 
 static void dev_poll_put_payload(void)
 {
-    dev_drain_cdc_put();
+    dev_put_ingest_hw();
+    dev_put_flush_pending();
 }
 
 static void espd_dev_task(void *arg)
 {
     (void)arg;
     for (;;) {
-        if (s_cmd == DEV_CMD_PUT && s_put_remain > 0) {
-            dev_poll_put_payload();
+        if (s_cmd == DEV_CMD_PUT && (s_put_remain > 0 || dev_put_ring_used() > 0)) {
+            unsigned burst;
+            for (burst = 0; burst < ESPD_DEV_PUT_BURST; burst++) {
+                dev_poll_put_payload();
+                if (s_put_remain == 0 && dev_put_ring_used() == 0)
+                    break;
+            }
+            taskYIELD();
             (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(0));
         } else {
             dev_poll_rx();
-            (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10));
+            (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(ESPD_DEV_IDLE_WAIT_MS));
         }
     }
 }
@@ -939,7 +1059,7 @@ void espd_dev_init(void)
         return;
     s_cmd = DEV_CMD_NONE;
     s_reload_pending = false;
-    s_sync_active = false;
+    dev_sync_set_active(false);
     s_rx_head = 0;
     s_rx_tail = 0;
     s_put_tmp[0] = '\0';
