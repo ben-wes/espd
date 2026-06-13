@@ -336,7 +336,7 @@ void espd_din_gpio_init(void)
     if (!espd_din_gpio_task_handle)
     {
         BaseType_t ok = xTaskCreatePinnedToCore(espd_din_gpio_task_fn,
-            "espd_din", 3072, NULL, ESPD_DIN_GPIO_TASK_PRIO,
+            "espd_din", 2048, NULL, ESPD_DIN_GPIO_TASK_PRIO,
             &espd_din_gpio_task_handle, ESPD_DIN_GPIO_TASK_CORE);
         if (ok != pdPASS)
         {
@@ -567,7 +567,7 @@ void espd_ain_init(void)
 
     if (!espd_ain_adc_task) {
         BaseType_t ok = xTaskCreatePinnedToCore(espd_ain_adc_task_fn,
-            "espd_ain_adc", 3072, NULL, ESPD_AIN_TASK_PRIO,
+            "espd_ain_adc", 2048, NULL, ESPD_AIN_TASK_PRIO,
             &espd_ain_adc_task, ESPD_AIN_TASK_CORE);
         if (ok != pdPASS) {
             ESP_LOGW(TAG, "failed to create espd_ain_adc task; falling back to audio-thread polling");
@@ -808,7 +808,7 @@ void espd_touch_init(void)
     atomic_store_explicit(&espd_touch_dirty, 0u, memory_order_relaxed);
     if (!espd_touch_task_handle) {
         BaseType_t ok = xTaskCreatePinnedToCore(espd_touch_task_fn,
-            "espd_touch", 3072, NULL, ESPD_TOUCH_TASK_PRIO,
+            "espd_touch", 2048, NULL, ESPD_TOUCH_TASK_PRIO,
             &espd_touch_task_handle, ESPD_TOUCH_TASK_CORE);
         if (ok != pdPASS) {
             ESP_LOGW(TAG, "failed to create espd_touch task; falling back to audio-thread polling");
