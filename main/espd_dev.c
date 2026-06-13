@@ -18,38 +18,31 @@
  *   -ERR ...
  */
 
-#include "espd_dev.h"
-#include <stddef.h>
-
-#if CONFIG_ESPD_DEV_SYNC
-
-#include "driver/uart.h"
-#if CONFIG_ESPD_DEV_CDC_SYNC
-#include "tinyusb.h"
-#include "tinyusb_cdc_acm.h"
-#endif
-#if CONFIG_ESPD_DEV_SERIAL_SYNC && SOC_USB_SERIAL_JTAG_SUPPORTED
-#include "driver/usb_serial_jtag.h"
-#endif
-
 #include "espd.h"
+#include "espd_dev.h"
 #include "espd_usb.h"
 #include "espd_storage.h"
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_log.h"
-#include "esp_system.h"
-#include "esp_crc.h"
-#include "esp_heap_caps.h"
+#if CONFIG_ESPD_DEV_SYNC
+
+#include <driver/uart.h>
+#if CONFIG_ESPD_DEV_CDC_SYNC
+#include <tinyusb.h>
+#include <tinyusb_cdc_acm.h>
+#endif
+#if CONFIG_ESPD_DEV_SERIAL_SYNC && SOC_USB_SERIAL_JTAG_SUPPORTED
+#include <driver/usb_serial_jtag.h>
+#endif
+
+#include <freertos/task.h>
+#include <esp_system.h>
+#include <esp_crc.h>
 #include <inttypes.h>
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
 #include <sys/stat.h>
-#include <errno.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <stdbool.h>
+#include <errno.h>
 
 static const char *TAG = "espd_dev";
 

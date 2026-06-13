@@ -10,35 +10,26 @@
 #include "espd_usb.h"
 #include "espd_config_file.h"
 #include "espd_gpio_peripherals.h"
+#include "espd_dev.h"
+#include "espd_storage.h"
 #include "bsp/bsp_io.h"
 #include "../pd/src/m_pd.h"
 
-#include <string.h>
-#include <math.h>
-#include <ctype.h>
-#include <stdarg.h>
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_log.h"
-#include "esp_err.h"
-#include "esp_system.h"
-#include "esp_pthread.h"
-#include "esp_task_wdt.h"
-#include "esp_heap_caps.h"
-#include "nvs.h"
-#include "nvs_flash.h"
-#include "esp_timer.h"
-#include "esp_netif.h"
-#include "esp_event.h"
-
-#include "espd_dev.h"
 #if CONFIG_ESPD_USE_USB_OTG
-#include "tinyusb.h"
-#include "tinyusb_cdc_acm.h"
+#include <tinyusb.h>
+#include <tinyusb_cdc_acm.h>
 #endif
 
-#include "espd_storage.h"
+#include <ctype.h>
+#include <esp_event.h>
+#include <esp_heap_caps.h>
+#include <esp_netif.h>
+#include <esp_pthread.h>
+#include <esp_timer.h>
+#include <math.h>
+#include <nvs.h>
+#include <nvs_flash.h>
+#include <stdarg.h>
 
 static const char *TAG = "ESPD";
 bool g_espd_pd_running = false;

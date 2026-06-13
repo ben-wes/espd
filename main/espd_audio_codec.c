@@ -6,14 +6,9 @@
  */
 
 #include "espd_audio.h"
-#include "espd_bsp_audio.h"
 #include "espd_config.h"
 #include "espd_runtime_config.h"
-
-#include "esp_check.h"
-#include "esp_log.h"
-#include <stdlib.h>
-#include <string.h>
+#include "espd_bsp_audio.h"
 
 static const char *TAG = "espd_audio";
 

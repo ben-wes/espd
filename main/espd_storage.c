@@ -1,15 +1,9 @@
+#include "espd.h"
 #include "espd_storage.h"
 
-#include "espd.h"
-#include "espd_bsp_sdcard.h"
-#include "espd_usb.h"
-
-#include "esp_err.h"
-#include "esp_log.h"
-#include <string.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
-#include "ff.h"
+#include <ff.h>
 
 static const char *TAG = "espd_storage";
 

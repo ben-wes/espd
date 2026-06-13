@@ -5,20 +5,17 @@
 #include "../pd/src/g_canvas.h"
 #include "../pd/src/g_undo.h"
 #include "espd.h"
+#include "espd_storage.h"
 #include "espd_runtime_config.h"
-#include "espd_usb.h"
-#include "esp_attr.h"
+#include <esp_attr.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/time.h>
-#include <string.h>
 #include <stdarg.h>
-#include <stdlib.h>
-#include <ctype.h>
 #include <unistd.h>
-#include "lwip/sockets.h"
-#include "lwip/errno.h"
+#include <lwip/sockets.h>
+#include <lwip/errno.h>
 
 extern int pd_setloadingabstraction(t_symbol *sym);
 

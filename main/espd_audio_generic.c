@@ -6,11 +6,7 @@
 #include "espd_config.h"
 #include "espd_runtime_config.h"
 
-#include "driver/i2s_std.h"
-#include "esp_check.h"
-#include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include <stdlib.h>
+#include <driver/i2s_std.h>
 
 static const char *TAG = "espd_audio";
 

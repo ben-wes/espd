@@ -1,3 +1,6 @@
+#include "espd.h"
+#include "espd_storage.h"
+
 #include <dirent.h>
 #include <errno.h>
 #include <glob.h>
@@ -8,8 +11,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "espd.h"
-#include "espd_storage.h"
 
 static int espd_glob_match(const char *pattern, const char *text)
 {

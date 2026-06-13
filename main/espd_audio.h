@@ -7,6 +7,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Common headers for audio backend implementations */
+#include <esp_check.h>
+#include <esp_log.h>
+#include <freertos/FreeRTOS.h>
+#include <stdlib.h>
+#include <string.h>
+
 typedef struct espd_audio espd_audio_t;
 
 /** Initialize playback (and capture when ESPD_USE_ADC is enabled). */

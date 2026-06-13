@@ -5,7 +5,6 @@
 
 #include "esp_err.h"
 #include <stdbool.h>
-#include <stdint.h>
 #include <stddef.h>
 #include <stdarg.h>
 

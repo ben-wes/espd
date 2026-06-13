@@ -3,7 +3,7 @@
  */
 #pragma once
 
-#include "sdkconfig.h"
+#include <sdkconfig.h>
 
 #define IOCHANS CONFIG_ESPD_IOCHANS
 

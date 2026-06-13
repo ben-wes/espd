@@ -3,18 +3,13 @@
  * Calls bsp_* directly (no espd_board wrappers).
  */
 
+#include "espd.h"
 #include "espd_pd_io.h"
 #include "bsp/bsp_io.h"
-#include "espd.h"
-#include "espd_config.h"
-
-#include "espd_gpio_peripherals.h"
 
 #include "../pd/src/m_pd.h"
 
-#include "esp_log.h"
 #include <stdio.h>
-#include <string.h>
 
 static const char *TAG = "espd_pd_io";
 

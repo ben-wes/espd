@@ -3,33 +3,29 @@
  * Config comes from g_espd_cfg.
  */
 
-#include "espd_gpio_peripherals.h"
+
 #include "espd.h"
-#include "espd_config_file.h"
+#include "espd_gpio_peripherals.h"
 #include "espd_pd_io.h"
 #include "bsp/bsp_io.h"
 #include "../pd/src/m_pd.h"
 
-#include "esp_log.h"
-#include "driver/gpio.h"
-#include <string.h>
-#include <stdlib.h>
+#include <driver/gpio.h>
 
 #if defined(ESPD_USE_AIN) || defined(ESPD_USE_TOUCH)
 #include <stdatomic.h>
 #endif
 #ifdef ESPD_USE_AIN
-#include "esp_adc/adc_oneshot.h"
+#include <esp_adc/adc_oneshot.h>
 #endif
 #ifdef ESPD_USE_TOUCH
-#include "driver/touch_sensor.h"
+#include <driver/touch_sensor.h>
 #endif
 #ifdef ESPD_USE_AOUT
-#include "driver/ledc.h"
+#include <driver/ledc.h>
 #endif
 
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include <freertos/task.h>
 
 static const char *TAG = "espd_gpio_peripherals";
 

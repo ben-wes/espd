@@ -2,15 +2,10 @@
  * Unified config.txt parser — single pass, all keys into g_espd_cfg.
  */
 
-#include "espd_config_file.h"
 #include "espd.h"
+#include "espd_config_file.h"
 #include "espd_storage.h"
 #include "espd_runtime_config.h"
-
-#include "esp_log.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 static const char *TAG = "espd_config";
 

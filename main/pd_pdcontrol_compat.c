@@ -2,8 +2,6 @@
 #include "espd.h"
 #include "espd_storage.h"
 
-#include <stdio.h>
-#include <string.h>
 
 static char s_espd_pd_cwd[MAXPDSTRING];
 

@@ -20,9 +20,8 @@
  */
 
 #include "../pd/src/m_pd.h"
-#include "../pd/src/m_imp.h"
 #include "../pd/src/g_canvas.h"
-#include "esp_attr.h"
+#include <esp_attr.h>
 #include <stdint.h>
 #include <math.h>
 

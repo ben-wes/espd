@@ -3,16 +3,13 @@
  * Converts int16 PCM to 8-bit DAC output for simple audio playback.
  */
 
+
 #include "espd_audio.h"
 #include "espd_config.h"
 #include "espd_runtime_config.h"
 
-#include "driver/dac_continuous.h"
-#include "driver/gpio.h"
-#include "esp_check.h"
-#include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include <stdlib.h>
+#include <driver/dac_continuous.h>
+#include <driver/gpio.h>
 
 static const char *TAG = "espd_audio_dac";
 

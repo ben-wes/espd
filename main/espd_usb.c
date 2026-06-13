@@ -3,43 +3,38 @@
  * Extracted from espd.c — preserves MSC sync mechanism and early VFS mount.
  */
 
-#include "espd_usb.h"
 #include "espd.h"
-#include "espd_storage.h"
+#include "espd_usb.h"
 
-#include "esp_log.h"
-#include "esp_err.h"
-#include "esp_system.h"
-#include "esp_partition.h"
-#include "esp_flash.h"
+#include <esp_system.h>
+#include <esp_partition.h>
+#include <esp_flash.h>
 /* Full esp_flash_t definition (size field): grow the default chip's recorded
  * size from the build placeholder to the detected physical size so the whole
  * chip is addressable (see espd_usb_register_dynamic_storage). */
-#include "esp_flash_chips/esp_flash_types.h"
-#include "esp_vfs_fat.h"
-#include "wear_levelling.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/semphr.h"
-#include <string.h>
+#include <esp_flash_chips/esp_flash_types.h>
+#include <esp_vfs_fat.h>
+#include <wear_levelling.h>
+#include <freertos/task.h>
+#include <freertos/semphr.h>
 #include <stdint.h>
-#include "driver/uart.h"
+#include <driver/uart.h>
 
 #if CONFIG_ESPD_USE_USB_OTG
-#include "tinyusb.h"
-#include "tinyusb_msc.h"
-#include "tinyusb_cdc_acm.h"
-#include "tinyusb_console.h"
-#include "tinyusb_default_config.h"
+#include <tinyusb.h>
+#include <tinyusb_msc.h>
+#include <tinyusb_cdc_acm.h>
+#include <tinyusb_console.h>
+#include <tinyusb_default_config.h>
 #endif
 #if (CONFIG_ESPD_USE_USB_OTG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED) || (CONFIG_ESPD_DEV_SERIAL_SYNC && CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED)
-#include "driver/usb_serial_jtag.h"
+#include <driver/usb_serial_jtag.h>
 #endif
 #if CONFIG_ESPD_DEV_CDC_SYNC
-#include "espd_dev.h"
+#include <espd_dev.h>
 #endif
 #if CONFIG_FATFS_USE_LABEL
-#include "ff.h"
+#include <ff.h>
 #endif
 
 static const char *TAG = "espd_usb";

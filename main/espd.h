@@ -4,6 +4,14 @@
 #include "espd_config.h"
 #include <stdbool.h>
 
+/* Common ESP-IDF and standard headers used across the project */
+#include <esp_err.h>
+#include <esp_log.h>
+#include <freertos/FreeRTOS.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 /* task priorities */
 #define PRIORITY_WIFI 2
 
@@ -280,7 +288,6 @@ extern char espd_wifi_password[65];
 /* [pdcontrol] message "ip" → list of four float octets 0..255, or symbol "noip"
  * when unavailable. */
 void espd_pdcontrol_sync_cwd(void);
-#include "espd_storage.h"
 
 void pdmain_reload_patch(void);
 void pdmain_reload_patch_from(const char *dir);
