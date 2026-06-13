@@ -141,10 +141,6 @@ esp_err_t espd_storage_mount_sdcard(void) {
   s_sd_mount_last = e;
   if (e == ESP_OK) {
     ESP_LOGI(TAG, "SD card mounted at %s", ESPD_SDCARD_MOUNT);
-    if (s_config_path)
-      ESP_LOGI(TAG, "using config.txt at %s", s_config_path);
-    if (s_main_pd_mount)
-      ESP_LOGI(TAG, "patch store: %s", s_main_pd_mount);
   } else if (e == ESP_ERR_NOT_SUPPORTED) {
     ESP_LOGW(TAG, "No SD card support on this board");
   } else {
@@ -185,31 +181,15 @@ esp_err_t espd_print_storage_stats(void) {
 }
 
 esp_err_t espd_storage_get_stats(const char *path, espd_storage_stats_t *stats)
-{
-    /* statvfs fails on wear-levelling filesystem (/storage), use FatFS directly.
-     * For SD cards (/sdcard), try statvfs first as it handles exFAT better. */
-    if (strcmp(path, ESPD_SDCARD_MOUNT) == 0) {
-        /* SD card: try statvfs first (better exFAT support) */
-        struct statvfs vfs;
-        if (statvfs(path, &vfs) == 0) {
-            uint64_t total_bytes = (uint64_t)vfs.f_blocks * vfs.f_frsize;
-            uint64_t free_bytes = (uint64_t)vfs.f_bavail * vfs.f_frsize;
-            uint32_t total_kb = (uint32_t)(total_bytes / 1024);
-            uint32_t free_kb = (uint32_t)(free_bytes / 1024);
-            uint32_t used_kb = total_kb - free_kb;
-
-            stats->total_kb = total_kb;
-            stats->free_kb = free_kb;
-            stats->used_kb = used_kb;
-            return ESP_OK;
-        }
-        /* Fall through to FatFS if statvfs fails */
-    }
-
-    /* FatFS approach for /storage or statvfs fallback */
+ {
     FATFS *fs;
     DWORD free_clusters;
-    FRESULT res = f_getfree(path, &free_clusters, &fs);
+    /* For SD card, use FatFS drive number (typically 1) instead of POSIX path.
+     * ESP-IDF VFS doesn't implement statvfs for FatFS, so we use FatFS directly.
+     * There's no ESP-IDF API to map VFS paths to FatFS drive numbers, so we hardcode.
+     * Flash is drive 0, SD card is drive 1. */
+    const char *fatfs_path = (strcmp(path, ESPD_SDCARD_MOUNT) == 0) ? "1:" : path;
+    FRESULT res = f_getfree(fatfs_path, &free_clusters, &fs);
     if (res != FR_OK) {
         return ESP_FAIL;
     }
