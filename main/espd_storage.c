@@ -186,7 +186,27 @@ esp_err_t espd_print_storage_stats(void) {
 
 esp_err_t espd_storage_get_stats(const char *path, espd_storage_stats_t *stats)
 {
-    /* statvfs fails on wear-levelling filesystem, use FatFS directly */
+    /* statvfs fails on wear-levelling filesystem (/storage), use FatFS directly.
+     * For SD cards (/sdcard), try statvfs first as it handles exFAT better. */
+    if (strcmp(path, ESPD_SDCARD_MOUNT) == 0) {
+        /* SD card: try statvfs first (better exFAT support) */
+        struct statvfs vfs;
+        if (statvfs(path, &vfs) == 0) {
+            uint64_t total_bytes = (uint64_t)vfs.f_blocks * vfs.f_frsize;
+            uint64_t free_bytes = (uint64_t)vfs.f_bavail * vfs.f_frsize;
+            uint32_t total_kb = (uint32_t)(total_bytes / 1024);
+            uint32_t free_kb = (uint32_t)(free_bytes / 1024);
+            uint32_t used_kb = total_kb - free_kb;
+
+            stats->total_kb = total_kb;
+            stats->free_kb = free_kb;
+            stats->used_kb = used_kb;
+            return ESP_OK;
+        }
+        /* Fall through to FatFS if statvfs fails */
+    }
+
+    /* FatFS approach for /storage or statvfs fallback */
     FATFS *fs;
     DWORD free_clusters;
     FRESULT res = f_getfree(path, &free_clusters, &fs);
