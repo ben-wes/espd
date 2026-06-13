@@ -1,5 +1,6 @@
 #include "espd.h"
 #include "espd_storage.h"
+#include "espd_bsp_sdcard.h"
 
 #include <sys/stat.h>
 #include <sys/statvfs.h>

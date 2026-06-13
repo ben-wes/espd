@@ -5,6 +5,7 @@
 
 #include "espd.h"
 #include "espd_pd_io.h"
+#include "espd_gpio_peripherals.h"
 #include "bsp/bsp_io.h"
 
 #include "../pd/src/m_pd.h"
