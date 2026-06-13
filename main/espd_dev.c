@@ -92,7 +92,7 @@ static size_t   s_put_buf_pos;
 static dev_target_t s_target = DEV_TARGET_SD;
 
 /* Direct-mapped CRC cache: skip re-reading large unchanged files on PUT offer.
- * Keyed on (path-hash, size, mtime); validated cheaply via stat(). RAM-only.
+ * Keyed on (path-hash, size, mtime); validated cheaply via stat(). PSRAM-backed.
  * Populated by dev_file_hash() after a real read, and for free by
  * dev_put_finish() since we already know the CRC of what we just wrote. */
 #define ESPD_DEV_CRC_CACHE_SLOTS    128
@@ -104,7 +104,7 @@ struct dev_crc_cache_entry {
     uint32_t crc;
     bool valid;
 };
-static struct dev_crc_cache_entry s_crc_cache[ESPD_DEV_CRC_CACHE_SLOTS];
+static struct dev_crc_cache_entry *s_crc_cache;
 
 static volatile bool s_sync_active = false;
 /* Shared HW read buffer for line commands and PUT windows (espd_dev task only). */
@@ -305,6 +305,8 @@ static struct dev_crc_cache_entry *dev_crc_cache_slot(const char *full, uint32_t
 {
     uint32_t h = esp_crc32_le(0, (const uint8_t *)full, (uint32_t)strlen(full));
     if (out_hash) *out_hash = h;
+    if (!s_crc_cache)
+        return NULL;
     return &s_crc_cache[h % ESPD_DEV_CRC_CACHE_SLOTS];
 }
 
@@ -312,6 +314,8 @@ static int dev_crc_cache_lookup(const char *full, uint32_t size, uint32_t mtime,
 {
     uint32_t h;
     struct dev_crc_cache_entry *e = dev_crc_cache_slot(full, &h);
+    if (!e)
+        return 0;
     if (e->valid && e->path_hash == h && e->size == size && e->mtime == mtime) {
         *out_crc = e->crc;
         return 1;
@@ -323,6 +327,8 @@ static void dev_crc_cache_store(const char *full, uint32_t size, uint32_t mtime,
 {
     uint32_t h;
     struct dev_crc_cache_entry *e = dev_crc_cache_slot(full, &h);
+    if (!e)
+        return;
     e->path_hash = h;
     e->size = size;
     e->mtime = mtime;
@@ -334,6 +340,8 @@ static void dev_crc_cache_invalidate(const char *full)
 {
     uint32_t h;
     struct dev_crc_cache_entry *e = dev_crc_cache_slot(full, &h);
+    if (!e)
+        return;
     if (e->valid && e->path_hash == h)
         e->valid = false;
 }
@@ -1091,6 +1099,22 @@ void espd_dev_init(void)
     dev_sync_set_active(false);
     s_put_tmp[0] = '\0';
     dev_refresh_target();
+
+#if CONFIG_SPIRAM
+    /* Allocate CRC cache in PSRAM to save internal RAM */
+    s_crc_cache = heap_caps_malloc(sizeof(struct dev_crc_cache_entry) * ESPD_DEV_CRC_CACHE_SLOTS,
+                                   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_crc_cache) {
+        ESP_LOGW(TAG, "CRC cache PSRAM allocation failed, cache disabled");
+    }
+#else
+    /* Fallback to internal RAM if PSRAM not available */
+    s_crc_cache = heap_caps_malloc(sizeof(struct dev_crc_cache_entry) * ESPD_DEV_CRC_CACHE_SLOTS,
+                                   MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!s_crc_cache) {
+        ESP_LOGW(TAG, "CRC cache allocation failed, cache disabled");
+    }
+#endif
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
 #if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
