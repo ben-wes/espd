@@ -310,6 +310,9 @@ class EspdCdc:
         self._stop = threading.Event()
         self._disconnected = threading.Event()
         self._put_active = False
+        self._put_total_bytes = 0
+        self._put_rel_path = ""
+        self._put_last_pct = -1
         self._list_active = False
         self._list_paths: list[str] = []
         self._thread = threading.Thread(target=self._reader, daemon=True)
@@ -371,7 +374,21 @@ class EspdCdc:
                         with self._lock:
                             self._reply = line
                         self._reply_event.set()
-                        if not line.startswith(b"+OK PUT ack"):
+                        if line.startswith(b"+OK PUT ack"):
+                            m = _PUT_ACK_RE.match(line.strip())
+                            if m and self._put_total_bytes > 0:
+                                acked = int(m.group(1), 10)
+                                pct = round((acked / self._put_total_bytes) * 100)
+                                if pct != self._put_last_pct:
+                                    self._put_last_pct = pct
+                                    sys.stderr.write(f"\r{self._put_rel_path}{pct}%")
+                                    sys.stderr.flush()
+                        elif line.startswith(b"+OK PUT done"):
+                            if self._put_last_pct >= 0:
+                                sys.stderr.write("\n")
+                                sys.stderr.flush()
+                            log_dev_rx(line)
+                        else:
                             log_dev_rx(line)
                     continue
                 if self._list_active:
@@ -470,13 +487,13 @@ class EspdCdc:
                 raise RuntimeError("PUT ready missing window= (update firmware)")
             raise
         ack_timeout = max(30.0, nbytes / 40000.0)
-        progress_prefix = f"{rel_path}: "
         log_script(f"sending {nbytes} bytes for {rel_path} (window {put_window})")
         try:
             with self._cmd_lock:
                 self._put_active = True
-                acked = 0
-                last_pct = -1
+                self._put_total_bytes = nbytes
+                self._put_rel_path = f"{rel_path}: "
+                self._put_last_pct = -1
                 for off in range(0, len(data), put_window):
                     part = data[off : off + put_window]
                     self._reply_event.clear()
@@ -497,14 +514,6 @@ class EspdCdc:
                         raise RuntimeError(
                             f"PUT ack mismatch: expected {off + len(part)}, got {acked}"
                         )
-                    pct = round((acked / nbytes) * 100)
-                    if pct != last_pct:
-                        last_pct = pct
-                        sys.stderr.write(f"\r{progress_prefix}{pct}%")
-                        sys.stderr.flush()
-                if last_pct >= 0:
-                    sys.stderr.write("\n")
-                    sys.stderr.flush()
         except OSError as e:
             self._put_active = False
             self._mark_disconnected(str(e))
