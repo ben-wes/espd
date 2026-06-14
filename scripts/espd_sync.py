@@ -803,14 +803,7 @@ def sync_files(
     skipped = 0
     t0 = time.time()
 
-    def _sync_order(rel: str) -> tuple[int, str]:
-        if rel == "main.pd":
-            return (2, rel)
-        if rel.endswith(".pd") or rel == "config.txt":
-            return (1, rel)
-        return (0, rel)  # samples/assets before patches
-
-    for rel in sorted(rels, key=_sync_order):
+    for rel in sorted(rels):
         local = os.path.join(watch_dir, rel.replace("/", os.sep))
         _size, crc = local_file_hash(local)
         while True:
@@ -844,7 +837,7 @@ def sync_files(
                 uploaded += 1
                 if rel == "config.txt":
                     reset_needed = True
-                elif rel.endswith(".pd"):
+                else:
                     reload_needed = True
             else:
                 skipped += 1
@@ -881,26 +874,12 @@ def sync_files(
     return cdc
 
 
-_PATCH_SUFFIXES = (".pd",)
-_ASSET_SUFFIXES = (".wav", ".aiff", ".aif", ".flac", ".ogg", ".mp3", ".raw", ".sf2", ".mid")
-
-
-def _sync_name_ok(name: str) -> bool:
-    if not name or name.startswith("."):
-        return False
-    if name == "config.txt":
-        return True
-    low = name.lower()
-    if low.endswith(_PATCH_SUFFIXES):
-        return True
-    return low.endswith(_ASSET_SUFFIXES)
-
-
 def collect_files(root: str) -> dict[str, float]:
     out: dict[str, float] = {}
-    for dirpath, _dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         for name in filenames:
-            if not _sync_name_ok(name):
+            if not name or name.startswith("."):
                 continue
             full = os.path.join(dirpath, name)
             rel = os.path.relpath(full, root).replace(os.sep, "/")
