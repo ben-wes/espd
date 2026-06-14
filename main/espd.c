@@ -146,13 +146,6 @@ static void espd_initdacs(void)
     memset(soundin, 0, sizeof(soundin));
 }
 
-static int audiostate;
-
-void sys_set_audio_state(int onoff)
-{
-    audiostate = onoff;
-}
-
 /* ─── Pd host messaging ─── */
 
 void *getbytes(size_t nbytes);
