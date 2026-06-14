@@ -121,10 +121,6 @@ static void dev_put_fail(const char *err);
 static void dev_maybe_suspend(void);
 #endif
 
-static void dev_sync_set_active(bool on)
-{
-    s_sync_active = on;
-}
 
 #if CONFIG_ESPD_DEV_CDC_SYNC
 static void dev_maybe_suspend(void)
@@ -232,11 +228,6 @@ static dev_target_t dev_default_target(void)
         return DEV_TARGET_SD;
 #endif
     return DEV_TARGET_FLASH;
-}
-
-static void dev_refresh_target(void)
-{
-    s_target = dev_default_target();
 }
 
 static int dev_target_ready(dev_target_t target)
@@ -451,7 +442,6 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     int err;
     struct stat st;
 
-    dev_refresh_target();
 #if CONFIG_ESPD_USE_USB_MSC
     if (s_target == DEV_TARGET_FLASH && espd_usb_msc_storage_present()) {
         esp_err_t mnt = espd_usb_ensure_msc_app_mount();
@@ -817,7 +807,6 @@ static void dev_do_list(void)
     char reply[48];
     size_t n;
 
-    dev_refresh_target();
 #if CONFIG_ESPD_USE_USB_MSC
     if (s_target == DEV_TARGET_FLASH && espd_usb_msc_storage_present()) {
         esp_err_t mnt = espd_usb_ensure_msc_app_mount();
@@ -846,7 +835,6 @@ static void dev_do_rm(const char *rel)
     char full[ESPD_DEV_PATH_MAX];
     struct stat st;
 
-    dev_refresh_target();
 #if CONFIG_ESPD_USE_USB_MSC
     if (s_target == DEV_TARGET_FLASH && espd_usb_msc_storage_present()) {
         esp_err_t mnt = espd_usb_ensure_msc_app_mount();
@@ -888,7 +876,6 @@ static void dev_do_rm(const char *rel)
 
 static void dev_do_reload(void)
 {
-    dev_refresh_target();
 #if CONFIG_ESPD_USE_USB_MSC
     if (s_target == DEV_TARGET_FLASH && espd_usb_msc_storage_present()) {
         esp_err_t mnt = espd_usb_ensure_msc_app_mount();
@@ -977,9 +964,8 @@ static void dev_handle_line(char *line)
 
     if (!strcmp(line, "STATUS")) {
         // activate sync mode after STATUS command
-        dev_sync_set_active(false);
+        s_sync_active = false;
         char reply[128];
-        dev_refresh_target();
         snprintf(reply, sizeof(reply), "+OK STATUS sdcard=%s internal=%s",
             dev_sdcard_available() ? "yes" : "no",
             dev_flash_available() ? "yes" : "no");
@@ -995,11 +981,11 @@ static void dev_handle_line(char *line)
     }
 
     // deactivate sync mode for all other commands
-    dev_sync_set_active(true);
+    s_sync_active = true;
 
     if (!strcmp(line, "RELOAD")) {
         dev_do_reload();
-        dev_sync_set_active(false);
+        s_sync_active = false;
         return;
     }
     if (!strcmp(line, "RESET")) {
@@ -1094,11 +1080,12 @@ void espd_dev_init(void)
 {
     if (s_dev_task)
         return;
+
+    s_put_tmp[0] = '\0';
     s_cmd = DEV_CMD_NONE;
     s_reload_pending = false;
-    dev_sync_set_active(false);
-    s_put_tmp[0] = '\0';
-    dev_refresh_target();
+    s_sync_active = false;
+    s_target = dev_default_target();
 
 #if CONFIG_SPIRAM
     /* Allocate CRC cache in PSRAM to save internal RAM */
