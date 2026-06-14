@@ -6,7 +6,7 @@
 
 #include "espd_bsp_audio.h"
 
-#include "esp_codec_dev.h"
+#include <esp_codec_dev.h>
 
 static esp_codec_dev_sample_info_t espd_codec_dev_fs(
     const espd_bsp_audio_codec_cfg_t *cfg)

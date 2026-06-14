@@ -5,6 +5,7 @@
 
 #include "espd.h"
 #include "espd_usb.h"
+#include "espd_storage.h"
 
 #include <esp_system.h>
 #include <esp_partition.h>

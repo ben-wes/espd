@@ -1,5 +1,5 @@
-#include "espd_runtime_config.h"
-#include "sdkconfig.h"
+#include <espd_runtime_config.h>
+#include <sdkconfig.h>
 
 #ifndef CONFIG_ESPD_AUDIO_SAMPLE_RATE
 #define CONFIG_ESPD_AUDIO_SAMPLE_RATE 48000

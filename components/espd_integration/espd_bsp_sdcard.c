@@ -7,10 +7,11 @@
  * weak espd_bsp_sdcard_mount() stub in bsp_io_stubs.c.
  */
 
-#include "bsp/esp-bsp.h"
+
 #include "espd_bsp_sdcard.h"
 
-#include "esp_log.h"
+#include <bsp/esp-bsp.h>
+#include <esp_log.h>
 #include <string.h>
 
 static const char *SD_TAG = "espd_bsp_sd";

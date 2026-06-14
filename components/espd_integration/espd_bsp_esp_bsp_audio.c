@@ -5,12 +5,13 @@
  * espd_board_* plugin supplies the managed esp-bsp package (headers + libs).
  */
 
-#include "bsp/esp-bsp.h"
-#include "driver/i2s_std.h"
+
 #include "espd_bsp_audio.h"
 
-#include "esp_check.h"
-#include "esp_log.h"
+#include <bsp/esp-bsp.h>
+#include <driver/i2s_std.h>
+#include <esp_check.h>
+#include <esp_log.h>
 
 #ifndef BSP_AUDIO_MCLK_MULTIPLE
 #define BSP_AUDIO_MCLK_MULTIPLE I2S_MCLK_MULTIPLE_384

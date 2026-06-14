@@ -7,18 +7,18 @@
  * non-Generic board is selected.
  */
 
-#include "bsp/esp-bsp.h"
+#include <bsp/esp-bsp.h>
 
 #define ESPD_BSP_IO_NO_SDCARD_DECL
-#include "bsp/bsp_io.h"
+#include <bsp/bsp_io.h>
 #undef ESPD_BSP_IO_NO_SDCARD_DECL
 
-#include "esp_log.h"
+#include <esp_log.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #ifndef BSP_CAPS_BUTTONS
 #define BSP_CAPS_BUTTONS 0

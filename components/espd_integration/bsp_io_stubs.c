@@ -2,9 +2,9 @@
  * Weak defaults for optional bsp_io.h peripherals (no hardware linked).
  */
 
-#include "bsp/bsp_io.h"
 #include "espd_bsp_sdcard.h"
 #include "espd_bsp_audio.h"
+#include <bsp/bsp_io.h>
 
 __attribute__((weak)) esp_err_t bsp_led_init(void)
 {
