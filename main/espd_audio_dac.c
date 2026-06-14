@@ -18,6 +18,7 @@ struct espd_audio {
   int sample_rate;
   int channels;
   dac_channel_mask_t chan_mask;
+  uint8_t dac_buf[128];  /* Buffer for DAC conversion (max IOCHANS * BLKSIZE) */
 };
 
 // Convert int16 sample to uint8 DAC value (0-255)
@@ -94,8 +95,7 @@ esp_err_t espd_audio_init(espd_audio_t **out) {
   return ESP_OK;
 }
 
-esp_err_t espd_audio_write(espd_audio_t *audio, const int16_t *pcm,
-                           size_t samples) {
+esp_err_t espd_audio_write(espd_audio_t *audio, const int16_t *pcm, size_t samples) {
   size_t bytes_written;
   esp_err_t ret;
 
@@ -107,42 +107,30 @@ esp_err_t espd_audio_write(espd_audio_t *audio, const int16_t *pcm,
       (audio->chan_mask == (DAC_CHANNEL_MASK_CH0 | DAC_CHANNEL_MASK_CH1));
 
   // Convert int16 PCM to uint8 DAC samples
-  uint8_t *dac_buf;
-  size_t dac_samples;
-
   if (audio->channels == 1) {
     // Mono input: direct conversion
-    dac_samples = samples;
-    dac_buf = malloc(dac_samples);
-    if (!dac_buf)
-      return ESP_ERR_NO_MEM;
     for (size_t i = 0; i < samples; i++) {
-      dac_buf[i] = int16_to_dac(pcm[i]);
+      audio->dac_buf[i] = int16_to_dac(pcm[i]);
     }
+    ret = dac_continuous_write(audio->dac_handle, audio->dac_buf, samples,
+                               &bytes_written, portMAX_DELAY);
   } else if (stereo_dac) {
     /* Interleaved L,R,... — ALTER mode maps even bytes→CH0, odd→CH1 (64 frames/block). */
-    dac_samples = samples;
-    dac_buf = malloc(dac_samples);
-    if (!dac_buf)
-      return ESP_ERR_NO_MEM;
     for (size_t i = 0; i < samples; i++)
-      dac_buf[i] = int16_to_dac(pcm[i]);
+      audio->dac_buf[i] = int16_to_dac(pcm[i]);
+    ret = dac_continuous_write(audio->dac_handle, audio->dac_buf, samples,
+                               &bytes_written, portMAX_DELAY);
   } else {
     // Stereo input with mono DAC: mix to mono
-    dac_samples = samples / 2;
-    dac_buf = malloc(dac_samples);
-    if (!dac_buf)
-      return ESP_ERR_NO_MEM;
-    for (size_t i = 0; i < samples / 2; i++) {
+    size_t mixed_samples = samples / 2;
+    for (size_t i = 0; i < mixed_samples; i++) {
       int32_t mixed = ((int32_t)pcm[i * 2] + (int32_t)pcm[i * 2 + 1]) / 2;
-      dac_buf[i] = int16_to_dac((int16_t)mixed);
+      audio->dac_buf[i] = int16_to_dac((int16_t)mixed);
     }
+    ret = dac_continuous_write(audio->dac_handle, audio->dac_buf, mixed_samples,
+                               &bytes_written, portMAX_DELAY);
   }
 
-  ret = dac_continuous_write(audio->dac_handle, dac_buf, dac_samples,
-                             &bytes_written, portMAX_DELAY);
-
-  free(dac_buf);
   return ret;
 }
 
