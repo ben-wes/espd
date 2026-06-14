@@ -340,7 +340,6 @@ static void dev_crc_cache_invalidate(const char *full)
 /* CRC-32 (same polynomial as Python zlib.crc32). Runs on espd_dev task only. */
 static int dev_file_hash(const char *full, size_t *out_size, uint32_t *out_crc)
 {
-    static uint8_t buf[ESPD_DEV_RX_CHUNK];
     FILE *fp;
     size_t n, total = 0;
     uint32_t crc = 0;
@@ -358,8 +357,8 @@ static int dev_file_hash(const char *full, size_t *out_size, uint32_t *out_crc)
     fp = fopen(full, "rb");
     if (!fp)
         return -2;
-    while ((n = fread(buf, 1, sizeof(buf), fp)) > 0) {
-        crc = esp_crc32_le(crc, buf, (uint32_t)n);
+    while ((n = fread(s_cdc_rx_buf, 1, sizeof(s_cdc_rx_buf), fp)) > 0) {
+        crc = esp_crc32_le(crc, s_cdc_rx_buf, (uint32_t)n);
         total += n;
         if ((++chunks & 7u) == 0)
             vTaskDelay(1);
