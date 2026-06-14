@@ -882,7 +882,7 @@ def sync_files(
 
 
 _PATCH_SUFFIXES = (".pd",)
-_ASSET_SUFFIXES = (".wav", ".aiff", ".aif", ".flac", ".ogg", ".mp3", ".raw")
+_ASSET_SUFFIXES = (".wav", ".aiff", ".aif", ".flac", ".ogg", ".mp3", ".raw", ".sf2", ".mid")
 
 
 def _sync_name_ok(name: str) -> bool:
