@@ -28,6 +28,9 @@ void glob_open(t_pd *ignore, t_symbol *name, t_symbol *dir, t_floatarg f);
 
 void pdmain_print( const char *s);
 
+/* Network receive buffer - allocated in PSRAM or internal DRAM */
+static unsigned char *s_recvbuf = NULL;
+
 void trymem(int foo)
 {
 #if 1
@@ -248,6 +251,14 @@ void pdmain_reload_patch(void)
 void pdmain_init( void)
 {
     sys_printhook = pdmain_print;
+
+#if CONFIG_SPIRAM
+    /* Allocate network receive buffer in PSRAM to save internal DRAM */
+    s_recvbuf = heap_caps_malloc(NET_MAXPACKETSIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#endif
+    /* Otherwise allocate network receive buffer to internal DRAM */
+    if (!s_recvbuf) s_recvbuf = malloc(NET_MAXPACKETSIZE);
+
     pd_init();
     STUFF->st_dacsr = sys_getsr();
     STUFF->st_soundout = soundout;
@@ -504,7 +515,6 @@ typedef struct _fdpoll
 #define ESPD_MAX_FDPOLL 32
 static t_fdpoll s_fdpolls[ESPD_MAX_FDPOLL];
 static int s_nfdpoll;
-static unsigned char s_recvbuf[NET_MAXPACKETSIZE];
 static t_binbuf *s_net_binbuf;
 
 struct _socketreceiver
