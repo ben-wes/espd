@@ -36,6 +36,7 @@
 
 /*
  * Boot contract (app_main in espd.c):
+ *   0. wifi_ensure_hosted() — SDIO/C6 before uSD on ESP-Hosted boards
  *   1. wifi_prepare_phy()  — once, after config.txt credentials, before USB OTG
  *   2. (USB OTG init)
  *   3. wifi_start_sta()    — once, after USB; STA connect may overlap TinyUSB
@@ -43,6 +44,19 @@
  *
  * wifi_phy_init() is idempotent. wifi_start_sta() ensures PHY if called out of order.
  */
+
+#if CONFIG_ESP_WIFI_REMOTE_ENABLED
+static bool s_hosted_ready;
+
+void wifi_ensure_hosted(void)
+{
+    if (s_hosted_ready)
+        return;
+    /* Shared SDMMC host (slot 1 = C6) before uSD slot 0; BSP relies on this. */
+    ESP_ERROR_CHECK(esp_hosted_init());
+    s_hosted_ready = true;
+}
+#endif
 
 static const char *TAG = "ESPD";
 static int s_retry_num = 0;

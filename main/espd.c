@@ -197,7 +197,7 @@ void pdmain_print(const char *s)
         return;
 
 
-#if CONFIG_ESPD_DEV_SERIAL_SYNC && CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
+#if ESPD_DEV_SERIAL_SYNC_UART || ESPD_DEV_SERIAL_SYNC_USJ
     espd_serial_sync_write(s, strlen(s));
 #elif CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_DEV_CDC_SYNC
     if (tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
@@ -272,6 +272,10 @@ void app_main(void)
     if (mnt != ESP_OK)
         ESP_LOGW(TAG, "/storage on early VFS unavailable");
 
+#if CONFIG_ESP_WIFI_REMOTE_ENABLED
+    wifi_ensure_hosted();
+#endif
+
 #ifdef ESPD_USE_SDCARD
     espd_storage_mount_sdcard();
 #endif
@@ -298,7 +302,7 @@ void app_main(void)
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
     espd_dev_init();
-#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
+#if ESPD_DEV_SERIAL_SYNC_UART || ESPD_DEV_SERIAL_SYNC_USJ
     esp_log_set_vprintf(espd_serial_sync_log);
 #endif
 #endif

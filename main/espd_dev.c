@@ -26,11 +26,12 @@
 #if CONFIG_ESPD_DEV_SYNC
 
 #include <driver/uart.h>
+#include "driver/uart_vfs.h"
 #if CONFIG_ESPD_DEV_CDC_SYNC
 #include <tinyusb.h>
 #include <tinyusb_cdc_acm.h>
 #endif
-#if CONFIG_ESPD_DEV_SERIAL_SYNC && SOC_USB_SERIAL_JTAG_SUPPORTED
+#if ESPD_DEV_SERIAL_SYNC_USJ
 #include <driver/usb_serial_jtag.h>
 #endif
 
@@ -140,7 +141,10 @@ static int dev_put_read_hw(uint8_t *buf, size_t max)
     if (want > ESPD_DEV_RX_CHUNK)
         want = ESPD_DEV_RX_CHUNK;
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
-#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
+#if ESPD_DEV_SERIAL_SYNC_UART
+    int n = uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM, buf, want, pdMS_TO_TICKS(0));
+    return n > 0 ? n : 0;
+#elif ESPD_DEV_SERIAL_SYNC_USJ
     int n = usb_serial_jtag_read_bytes(buf, want, pdMS_TO_TICKS(0));
     return n > 0 ? n : 0;
 #else
@@ -1103,8 +1107,27 @@ void espd_dev_init(void)
 #endif
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
-#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
-    /* Initialize USB Serial JTAG driver for chips with USJ support */
+#if ESPD_DEV_SERIAL_SYNC_UART
+    const int uart_num = CONFIG_ESP_CONSOLE_UART_NUM;
+    uart_config_t uart_cfg = {
+        .baud_rate = CONFIG_ESP_CONSOLE_UART_BAUDRATE,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    if (uart_is_driver_installed(uart_num)) {
+        uart_driver_delete(uart_num);
+    }
+    ESP_ERROR_CHECK(uart_driver_install(uart_num, ESPD_DEV_PUT_WINDOW, 1024, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_param_config(uart_num, &uart_cfg));
+#if CONFIG_ESP_CONSOLE_UART_CUSTOM
+    ESP_ERROR_CHECK(uart_set_pin(uart_num, CONFIG_ESP_CONSOLE_UART_TX_GPIO,
+        CONFIG_ESP_CONSOLE_UART_RX_GPIO, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+#endif
+    uart_vfs_dev_use_driver(uart_num);
+#elif ESPD_DEV_SERIAL_SYNC_USJ
     usb_serial_jtag_driver_config_t usj_config = {
         .rx_buffer_size = ESPD_DEV_PUT_WINDOW,
         .tx_buffer_size = 1024,
@@ -1128,8 +1151,11 @@ void espd_dev_init(void)
     ESP_LOGI(TAG, "CDC dev sync: PUT/RELOAD -> %s (USB CDC)",
         dev_target_mount(s_target));
 #elif CONFIG_ESPD_DEV_SERIAL_SYNC
-#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
+#if ESPD_DEV_SERIAL_SYNC_USJ
     ESP_LOGI(TAG, "Serial dev sync: PUT/RELOAD -> %s (USB Serial JTAG)",
+        dev_target_mount(s_target));
+#elif ESPD_DEV_SERIAL_SYNC_UART
+    ESP_LOGI(TAG, "Serial dev sync: PUT/RELOAD -> %s (UART)",
         dev_target_mount(s_target));
 #else
     ESP_LOGI(TAG, "Serial dev sync: PUT/RELOAD -> %s (UART0)",

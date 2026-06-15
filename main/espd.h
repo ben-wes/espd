@@ -56,6 +56,9 @@ void pd_fromhost(char *data, size_t size);
 #include "freertos/FreeRTOS.h"
 void espd_netif_ensure_init(
     void); /* wifi.c — lwIP + default event loop (idempotent) */
+#if CONFIG_ESP_WIFI_REMOTE_ENABLED
+void wifi_ensure_hosted(void); /* wifi.c — SDIO/C6 before uSD on ESP-Hosted boards */
+#endif
 void wifi_prepare_phy(void); /* wifi.c — PHY + handlers; call before USB OTG */
 void wifi_start_sta(void); /* wifi.c — STA config + start; call after USB OTG */
 bool wifi_wait_sta(

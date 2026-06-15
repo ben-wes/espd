@@ -28,7 +28,7 @@
 #include <tinyusb_console.h>
 #include <tinyusb_default_config.h>
 #endif
-#if (CONFIG_ESPD_USE_USB_OTG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED) || (CONFIG_ESPD_DEV_SERIAL_SYNC && CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED)
+#if ESPD_DEV_SERIAL_SYNC_USJ
 #include <driver/usb_serial_jtag.h>
 #endif
 #if CONFIG_ESPD_DEV_CDC_SYNC
@@ -165,7 +165,9 @@ void espd_serial_sync_write(const void *data, size_t len)
         return;
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
-#if CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
+#if ESPD_DEV_SERIAL_SYNC_UART
+    uart_write_bytes(CONFIG_ESP_CONSOLE_UART_NUM, data, len);
+#elif ESPD_DEV_SERIAL_SYNC_USJ
     usb_serial_jtag_write_bytes(data, len, pdMS_TO_TICKS(100));
 #else
     uart_write_bytes(UART_NUM_0, data, len);
@@ -450,7 +452,7 @@ void espd_usb_msc_disable_after_eject()
 
 static void espd_usb_release_usj_for_otg(void)
 {
-#if CONFIG_ESPD_DEV_SERIAL_SYNC && CONFIG_USJ_ENABLE_USB_SERIAL_JTAG && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
+#if ESPD_DEV_SERIAL_SYNC_USJ
     fflush(stdout);
     fflush(stderr);
     (void)usb_serial_jtag_driver_uninstall();

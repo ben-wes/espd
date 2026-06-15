@@ -3,10 +3,19 @@
  */
 #pragma once
 
+#include "sdkconfig.h"
 #include "esp_err.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdarg.h>
+
+#if CONFIG_ESPD_DEV_SERIAL_SYNC && CONFIG_ESP_CONSOLE_UART
+#define ESPD_DEV_SERIAL_SYNC_UART 1
+#endif
+#if CONFIG_ESPD_DEV_SERIAL_SYNC && CONFIG_USJ_ENABLE_USB_SERIAL_JTAG \
+    && CONFIG_SOC_USB_SERIAL_JTAG_SUPPORTED
+#define ESPD_DEV_SERIAL_SYNC_USJ 1
+#endif
 
 esp_err_t espd_usb_register_dynamic_storage(void);
 esp_err_t espd_usb_mount_flash_early_vfs(void);
