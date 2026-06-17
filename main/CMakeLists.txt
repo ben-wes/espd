@@ -142,6 +142,14 @@ idf_component_get_property(_espd_main_lib ${COMPONENT_NAME} COMPONENT_LIB)
 # Ooura FFT in pd/src/d_fft_fftsg.c: default FFTFLT is double; use float IRAM.
 target_compile_definitions(${_espd_main_lib} PRIVATE "FFTFLT=float")
 
+# Optimize network buffer size: 8KB when WiFi is enabled (generous for Pd networking),
+# 512 bytes when WiFi is disabled (minimal, won't be used without WiFi stack)
+if(CONFIG_ESPD_USE_WIFI)
+    target_compile_definitions(${_espd_main_lib} PRIVATE "NET_MAXPACKETSIZE=8192")
+else()
+    target_compile_definitions(${_espd_main_lib} PRIVATE "NET_MAXPACKETSIZE=512")
+endif()
+
 # Aggressive math optimization for DSP hot paths. -ffast-math allows the
 # compiler to reassociate, fold reciprocals, drop spurious double promotions
 # (e.g. `1. - frac` in cubic interpolators), and assume no NaN/Inf. Safe here:
