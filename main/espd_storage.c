@@ -3,9 +3,11 @@
 #include "espd_bsp_sdcard.h"
 #include "espd_usb.h"
 
+#include "esp_err.h"
+#include "esp_log.h"
+#include "esp_vfs_fat.h"
+#include <string.h>
 #include <sys/stat.h>
-#include <sys/statvfs.h>
-#include <ff.h>
 
 static const char *TAG = "espd_storage";
 
@@ -166,47 +168,34 @@ bool espd_storage_main_pd_exists(void) {
          espd_storage_file_exists(ESPD_STORAGE_MAIN_PD_PATH);
 }
 
-esp_err_t espd_print_storage_stats(void) {    
+esp_err_t espd_print_storage_stats(void) {
+  const char *mount = espd_storage_main_pd_mount_dir();
   espd_storage_stats_t stats;
-  esp_err_t err = espd_storage_get_stats( espd_storage_main_pd_mount_dir(), &stats);
+
+  if (!mount)
+    return ESP_ERR_INVALID_STATE;
+
+  esp_err_t err = espd_storage_get_stats(mount, &stats);
   if (err == ESP_OK) {
-      ESP_LOGI(TAG, "%s: %lu KB total, %lu KB used, %lu KB free",
-        espd_storage_main_pd_mount_dir(), stats.total_kb, stats.used_kb, stats.free_kb);
+    ESP_LOGI(TAG, "%s: %lu KB total, %lu KB used, %lu KB free",
+             mount, stats.total_kb, stats.used_kb, stats.free_kb);
   }
   return err;
 }
 
 esp_err_t espd_storage_get_stats(const char *path, espd_storage_stats_t *stats)
- {
-    FATFS *fs;
-    DWORD free_clusters;
-    /* For SD card, use FatFS drive number (typically 1) instead of POSIX path.
-     * ESP-IDF VFS doesn't implement statvfs for FatFS, so we use FatFS directly.
-     * There's no ESP-IDF API to map VFS paths to FatFS drive numbers, so we hardcode.
-     * Flash is drive 0, SD card is drive 1. */
-    const char *fatfs_path = (strcmp(path, ESPD_SDCARD_MOUNT) == 0) ? "1:" : path;
-    FRESULT res = f_getfree(fatfs_path, &free_clusters, &fs);
-    if (res != FR_OK) {
-        return ESP_FAIL;
-    }
+{
+    if (!path || !stats)
+        return ESP_ERR_INVALID_ARG;
 
-    /* Sector size is not fixed at 512: WL/FAT here uses 4096-byte sectors
-     * (CONFIG_FATFS_SECTOR_4096). Use the volume's actual sector size so the
-     * reported totals match the real partition size. */
-#if FF_MAX_SS != FF_MIN_SS
-    uint32_t sector_size = fs->ssize;
-#else
-    uint32_t sector_size = FF_MIN_SS;
-#endif
-    uint64_t total_bytes = (uint64_t)fs->n_fatent * fs->csize * sector_size;
-    uint64_t free_bytes  = (uint64_t)free_clusters * fs->csize * sector_size;
-    uint32_t total_kb = (uint32_t)(total_bytes / 1024);
-    uint32_t free_kb  = (uint32_t)(free_bytes / 1024);
-    uint32_t used_kb = total_kb - free_kb;
+    uint64_t total_bytes = 0;
+    uint64_t free_bytes = 0;
+    esp_err_t err = esp_vfs_fat_info(path, &total_bytes, &free_bytes);
+    if (err != ESP_OK)
+        return err;
 
-    stats->total_kb = total_kb;
-    stats->free_kb = free_kb;
-    stats->used_kb = used_kb;
-
+    stats->total_kb = (uint32_t)(total_bytes / 1024);
+    stats->free_kb = (uint32_t)(free_bytes / 1024);
+    stats->used_kb = stats->total_kb - stats->free_kb;
     return ESP_OK;
 }
