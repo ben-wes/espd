@@ -43,16 +43,13 @@ esp_err_t espd_bsp_sdcard_mount(const char *mount_point)
         return ESP_OK;
     bsp_sdcard_cfg_t cfg = {0};
     return bsp_sdcard_sdmmc_mount(&cfg);
-#elif BSP_CAPS_SDCARD && defined(BSP_SDCARD_HAS_GET_HANDLE)
+#elif BSP_CAPS_SDCARD
+#if defined(BSP_SDCARD_HAS_GET_HANDLE)
     if (bsp_sdcard_get_handle() != NULL)
         return ESP_OK;
+#endif
     (void)mount_point;
-    bsp_sdcard_cfg_t cfg = {0};
-    return bsp_sdcard_sdmmc_mount(&cfg);
-#elif BSP_CAPS_SDCARD
-    (void)mount_point;
-    bsp_sdcard_cfg_t cfg = {0};
-    return bsp_sdcard_sdmmc_mount(&cfg);
+    return bsp_sdcard_mount();
 #else
     (void)mount_point;
     return ESP_ERR_NOT_SUPPORTED;
