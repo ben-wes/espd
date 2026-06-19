@@ -127,6 +127,12 @@ if(CONFIG_ESPD_USE_WIFI)
     target_link_libraries(${_main_lib} PRIVATE idf::esp_wifi)
     if(CONFIG_ESP_WIFI_REMOTE_ENABLED)
         idf_component_optional_requires(PRIVATE espressif__esp_hosted)
+        # esp_hosted auto-inits from a constructor (WHOLE_ARCHIVE force-link) that
+        # runs before app_main and hangs talking to the C6 over SDIO on the P4-NANO.
+        # Wrap the symbol so the early call is a no-op; wifi_ensure_hosted() (wifi.c)
+        # opens the gate and runs the real init from app_main. Keeps esp_hosted a
+        # stock, unpatched managed component.
+        idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=esp_hosted_init" APPEND)
     endif()
 endif()
 

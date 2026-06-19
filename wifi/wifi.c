@@ -48,11 +48,35 @@
 #if CONFIG_ESP_WIFI_REMOTE_ENABLED
 static bool s_hosted_ready;
 
+/*
+ * esp_hosted force-links an auto-init constructor (port_esp_hosted_host_init.c,
+ * pulled in via the component's WHOLE_ARCHIVE property) that calls
+ * esp_hosted_init() during do_global_ctors — before app_main, and before the C6
+ * power/reset rail is sequenced. On the P4-NANO that early init hangs talking to
+ * the C6 over SDIO. We can't drop the constructor by disabling WHOLE_ARCHIVE
+ * (it also force-links esp_wifi_weak.c, the strong esp_wifi_* overrides), and no
+ * Kconfig defers it. Instead we wrap the symbol at link time (-Wl,--wrap, see
+ * main/CMakeLists.txt): the constructor-time call becomes a no-op and the real
+ * init runs only once we flip the gate below from app_main. This keeps
+ * esp_hosted a stock, unpatched managed component.
+ */
+extern int __real_esp_hosted_init(void);
+static volatile bool s_hosted_init_allowed;
+
+int __wrap_esp_hosted_init(void)
+{
+    if (!s_hosted_init_allowed)
+        return ESP_OK; /* defer constructor-time init to wifi_ensure_hosted() */
+    return __real_esp_hosted_init();
+}
+
 void wifi_ensure_hosted(void)
 {
     if (s_hosted_ready)
         return;
-    /* Shared SDMMC host (slot 1 = C6) before uSD slot 0; BSP relies on this. */
+    /* Open the gate so the wrapped esp_hosted_init() reaches the real impl.
+     * Shared SDMMC host (slot 1 = C6) before uSD slot 0; BSP relies on this. */
+    s_hosted_init_allowed = true;
     ESP_ERROR_CHECK(esp_hosted_init());
     s_hosted_ready = true;
 }
