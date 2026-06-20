@@ -19,12 +19,10 @@ jobs:
       fail-fast: false
       matrix:
         target: [esp32, esp32s3, esp32p4]
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -39,7 +37,7 @@ jobs:
           command: idf.py set-target ${{ matrix.target }} build
 
       - name: Upload firmware as action artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: espd-generic-${{ matrix.target }}-${{ github.sha }}
           path: |
