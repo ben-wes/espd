@@ -50,22 +50,28 @@ see a drive only during the **first-boot** window (until you eject once).
 
 ## Reformat internal flash (`/storage`)
 
-Needed after changing wear-levelling sector size (e.g. 512 B → 4 KiB in
-`sdkconfig.defaults.esp32s3`) or a bad/corrupt FAT. **SD card (`/sdcard`) is not
-affected.** Everything previously on `/storage` is lost.
+Needed when:
 
-### Option A — flash and boot (simplest)
+- wear-levelling sector size changed (e.g. 512 B → 4 KiB in `sdkconfig.defaults.esp32s3`);
+- the FAT is corrupt and mount fails; or
+- **undersized `/storage`**: serial shows a large partition (e.g. `/storage: 14784 KiB at 0x190000`) but stats/PUT report only ~400 KB free (`-ERR no space` on multi‑MB files).
 
-New ESPD firmware enables **`format_if_mount_failed`** on `/storage`. If the old
-layout cannot mount, the device formats on first boot (may sit quiet for a few
-seconds).
+That last case is usually a **stale tiny FAT** left in flash from an earlier boot that registered `/storage` against a wrong flash size (typical after a **web flasher** first boot before SFDP-based sizing). Reflashing the app does **not** erase the tail of flash where `/storage` lives, so a valid but tiny FAT can keep mounting.
+
+**SD card (`/sdcard`) is not affected.** Everything previously on `/storage` is lost.
+
+There is **no `storage` row in `partitions_pd.csv`** — firmware registers a runtime partition for “rest of flash” ([espd_usb_register_dynamic_storage](../main/espd_usb.c)). Tools that erase by **partition name** from the burned table cannot target it.
+
+### Option A — flash and boot
+
+Firmware uses **`format_if_mount_failed`** on `/storage`. That only runs when mount **fails** — a valid (even undersized) FAT mounts without reformatting, so this option **does not** fix the stale tiny-FAT case. Use B or C below for that.
 
 ```bash
 idf.py flash
 # reset the board; watch serial for storage mount / format messages
 ```
 
-### Option B — erase whole flash, then flash
+### Option B — erase whole flash, then flash (simplest for tiny-FAT recovery)
 
 ```bash
 idf.py erase-flash
@@ -74,17 +80,18 @@ idf.py flash monitor
 
 Also clears NVS and forces a full reflash of the app.
 
-### Option C — erase only the `storage` partition
+### Option C — erase only the `/storage` region
 
-There is no `idf.py erase-partition` command. Use IDF’s **parttool** (replace
-`PORT` with your serial device, e.g. `/dev/cu.usbmodem*`):
+There is no `idf.py erase-partition` command, and **`parttool erase_partition --partition-name=storage` does not apply** (no `storage` entry in the flashed partition table).
+
+Erase from the end of the factory app through the end of the chip. With the default `partitions_pd.csv` (1536K factory app), `/storage` starts at **`0x190000`**. Size = chip flash size − `0x190000` (e.g. **16 MB** chip → `0xE70000` bytes):
 
 ```bash
-. $IDF_PATH/components/partition_table/parttool.py \
-  --port PORT erase_partition --partition-name=storage
+# 16 MB ESP32-S3 example — adjust size for your chip
+python -m esptool --port PORT erase_region 0x190000 0xE70000
 ```
 
-Then reset the board so firmware mounts and formats an empty FAT volume.
+Then reset so firmware mounts and formats an empty FAT at full size.
 
 ### Option D — format from the host (normal MSC mode)
 

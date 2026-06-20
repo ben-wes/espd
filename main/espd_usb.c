@@ -93,18 +93,15 @@ esp_err_t espd_usb_register_dynamic_storage(void)
             ESP_PARTITION_SUBTYPE_DATA_FAT, "storage"))
         return ESP_OK;   /* already present */
 
-    /* Get flash size from bootloader header first. This relies on CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE
-     * being set and the flashing tool honoring it to patch the header with the actual flash size.
-     * If that fails, fall back to runtime SFDP detection. */
+    /* True physical chip size via SFDP — not esp_flash_get_size(), which reads the
+     * bootloader header (a build placeholder unless the flasher patched it).
+     * SFDP is authoritative at runtime so /storage is correct regardless of how
+     * the image was written (app-only flash, OTA, web flasher, etc.). */
     uint32_t flash_size = 0;
-    esp_err_t err = esp_flash_get_size(NULL, &flash_size);
+    esp_err_t err = esp_flash_get_physical_size(NULL, &flash_size);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "header flash size query failed, trying SFDP detection: %s", esp_err_to_name(err));
-        err = esp_flash_get_physical_size(NULL, &flash_size);
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "flash size query failed (both header and SFDP): %s", esp_err_to_name(err));
-            return err;
-        }
+        ESP_LOGE(TAG, "flash size query failed: %s", esp_err_to_name(err));
+        return err;
     }
 
     /* esp_partition_register_external() bounds-checks the region against the default
