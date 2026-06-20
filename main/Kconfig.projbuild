@@ -152,10 +152,11 @@ if ESPD_USE_USB_OTG
         bool "USB MIDI port (native Pd MIDI objects)"
         default y
         help
-            Compile the USB MIDI device class so the host can see the device
-            as a MIDI interface and Pd's native MIDI objects ([notein], [ctlin],
-            [noteout], [midiin], ...) work. Runs alongside the CDC serial
-            monitor on the same cable via a composite descriptor.
+            Compile Pd's native MIDI objects ([notein], [ctlin], [noteout], …),
+            the platform MIDI backend (espd_midi.c), and the USB MIDI device
+            class so the host can see the board as a MIDI interface. Runs
+            alongside the CDC serial monitor on the same cable via a composite
+            descriptor. When disabled, MIDI code is omitted from the firmware.
 
             MIDI can be disabled at runtime via config.txt (usb_midi_role=nomidi)
             to free endpoints or reduce USB descriptor complexity, while keeping

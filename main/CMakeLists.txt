@@ -3,9 +3,6 @@ set(MAIN_SRCS
     "espd_config_file.c"
     "espd_gpio_peripherals.c"
     "espd_usb.c"
-    "espd_usb_descriptors.c"
-    "espd_midi.c"
-    "espd_usb_host_midi.c"
     "espd_pd_io.c"
     "pd_lseek64_compat.c"
     "pd_posix_file_compat.c"
@@ -40,8 +37,6 @@ set(MAIN_SRCS
     "../pd/src/m_atom.c"
     "../pd/src/m_memory.c"
     "../pd/src/m_binbuf.c"
-    "../pd/src/s_midi.c"
-    "../pd/src/x_midi.c"
     "../pd/src/s_net.c"
     "../pd/src/s_print.c"
     "../pd/src/s_utf8.c"
@@ -123,6 +118,19 @@ if(CONFIG_ESPD_USE_USB_OTG)
     if(CONFIG_ESPD_USE_USB_MIDI_HOST)
         idf_component_optional_requires(PRIVATE usb_host espressif__usb)
     endif()
+endif()
+
+if(CONFIG_ESPD_USE_USB_MIDI)
+    target_sources(${COMPONENT_LIB} PRIVATE
+        "espd_midi.c"
+        "espd_usb_descriptors.c"
+        "../pd/src/s_midi.c"
+        "../pd/src/x_midi.c"
+    )
+endif()
+
+if(CONFIG_ESPD_USE_USB_MIDI_HOST)
+    target_sources(${COMPONENT_LIB} PRIVATE "espd_usb_host_midi.c")
 endif()
 
 if(CONFIG_ESPD_DEV_SERIAL_SYNC)

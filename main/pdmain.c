@@ -7,7 +7,9 @@
 #include "espd.h"
 #include "espd_storage.h"
 #include "espd_runtime_config.h"
+#if CONFIG_ESPD_USE_USB_MIDI
 #include "espd_midi.h"
+#endif
 #include <esp_attr.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -264,7 +266,9 @@ void pdmain_init( void)
     STUFF->st_dacsr = sys_getsr();
     STUFF->st_soundout = soundout;
     STUFF->st_soundin = soundin;
-    espd_midi_init();   /* open USB MIDI in/out; native Pd MIDI objects active */
+#if CONFIG_ESPD_USE_USB_MIDI
+    espd_midi_init();
+#endif
 
     espd_main_pd_loaded_from_store = 0;
     espd_main_pd_loaded_dir = NULL;
@@ -316,7 +320,9 @@ IRAM_ATTR void pdmain_tick( void)
     //memset(soundout, 0, (size_t)sys_get_outchannels() * DEFDACBLKSIZE * sizeof(t_sample));
     sched_tick();
     sys_pollgui();
-    espd_midi_poll();   /* dispatch inbound USB MIDI + flush outbound MIDI queue */
+#if CONFIG_ESPD_USE_USB_MIDI
+    espd_midi_poll();
+#endif
 }
 
 /* ----------------- stuff to keep Pd happy -------------------- */
@@ -403,7 +409,9 @@ void x_connective_setup(void);
 void x_time_setup(void);
 void x_arithmetic_setup(void);
 void x_array_setup(void);
+#if CONFIG_ESPD_USE_USB_MIDI
 void x_midi_setup(void);
+#endif
 void x_misc_setup(void);
 void x_net_setup(void);
 void x_qlist_setup(void);
@@ -455,7 +463,9 @@ void conf_init(void)
     x_time_setup();
     x_arithmetic_setup();
     x_array_setup();
+#if CONFIG_ESPD_USE_USB_MIDI
     x_midi_setup();
+#endif
     x_net_setup();
     x_misc_setup();
     x_qlist_setup();
@@ -846,8 +856,10 @@ void glist_settexted(t_glist *gl, t_rtext *x)
 int sys_batch;
 
 void s_inter_newpdinstance( void) {}
-/* x_midi_newpdinstance() / x_midi_freepdinstance() are provided by the now-compiled
- * pd/src/x_midi.c (allocates pd_this->pd_midi). */
+#if !CONFIG_ESPD_USE_USB_MIDI
+void x_midi_newpdinstance(void) {}
+void x_midi_freepdinstance(void) {}
+#endif
 
 /* --------------- m_sched.c -------------------- */
 #define TIMEUNITPERMSEC (32. * 441.)

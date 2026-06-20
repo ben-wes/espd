@@ -11,8 +11,7 @@
 #pragma once
 
 /* Reset the MIDI timing queues and open the (single) USB MIDI in/out device.
- * Call once after pd_init(). Safe to call when USB MIDI is disabled (no-op
- * device that keeps [noteout]/[notein] from erroring). */
+ * Call once after pd_init() when CONFIG_ESPD_USE_USB_MIDI is enabled. */
 void espd_midi_init(void);
 
 /* Drain inbound USB MIDI into Pd and flush Pd's outbound MIDI queue. Call once

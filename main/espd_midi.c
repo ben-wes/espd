@@ -13,9 +13,9 @@
  * tud_midi_mounted). The StreamBuffer makes RX cross-core safe; MIDI rates are
  * low so the single direct TX call is fine.
  *
- * Compiled on every target so Pd's MIDI objects always exist. The USB parts are
- * gated by CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MIDI; without them the
- * backend is an inert stub (objects present but silent).
+ * Compiled when CONFIG_ESPD_USE_USB_MIDI is enabled (menuconfig / board profile).
+ * USB transport is further gated by CONFIG_ESPD_USE_USB_OTG at runtime
+ * (usb_midi_role in config.txt).
  */
 
 #include "sdkconfig.h"
@@ -202,7 +202,10 @@ void espd_midi_init(void)
     sys_initmidiqueue();
     {
         int indev = 0, outdev = 0;   /* single device, index 0 */
-        sys_open_midi(1, &indev, 1, &outdev, 1);
+        /* sys_open_midi() also calls sys_save_midi_params(), which uses
+         * ~256 KiB stack buffers in s_midi.c (MAXNDEV=128) — overflows the
+         * main task on ESP32. The platform hook is enough for headless espd. */
+        sys_do_open_midi(1, &indev, 1, &outdev);
     }
 #if ESPD_MIDI_USB
     ESP_LOGI(TAG, "USB MIDI port ready (native Pd MIDI objects active)");
