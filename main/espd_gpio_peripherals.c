@@ -723,7 +723,7 @@ static void espd_touch_task_fn(void *arg)
             uint32_t dirty_mask = 0;
             for (i = 0; i < ESPD_TOUCH_MAX_CHANNELS; i++)
             {
-                uint32_t raw = 0;
+                uint16_t raw = 0;
                 if (!espd_touch_active[i])
                     continue;
                 if (touch_pad_read_raw_data(espd_touch_channels[i], &raw) != ESP_OK)
@@ -786,7 +786,7 @@ void espd_touch_init(void)
             ESP_LOGW(TAG, "touch in%d ignored: GPIO%d is not touch-capable", i, pin);
             continue;
         }
-        if (touch_pad_config(ch) != ESP_OK)
+        if (touch_pad_config(ch, 0) != ESP_OK)
         {
             ESP_LOGW(TAG, "touch in%d setup failed on GPIO%d", i, pin);
             continue;
@@ -802,8 +802,8 @@ void espd_touch_init(void)
         return;
     }
 
-    if (touch_pad_fsm_start() != ESP_OK)
-        ESP_LOGW(TAG, "touch: fsm start failed");
+    if (touch_pad_sw_start() != ESP_OK)
+        ESP_LOGW(TAG, "touch: start failed");
 
     espd_touch_inited = 1;
     atomic_store_explicit(&espd_touch_dirty, 0u, memory_order_relaxed);
@@ -838,7 +838,7 @@ void espd_touch_poll(void)
     {
         for (i = 0; i < ESPD_TOUCH_MAX_CHANNELS; i++)
         {
-            uint32_t raw = 0;
+            uint16_t raw = 0;
             if (!espd_touch_active[i])
                 continue;
             if (touch_pad_read_raw_data(espd_touch_channels[i], &raw) != ESP_OK)
