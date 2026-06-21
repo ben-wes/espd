@@ -8,21 +8,19 @@
 
 #define ESPD_CFG_MAX_PINS 8
 
-/* USB role chosen at boot from config.txt (read before the USB stack starts).
- *   NOMIDI: TinyUSB device (CDC + MSC only) — appears on a computer, no MIDI.
- *   DEVICE: TinyUSB device (CDC + MSC + MIDI) — appears on a computer.
- *   HOST:   USB-MIDI host — powers + reads a class-compliant MIDI controller
- *           plugged into the board, feeding it into Pd. Requires the board to
- *           supply VBUS and a firmware built with ESPD_USE_USB_MIDI_HOST. */
+/* USB MIDI mode from config.txt usb_midi_role= (read before USB stack starts).
+ *   OFF (0, default): TinyUSB device — CDC + MSC only.
+ *   DEVICE:           TinyUSB device — CDC + MSC + MIDI class.
+ *   HOST:             USB-MIDI host — class-compliant controller on the OTG port.
+ *                     Requires VBUS and ESPD_USE_USB_MIDI_HOST in the build. */
 typedef enum {
-    ESPD_USB_ROLE_NOMIDI = 0,
-    ESPD_USB_ROLE_DEVICE = 1,
-    ESPD_USB_ROLE_HOST   = 2,
-} espd_usb_role_t;
+    ESPD_USB_MIDI_OFF    = 0,
+    ESPD_USB_MIDI_DEVICE = 1,
+    ESPD_USB_MIDI_HOST   = 2,
+} espd_usb_midi_mode_t;
 
 typedef struct {
-    /* USB role (config key: usb_midi_role = nomidi|device|host). Default NOMIDI. */
-    int usb_role;
+    espd_usb_midi_mode_t usb_midi_mode;
 
     /* WiFi */
     bool wifi_have_ssid;
@@ -71,9 +69,3 @@ typedef struct {
 extern espd_config_t g_espd_cfg;
 
 void espd_config_load(void);
-
-/* Helper to check if MIDI should be enabled in USB descriptor */
-static inline bool espd_usb_midi_enabled(void)
-{
-    return g_espd_cfg.usb_role == ESPD_USB_ROLE_DEVICE;
-}

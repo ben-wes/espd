@@ -29,6 +29,7 @@
 #include <tinyusb_console.h>
 #include <tinyusb_default_config.h>
 #include "espd_usb_descriptors.h"
+#include <driver/gpio.h>
 #endif
 #if ESPD_DEV_SERIAL_SYNC_USJ
 #include <driver/usb_serial_jtag.h>
@@ -458,6 +459,23 @@ static void espd_usb_release_usj_for_otg(void)
 #endif
 }
 
+#if CONFIG_IDF_TARGET_ESP32P4 && CONFIG_ESPD_USB_VBUS_MONITOR_GPIO >= 0
+static void espd_usb_apply_p4_vbus_sense(tinyusb_config_t *tusb_cfg)
+{
+    if (!tusb_cfg)
+        return;
+
+    esp_err_t err = gpio_install_isr_service(ESP_INTR_FLAG_LOWMED);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE)
+        ESP_LOGW(TAG, "gpio isr service: %s", esp_err_to_name(err));
+
+    tusb_cfg->phy.self_powered = true;
+    tusb_cfg->phy.vbus_monitor_io = CONFIG_ESPD_USB_VBUS_MONITOR_GPIO;
+    ESP_LOGI(TAG, "P4 self-powered USB, VBUS sense GPIO%d",
+             CONFIG_ESPD_USB_VBUS_MONITOR_GPIO);
+}
+#endif
+
 #if CONFIG_ESPD_USE_USB_MSC
 bool espd_usb_wait_for_host(uint32_t timeout_ticks)
 {
@@ -503,8 +521,13 @@ static bool usb_init_on_core0(void)
     /* esp_tinyusb's auto descriptor builder cannot add the MIDI class, so supply
      * a hand-built composite (CDC [+MSC] + MIDI) descriptor when MIDI is enabled
      * at runtime (usb_midi_role=device). */
-    if (espd_usb_midi_enabled())
+    if (g_espd_cfg.usb_midi_mode == ESPD_USB_MIDI_DEVICE) {
         espd_usb_apply_midi_descriptor(&tusb_cfg);
+        ESP_LOGI(TAG, "USB composite descriptor includes MIDI");
+    }
+#endif
+#if CONFIG_IDF_TARGET_ESP32P4 && CONFIG_ESPD_USB_VBUS_MONITOR_GPIO >= 0
+    espd_usb_apply_p4_vbus_sense(&tusb_cfg);
 #endif
     err = tinyusb_driver_install(&tusb_cfg);
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {

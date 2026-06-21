@@ -10,7 +10,18 @@
 
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MIDI
 
+#include "soc/soc_caps.h"
 #include "tusb.h"
+
+/* HS configuration descriptor is required on P4 (and other multi-port HS PHYs).
+ * Use soc_caps so this file always builds HS config on those chips. */
+#if (SOC_USB_OTG_PERIPH_NUM > 1)
+#define ESPD_USB_HAS_HS_DESC 1
+#elif defined(CONFIG_IDF_TARGET_ESP32S31)
+#define ESPD_USB_HAS_HS_DESC 1
+#else
+#define ESPD_USB_HAS_HS_DESC 0
+#endif
 
 /* ─── MSC presence as a 0/1 token usable in arithmetic/static_assert ─── */
 #if CONFIG_ESPD_USE_USB_MSC
@@ -46,9 +57,8 @@ enum {
 #define EPNUM_MIDI_IN     0x83
 #endif
 
-/* IN endpoints used: CDC notif + CDC data + MIDI (+ MSC). ESP32-S3 USB-OTG
- * exposes 5 usable IN endpoints besides EP0; fail the build early if a future
- * class combination overflows it. */
+/* IN endpoints used: CDC notif + CDC data + MIDI (+ MSC). ESP32-S3 FS budget
+ * is 5 IN endpoints besides EP0; fail the build early if we overflow it. */
 #define ESPD_USB_IN_EP_USED   (3 + ESPD_USB_HAS_MSC)
 _Static_assert(ESPD_USB_IN_EP_USED <= 5,
     "USB composite (CDC+MSC+MIDI) exceeds the ESP32-S3 IN-endpoint budget; "
@@ -85,13 +95,19 @@ static const tusb_desc_device_t s_device_desc = {
     .bDeviceProtocol    = MISC_PROTOCOL_IAD,
     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor           = 0x303A,   /* Espressif */
-    .idProduct          = 0x4020,   /* espd composite w/ MIDI */
+    .idProduct          = 0x4020,   /* espd composite w/ MIDI (unchanged on S3) */
     .bcdDevice          = 0x0100,
     .iManufacturer      = STRID_MANUFACTURER,
     .iProduct           = STRID_PRODUCT,
     .iSerialNumber      = STRID_SERIAL,
     .bNumConfigurations = 0x01,
 };
+
+/* ─── Endpoint max packet sizes (FS vs HS) ─── */
+#define ESPD_USB_FS_EP_SIZE  64
+#if ESPD_USB_HAS_HS_DESC
+#define ESPD_USB_HS_EP_SIZE  512
+#endif
 
 /* ─── Configuration descriptor ─── */
 #define ESPD_USB_CONFIG_TOTAL_LEN \
@@ -104,16 +120,39 @@ static const uint8_t s_fs_config[] = {
 
     /* CDC: serial monitor (Pd print / ESP_LOG) */
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, EPNUM_CDC_NOTIF, 8,
-                       EPNUM_CDC_OUT, EPNUM_CDC_IN, 64),
+                       EPNUM_CDC_OUT, EPNUM_CDC_IN, ESPD_USB_FS_EP_SIZE),
 
 #if ESPD_USB_HAS_MSC
     /* MSC: internal-flash USB drive */
-    TUD_MSC_DESCRIPTOR(ITF_NUM_MSC, STRID_MSC, EPNUM_MSC_OUT, EPNUM_MSC_IN, 64),
+    TUD_MSC_DESCRIPTOR(ITF_NUM_MSC, STRID_MSC, EPNUM_MSC_OUT, EPNUM_MSC_IN,
+                       ESPD_USB_FS_EP_SIZE),
 #endif
 
     /* MIDI: native Pd MIDI in/out */
-    TUD_MIDI_DESCRIPTOR(ITF_NUM_MIDI, STRID_MIDI, EPNUM_MIDI_OUT, EPNUM_MIDI_IN, 64),
+    TUD_MIDI_DESCRIPTOR(ITF_NUM_MIDI, STRID_MIDI, EPNUM_MIDI_OUT, EPNUM_MIDI_IN,
+                        ESPD_USB_FS_EP_SIZE),
 };
+
+#if ESPD_USB_HAS_HS_DESC
+/* P4 (and other HS ports): host negotiates high speed and uses this descriptor.
+ * Without it, esp_tinyusb falls back to the auto-generated HS config (CDC+MSC
+ * only — no MIDI class). */
+static const uint8_t s_hs_config[] = {
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, ESPD_USB_CONFIG_TOTAL_LEN, 0x00, 100),
+
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, EPNUM_CDC_NOTIF, 8,
+                       EPNUM_CDC_OUT, EPNUM_CDC_IN, ESPD_USB_HS_EP_SIZE),
+
+#if ESPD_USB_HAS_MSC
+    TUD_MSC_DESCRIPTOR(ITF_NUM_MSC, STRID_MSC, EPNUM_MSC_OUT, EPNUM_MSC_IN,
+                       ESPD_USB_HS_EP_SIZE),
+#endif
+
+    TUD_MIDI_DESCRIPTOR(ITF_NUM_MIDI, STRID_MIDI, EPNUM_MIDI_OUT, EPNUM_MIDI_IN,
+                        ESPD_USB_HS_EP_SIZE),
+};
+
+#endif /* ESPD_USB_HAS_HS_DESC */
 
 void espd_usb_apply_midi_descriptor(tinyusb_config_t *cfg)
 {
@@ -124,7 +163,9 @@ void espd_usb_apply_midi_descriptor(tinyusb_config_t *cfg)
     cfg->descriptor.string            = s_str_desc;
     cfg->descriptor.string_count      = sizeof(s_str_desc) / sizeof(s_str_desc[0]);
     cfg->descriptor.full_speed_config = s_fs_config;
-    cfg->descriptor.high_speed_config = NULL;
+#if ESPD_USB_HAS_HS_DESC
+    cfg->descriptor.high_speed_config = s_hs_config;
+#endif
 }
 
 #endif /* CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MIDI */

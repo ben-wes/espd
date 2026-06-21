@@ -235,7 +235,8 @@ extern char espd_wifi_password[65];
 #define ESPD_STORAGE_MAIN_PD_PATH ESPD_STORAGE_MOUNT "/main.pd"
 #define ESPD_STORAGE_CONFIG_PATH ESPD_STORAGE_MOUNT "/config.txt"
 /* config.txt optional keys (key=value, # comment). Active store: mounted SD,
- * else mounted internal flash (/storage) — not mixed by file presence.
+ * else mounted internal flash (/storage) — one store only; no mixing files
+ * across SD and flash (same rule for main.pd and config.txt).
  * WiFi (when ESPD_USE_WIFI): STA starts when config.txt has a non-empty
  * wifi_ssid= (wifi_password optional). Missing config.txt → with
  * ESPD_USE_SDCARD, STA stays off; otherwise Kconfig/locale defaults apply.
@@ -273,6 +274,9 @@ extern char espd_wifi_password[65];
  * works). din_pins=4,5 — GPIOs for extra espd/din channels (max 8)
  *   din_active_low=1 — treat low level as pressed (default 1)
  *   din_task_period_ms=5 — GPIO poll interval in ms (1..500)
+ * USB OTG (when ESPD_USE_USB_MIDI compiled in): usb_midi_role=device or host;
+ *   omit the key for CDC+MSC only (MIDI off). Patch [notein]/[noteout] alone do
+ *   not enable USB MIDI.
  * Digital out (when ESPD_USE_DOUT compiled in): espd/dout starts only if
  * config.txt has dout_pins= with at least one GPIO. Float >= 0.5 → high, else
  * low. No background polling. dout_pins=8,9 — GPIOs for espd/dout/0.. in order

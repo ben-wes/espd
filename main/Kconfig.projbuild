@@ -158,9 +158,9 @@ if ESPD_USE_USB_OTG
             alongside the CDC serial monitor on the same cable via a composite
             descriptor. When disabled, MIDI code is omitted from the firmware.
 
-            MIDI can be disabled at runtime via config.txt (usb_midi_role=nomidi)
-            to free endpoints or reduce USB descriptor complexity, while keeping
-            CDC and MSC enabled.
+            At runtime, USB MIDI is active only when config.txt sets
+            usb_midi_role=device or usb_midi_role=host; omit the key and MIDI
+            stays off (CDC and MSC still run).
 
             Adds one IN + one OUT endpoint. CDC + MSC + MIDI is near the
             ESP32-S3 endpoint limit; if you hit it, disable USB mass storage.
@@ -169,7 +169,7 @@ if ESPD_USE_USB_OTG
             sdkconfig.defaults; the build fails loudly otherwise).
 
     config ESPD_USE_USB_MIDI_HOST
-        bool "USB-MIDI host role (config.txt: usb_midi_role=host)"
+        bool "USB-MIDI host mode (config.txt: usb_midi_role=host)"
         depends on ESPD_USE_USB_MIDI
         default y
         help
@@ -179,10 +179,9 @@ if ESPD_USE_USB_OTG
             class-compliant MIDI controller plugged into the board, feeding
             it into Pd's native MIDI objects).
 
-            The role is chosen at boot from config.txt:
-                usb_midi_role = nomidi  (default)  -> CDC + MSC only (no MIDI)
-                usb_midi_role = device              -> CDC + MSC + MIDI device
-                usb_midi_role = host                -> USB-MIDI host
+            Mode is chosen at boot from config.txt (omit key = MIDI off):
+                usb_midi_role = device  -> CDC + MSC + MIDI device
+                usb_midi_role = host    -> USB-MIDI host
             The three are mutually exclusive (one OTG PHY) and switching
             requires a power-cycle.
 
@@ -198,6 +197,18 @@ if ESPD_USE_USB_OTG
         default ESPD_USE_USB_CDC
         help
             Internal: stdout/printf routing via tinyusb_console_init.
+
+    config ESPD_USB_VBUS_MONITOR_GPIO
+        int "Type-A VBUS sense GPIO (P4 self-powered device)"
+        depends on IDF_TARGET_ESP32P4
+        default -1
+        range -1 54
+        help
+            When the board is powered from Type-C or the 5 V header (not from
+            Type-A VBUS), ESP32-P4 HS device mode requires self_powered and a
+            GPIO wired to Type-A VBUS through a 5 V divider (see Espressif P4
+            Function EV: 100k/100k to GPIO6). Set the sense GPIO here; -1 keeps
+            bus-powered defaults (works on S3; insufficient on most P4 setups).
 
 endif
 

@@ -7,18 +7,17 @@
  * outgoing MIDI back to the controller.
  *
  * This is the mutually-exclusive counterpart to the TinyUSB *device* stack
- * (CDC + MSC [+ MIDI]). The role is selected at boot from config.txt
- * (usb_midi_role = nomidi|device|host); only one may run because the ESP32-S3 has a single
- * USB-OTG PHY. While hosting, USB serial monitoring is unavailable.
+ * (CDC + MSC [+ MIDI]). Mode is selected at boot from config.txt
+ * (usb_midi_role = device|host; omit for MIDI off / CDC+MSC only); one OTG PHY.
+ * While hosting, USB serial monitoring is unavailable.
  */
 #pragma once
 
-#include "esp_err.h"
 #include <stdbool.h>
+#include "esp_err.h"
 
 /* Enable/disable 5 V VBUS on the downstream (host) port. Weak no-op default;
- * override in a board component if the hardware has a VBUS load switch/boost.
- * Without real VBUS the attached controller cannot power on. */
+ * override in a board component if the hardware has a VBUS load switch. */
 void espd_board_usb_host_set_vbus(bool on);
 
 #if CONFIG_ESPD_USE_USB_MIDI_HOST

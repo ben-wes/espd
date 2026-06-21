@@ -243,7 +243,6 @@ unsigned int espd_cputime_get(void)
 
 void app_main(void)
 {
-    esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set("ESPD", ESP_LOG_INFO);
     esp_log_level_set("espd_usb", ESP_LOG_INFO);
     esp_log_level_set("espd_config", ESP_LOG_INFO);
@@ -253,6 +252,7 @@ void app_main(void)
     esp_log_level_set("espd_dev", ESP_LOG_INFO);
     esp_log_level_set("espd_audio", ESP_LOG_INFO);
     esp_log_level_set("espd_audio_dac", ESP_LOG_INFO);
+    esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set("sdmmc_sd", ESP_LOG_NONE);
     esp_log_level_set("sdmmc_common", ESP_LOG_NONE);
     esp_log_level_set("vfs_fat_sdmmc", ESP_LOG_NONE);
@@ -276,6 +276,7 @@ void app_main(void)
         ESP_LOGW(TAG, "/storage on early VFS unavailable");
 
 #if CONFIG_ESP_WIFI_REMOTE_ENABLED
+    /* Deferred esp_hosted init (see wifi.c wrap): needs nvs, netif, event loop. */
     wifi_ensure_hosted();
 #endif
 
@@ -294,10 +295,9 @@ void app_main(void)
 #endif
 
 #if CONFIG_ESPD_USE_USB_OTG
-    /* USB role from config.txt: nomidi (TinyUSB CDC+MSC only), device (CDC+MSC+MIDI),
-     * or host (USB-MIDI host for a controller plugged into the board).
+    /* usb_midi_mode from config.txt: OFF = CDC+MSC, DEVICE = +MIDI class, HOST = OTG host.
      * Mutually exclusive — one OTG PHY. */
-    bool usb_host_mode = (g_espd_cfg.usb_role == ESPD_USB_ROLE_HOST);
+    bool usb_host_mode = (g_espd_cfg.usb_midi_mode == ESPD_USB_MIDI_HOST);
 #if !CONFIG_ESPD_USE_USB_MIDI_HOST
     if (usb_host_mode) {
         ESP_LOGW(TAG, "config.txt usb_midi_role=host, but USB-MIDI host not compiled "
@@ -307,13 +307,14 @@ void app_main(void)
 #endif
     if (usb_host_mode) {
 #if CONFIG_ESPD_USE_USB_MIDI_HOST
-        ESP_LOGI(TAG, "USB role: host (USB-MIDI). Serial monitor unavailable while hosting.");
+        ESP_LOGI(TAG, "USB MIDI: host. Serial monitor unavailable while hosting.");
         if (espd_usb_host_midi_start() != ESP_OK)
             ESP_LOGE(TAG, "USB host: start failed");
 #endif
     } else {
-        const char *role_name = (g_espd_cfg.usb_role == ESPD_USB_ROLE_DEVICE) ? "device (CDC+MSC+MIDI)" : "nomidi (CDC+MSC only)";
-        ESP_LOGI(TAG, "USB role: %s", role_name);
+        const char *midi_name = (g_espd_cfg.usb_midi_mode == ESPD_USB_MIDI_DEVICE)
+            ? "device (CDC+MSC+MIDI)" : "off (CDC+MSC only)";
+        ESP_LOGI(TAG, "USB MIDI: %s", midi_name);
         if (!espd_usb_start_after_wifi())
             ESP_LOGE(TAG, "USB: boot init failed");
     }
