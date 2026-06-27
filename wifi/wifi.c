@@ -7,6 +7,7 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 #include "../main/espd.h"
+#include "espd_bsp_sdcard.h"
 #include "esp_wifi_types_generic.h"
 #ifdef ESPD_USE_WIFI
 #include <stdio.h>
@@ -34,6 +35,8 @@
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
+static const char *TAG = "ESPD";
+
 /*
  * Boot contract (app_main in espd.c):
  *   0. wifi_ensure_hosted() — SDIO/C6 before uSD on ESP-Hosted boards
@@ -60,10 +63,10 @@ static bool s_hosted_ready;
  * init runs only once we flip the gate below from app_main. This keeps
  * esp_hosted a stock, unpatched managed component.
  */
-extern int __real_esp_hosted_init(void);
+extern esp_err_t __real_esp_hosted_init(void);
 static volatile bool s_hosted_init_allowed;
 
-int __wrap_esp_hosted_init(void)
+esp_err_t __wrap_esp_hosted_init(void)
 {
     if (!s_hosted_init_allowed)
         return ESP_OK; /* defer constructor-time init to wifi_ensure_hosted() */
@@ -77,12 +80,23 @@ void wifi_ensure_hosted(void)
     /* Open the gate so the wrapped esp_hosted_init() reaches the real impl.
      * Shared SDMMC host (slot 1 = C6) before uSD slot 0; BSP relies on this. */
     s_hosted_init_allowed = true;
-    ESP_ERROR_CHECK(esp_hosted_init());
+#if CONFIG_IDF_TARGET_ESP32P4
+    /* VDD_SDMMC (LDO ch 4) must be on before SDIO to the C6. BSP normally
+     * acquires this during uSD mount; esp_hosted runs first on P4-NANO. */
+    ESP_ERROR_CHECK(espd_bsp_sdmmc_pwr_on());
+    vTaskDelay(pdMS_TO_TICKS(50));
+#endif
+    ESP_LOGI(TAG, "esp_hosted init (C6 SDIO)...");
+    esp_err_t err = esp_hosted_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_hosted_init failed: %s", esp_err_to_name(err));
+        ESP_ERROR_CHECK(err);
+    }
     s_hosted_ready = true;
+    ESP_LOGI(TAG, "esp_hosted ready");
 }
 #endif
 
-static const char *TAG = "ESPD";
 static int s_retry_num = 0;
 static EventGroupHandle_t s_wifi_event_group;
 static bool s_wifi_phy_ready;

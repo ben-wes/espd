@@ -213,3 +213,17 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/local_components" AND _espd_active_board)
 endif()
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(espd)
+
+# esp_hosted constructor calls esp_hosted_init() before app_main. wifi.c wraps it;
+# also set at project scope so the wrap survives the final link when USB OTG / usb_host
+# are pulled in (MIDI builds).
+if(CONFIG_ESP_WIFI_REMOTE_ENABLED)
+    idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=esp_hosted_init" APPEND)
+    # Drop the WHOLE_ARCHIVE constructor object; wifi_ensure_hosted() runs real init.
+    idf_component_get_property(_esp_hosted_lib espressif__esp_hosted COMPONENT_LIB)
+    get_target_property(_esp_hosted_sources ${_esp_hosted_lib} SOURCES)
+    if(_esp_hosted_sources)
+        list(FILTER _esp_hosted_sources EXCLUDE REGEX "port_esp_hosted_host_init\\.c$")
+        set_property(TARGET ${_esp_hosted_lib} PROPERTY SOURCES "${_esp_hosted_sources}")
+    endif()
+endif()

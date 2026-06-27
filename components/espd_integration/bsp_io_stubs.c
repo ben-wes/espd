@@ -67,6 +67,11 @@ __attribute__((weak)) esp_err_t bsp_sdcard_mount(const char *mount_point)
     return ESP_ERR_NOT_SUPPORTED;
 }
 
+__attribute__((weak)) esp_err_t espd_bsp_sdmmc_pwr_on(void)
+{
+    return ESP_OK;
+}
+
 __attribute__((weak)) esp_err_t espd_bsp_sdcard_mount(const char *mount_point)
 {
     return bsp_sdcard_mount(mount_point);
