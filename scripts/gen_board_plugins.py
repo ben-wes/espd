@@ -200,18 +200,16 @@ def _otg_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str,
     extras: list[tuple[str, object]] = []
     # Board profile may override individual console/USJ settings; fill the rest.
     if not (profile_keys & _CONSOLE_PRIMARY_MEMBERS):
-        extras.append(("ESP_CONSOLE_UART_DEFAULT", True))
-        extras.append(("ESP_CONSOLE_UART", True))
-        extras.append(("ESP_CONSOLE_UART_NUM", 0))
+        extras.append(("ESP_CONSOLE_NONE", True))
     if not (profile_keys & _CONSOLE_SECONDARY_MEMBERS):
         extras.append(("ESP_CONSOLE_SECONDARY_NONE", True))
-    # Auto-enable USB Serial JTAG only on platforms that support it
+    # OTG shares the USB PHY with Serial/JTAG on S3/P4 — keep USJ off unless opted in.
     if "USJ_ENABLE_USB_SERIAL_JTAG" not in profile_keys and (
         "ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG" not in profile_keys
         and "ESP_CONSOLE_USB_SERIAL_JTAG" not in profile_keys
         and str(data.get("target")) in _USJ_SUPPORTED_TARGETS
     ):
-        extras.append(("USJ_ENABLE_USB_SERIAL_JTAG", True))
+        extras.append(("USJ_ENABLE_USB_SERIAL_JTAG", False))
     return extras
 
 

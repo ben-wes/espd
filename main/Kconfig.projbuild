@@ -194,9 +194,11 @@ if ESPD_USE_USB_OTG
 
     config ESPD_USB_CONSOLE_CDC
         bool
-        default ESPD_USE_USB_CDC
+        default n
         help
             Internal: stdout/printf routing via tinyusb_console_init.
+            Boards that keep CH343 UART for monitor (e.g. waveshare_p4_nano_midi)
+            set this n in the board profile even when TINYUSB_CDC_ENABLED is y.
 
     config ESPD_USB_VBUS_MONITOR_GPIO
         int "Type-A VBUS sense GPIO (P4 self-powered device)"
