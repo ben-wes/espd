@@ -7,7 +7,6 @@
 #include "espd_usb.h"
 #include "espd_storage.h"
 #include "espd_config_file.h"
-#include "bsp/bsp_io.h"
 
 #include <esp_system.h>
 #include <esp_partition.h>
@@ -534,7 +533,6 @@ static bool usb_init_on_core0(void)
     err = tinyusb_driver_install(&tusb_cfg);
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "TinyUSB install failed: %s", esp_err_to_name(err));
-        (void)bsp_led_fill(32, 0, 0);
         return false;
     }
 
@@ -551,7 +549,6 @@ static bool usb_init_on_core0(void)
     err = tinyusb_cdcacm_init(&acm_cfg);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "CDC init: %s", esp_err_to_name(err));
-        (void)bsp_led_fill(32, 0, 0);
         return false;
     }
 
@@ -591,7 +588,6 @@ static bool usb_init_on_core0(void)
 #endif
 #endif
     ESP_LOGI(TAG, "ready (cu.usbmodem%s1)", CONFIG_TINYUSB_DESC_SERIAL_STRING);
-    (void)bsp_led_fill(0, 32, 0);
     return true;
 }
 
