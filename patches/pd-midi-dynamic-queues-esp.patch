@@ -1,0 +1,37 @@
+diff --git a/src/s_midi.c b/src/s_midi.c
+index d5551573..45f34bc3 100644
+--- a/src/s_midi.c
++++ b/src/s_midi.c
+@@ -64,9 +64,14 @@ typedef struct _midiqelem
+ 
+ #define MIDIQSIZE 1024
+ 
++#ifdef PD_MIDI_DYNAMIC_QUEUES
++static t_midiqelem *midi_outqueue;
++static t_midiqelem *midi_inqueue;
++#else
+ t_midiqelem midi_outqueue[MIDIQSIZE];
+-int midi_outhead, midi_outtail;
+ t_midiqelem midi_inqueue[MIDIQSIZE];
++#endif
++int midi_outhead, midi_outtail;
+ int midi_inhead, midi_intail;
+ static double sys_midiinittime;
+ #define API_DEFAULTMIDI 0
+@@ -97,6 +102,16 @@ static double sys_whenupdate;
+ 
+ void sys_initmidiqueue(void)
+ {
++#ifdef PD_MIDI_DYNAMIC_QUEUES
++    if (!midi_outqueue) {
++        midi_outqueue = (t_midiqelem *)getbytes(MIDIQSIZE * sizeof(t_midiqelem));
++        midi_inqueue = (t_midiqelem *)getbytes(MIDIQSIZE * sizeof(t_midiqelem));
++    }
++    if (!midi_outqueue || !midi_inqueue)
++        return;
++    midi_outhead = midi_outtail = 0;
++    midi_inhead = midi_intail = 0;
++#endif
+     sys_midiinittime = clock_getlogicaltime();
+         /* force update in sys_setmiditimediff() */
+     sys_dactimeminusrealtime = sys_adctimeminusrealtime = 0;

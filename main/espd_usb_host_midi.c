@@ -139,31 +139,77 @@ static void close_device(void)
     s_out_busy = false;
 }
 
-static bool find_midi_endpoints(const usb_config_desc_t *cfg)
+static void log_config_interfaces(const usb_config_desc_t *cfg, const char *why)
 {
     const uint8_t *p = (const uint8_t *)cfg;
     int total = cfg->wTotalLength, off = 0;
-    bool in_midi = false;
 
-    s_in_ep = s_out_ep = 0;
+    ESP_LOGW(TAG, "%s — config has %u interface(s), %u bytes",
+        why, cfg->bNumInterfaces, (unsigned)total);
     while (off + 2 <= total) {
         const usb_standard_desc_t *d = (const usb_standard_desc_t *)(p + off);
         if (d->bLength == 0)
             break;
         if (d->bDescriptorType == DESC_TYPE_INTERFACE) {
             const usb_intf_desc_t *intf = (const usb_intf_desc_t *)d;
-            in_midi = (intf->bInterfaceClass == IFACE_CLASS_AUDIO &&
-                       intf->bInterfaceSubClass == IFACE_SUBCLASS_MIDI);
-            if (in_midi)
+            ESP_LOGW(TAG, "  itf %u alt %u: class 0x%02x sub 0x%02x ep %u",
+                intf->bInterfaceNumber, intf->bAlternateSetting,
+                intf->bInterfaceClass, intf->bInterfaceSubClass,
+                intf->bNumEndpoints);
+        }
+        off += d->bLength;
+    }
+}
+
+/* Locate the MIDI Streaming interface (Audio class, subclass 0x03) and its bulk
+ * IN/OUT endpoints. Two-pass walk: composite devices (CDC+MSC+MIDI) interleave
+ * many interfaces; tracking a single in_midi flag across the whole config is
+ * fragile when class-specific descriptors sit between interface headers. */
+static bool find_midi_endpoints(const usb_config_desc_t *cfg)
+{
+    const uint8_t *p = (const uint8_t *)cfg;
+    int total = cfg->wTotalLength, off = 0;
+    bool found_ms = false;
+
+    s_in_ep = s_out_ep = 0;
+
+    while (off + 2 <= total) {
+        const usb_standard_desc_t *d = (const usb_standard_desc_t *)(p + off);
+        if (d->bLength == 0)
+            break;
+        if (d->bDescriptorType == DESC_TYPE_INTERFACE) {
+            const usb_intf_desc_t *intf = (const usb_intf_desc_t *)d;
+            if (intf->bInterfaceClass == IFACE_CLASS_AUDIO &&
+                intf->bInterfaceSubClass == IFACE_SUBCLASS_MIDI) {
                 s_iface_num = intf->bInterfaceNumber;
-        } else if (d->bDescriptorType == DESC_TYPE_ENDPOINT && in_midi) {
+                found_ms = true;
+                break;
+            }
+        }
+        off += d->bLength;
+    }
+    if (!found_ms)
+        return false;
+
+    off = 0;
+    bool in_target = false;
+    while (off + 2 <= total) {
+        const usb_standard_desc_t *d = (const usb_standard_desc_t *)(p + off);
+        if (d->bLength == 0)
+            break;
+        if (d->bDescriptorType == DESC_TYPE_INTERFACE) {
+            const usb_intf_desc_t *intf = (const usb_intf_desc_t *)d;
+            in_target = (intf->bInterfaceNumber == s_iface_num);
+        } else if (d->bDescriptorType == DESC_TYPE_ENDPOINT && in_target) {
             const usb_ep_desc_t *ep = (const usb_ep_desc_t *)d;
             if ((ep->bmAttributes & EP_XFER_TYPE_MASK) == EP_XFER_TYPE_BULK) {
                 uint16_t mps = ep->wMaxPacketSize & 0x07FF;
                 if (ep->bEndpointAddress & EP_DIR_IN) {
-                    s_in_ep = ep->bEndpointAddress; s_in_mps = mps;
+                    s_in_ep = ep->bEndpointAddress;
+                    s_in_mps = mps;
                 } else {
-                    s_out_ep = ep->bEndpointAddress; s_out_mps = mps;
+                    s_out_ep = ep->bEndpointAddress;
+                    s_out_mps = mps;
                 }
             }
         }
@@ -188,8 +234,14 @@ static void open_device(uint8_t addr)
         close_device();
         return;
     }
+    {
+        const usb_device_desc_t *dev_desc = NULL;
+        if (usb_host_get_device_descriptor(s_dev, &dev_desc) == ESP_OK && dev_desc) {
+            ESP_LOGI(TAG, "device %04x:%04x", dev_desc->idVendor, dev_desc->idProduct);
+        }
+    }
     if (!find_midi_endpoints(cfg)) {
-        ESP_LOGW(TAG, "no USB-MIDI (Audio/MIDIStreaming) interface on device");
+        log_config_interfaces(cfg, "no USB-MIDI (Audio/MIDIStreaming) interface");
         close_device();
         return;
     }

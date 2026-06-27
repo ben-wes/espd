@@ -127,6 +127,9 @@ if(CONFIG_ESPD_USE_USB_MIDI)
         "../pd/src/s_midi.c"
         "../pd/src/x_midi.c"
     )
+    # Pd MIDI: heap queues avoid ~64 KiB internal BSS (P4 SMP boot with s_midi+x_midi).
+    set_source_files_properties(../pd/src/s_midi.c
+        PROPERTIES COMPILE_DEFINITIONS "PD_MIDI_DYNAMIC_QUEUES")
 endif()
 
 if(CONFIG_ESPD_USE_USB_MIDI_HOST)
@@ -149,6 +152,7 @@ if(CONFIG_ESPD_USE_WIFI)
         # opens the gate and runs the real init from app_main. Keeps esp_hosted a
         # stock, unpatched managed component.
         idf_build_set_property(LINK_OPTIONS "-Wl,--wrap=esp_hosted_init" APPEND)
+        target_link_options(${_main_lib} PRIVATE "-Wl,--wrap=esp_hosted_init")
     endif()
 endif()
 

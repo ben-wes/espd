@@ -23,7 +23,10 @@
 #include "../pd/src/m_pd.h"
 #include "../pd/src/s_stuff.h"
 
+#include "esp_log.h"
 #include <string.h>
+
+static const char *TAG = "espd_midi";
 
 #define ESPD_MIDI_USB \
     (CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MIDI)
@@ -36,9 +39,6 @@
 #include "tusb.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/stream_buffer.h"
-#include "esp_log.h"
-
-static const char *TAG = "espd_midi";
 
 #define ESPD_MIDI_RX_BUF   2048
 static StreamBufferHandle_t s_rx_stream;

@@ -19,6 +19,7 @@ patches=(
   "pd-d_math-expf-logf.patch"
   "pd-d_arithmetic-powf-logf.patch"
   "pd-fft-ooura-internal-ram.patch"
+  "pd-midi-dynamic-queues-esp.patch"
 )
 
 for p in "${patches[@]}"; do
