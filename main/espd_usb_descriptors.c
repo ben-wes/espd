@@ -7,6 +7,7 @@
  */
 
 #include "espd_usb_descriptors.h"
+#include "espd_config_file.h"
 
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MIDI
 
@@ -41,6 +42,22 @@ enum {
     ITF_NUM_MIDI_STREAMING,
     ITF_NUM_TOTAL,
 };
+
+/* CDC+MIDI only (no MSC) — used when usb_midi_role=device so the host cannot
+ * seize the flash LUN over SCSI while CDC dev sync is active. */
+enum {
+    ITF_NOMSC_CDC = 0,
+    ITF_NOMSC_CDC_DATA,
+    ITF_NOMSC_MIDI,
+    ITF_NOMSC_MIDI_STREAMING,
+    ITF_NOMSC_TOTAL,
+};
+
+#define EPNUM_NOMSC_CDC_NOTIF   0x81
+#define EPNUM_NOMSC_CDC_OUT     0x02
+#define EPNUM_NOMSC_CDC_IN      0x82
+#define EPNUM_NOMSC_MIDI_OUT    0x03
+#define EPNUM_NOMSC_MIDI_IN     0x83
 
 /* ─── Endpoint addresses (full speed). IN endpoints consume the scarce
  * ESP32-S3 IN-endpoint budget; keep them contiguous and assert the total. ─── */
@@ -115,7 +132,10 @@ static const tusb_desc_device_t s_device_desc = {
      + (ESPD_USB_HAS_MSC ? TUD_MSC_DESC_LEN : 0) \
      + TUD_MIDI_DESC_LEN)
 
-static const uint8_t s_fs_config[] = {
+#define ESPD_USB_NOMSC_CONFIG_TOTAL_LEN \
+    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_MIDI_DESC_LEN)
+
+static const uint8_t s_fs_config_msc[] = {
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, ESPD_USB_CONFIG_TOTAL_LEN, 0x00, 100),
 
     /* CDC: serial monitor (Pd print / ESP_LOG) */
@@ -133,11 +153,23 @@ static const uint8_t s_fs_config[] = {
                         ESPD_USB_FS_EP_SIZE),
 };
 
+#if ESPD_USB_HAS_MSC
+static const uint8_t s_fs_config_nomsc[] = {
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NOMSC_TOTAL, 0, ESPD_USB_NOMSC_CONFIG_TOTAL_LEN, 0x00, 100),
+
+    TUD_CDC_DESCRIPTOR(ITF_NOMSC_CDC, STRID_CDC, EPNUM_NOMSC_CDC_NOTIF, 8,
+                       EPNUM_NOMSC_CDC_OUT, EPNUM_NOMSC_CDC_IN, ESPD_USB_FS_EP_SIZE),
+
+    TUD_MIDI_DESCRIPTOR(ITF_NOMSC_MIDI, STRID_MIDI, EPNUM_NOMSC_MIDI_OUT, EPNUM_NOMSC_MIDI_IN,
+                        ESPD_USB_FS_EP_SIZE),
+};
+#endif
+
 #if ESPD_USB_HAS_HS_DESC
 /* P4 (and other HS ports): host negotiates high speed and uses this descriptor.
  * Without it, esp_tinyusb falls back to the auto-generated HS config (CDC+MSC
  * only — no MIDI class). */
-static const uint8_t s_hs_config[] = {
+static const uint8_t s_hs_config_msc[] = {
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, ESPD_USB_CONFIG_TOTAL_LEN, 0x00, 100),
 
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, EPNUM_CDC_NOTIF, 8,
@@ -152,6 +184,18 @@ static const uint8_t s_hs_config[] = {
                         ESPD_USB_HS_EP_SIZE),
 };
 
+#if ESPD_USB_HAS_MSC
+static const uint8_t s_hs_config_nomsc[] = {
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NOMSC_TOTAL, 0, ESPD_USB_NOMSC_CONFIG_TOTAL_LEN, 0x00, 100),
+
+    TUD_CDC_DESCRIPTOR(ITF_NOMSC_CDC, STRID_CDC, EPNUM_NOMSC_CDC_NOTIF, 8,
+                       EPNUM_NOMSC_CDC_OUT, EPNUM_NOMSC_CDC_IN, ESPD_USB_HS_EP_SIZE),
+
+    TUD_MIDI_DESCRIPTOR(ITF_NOMSC_MIDI, STRID_MIDI, EPNUM_NOMSC_MIDI_OUT, EPNUM_NOMSC_MIDI_IN,
+                        ESPD_USB_HS_EP_SIZE),
+};
+#endif
+
 #endif /* ESPD_USB_HAS_HS_DESC */
 
 void espd_usb_apply_midi_descriptor(tinyusb_config_t *cfg)
@@ -162,10 +206,20 @@ void espd_usb_apply_midi_descriptor(tinyusb_config_t *cfg)
     cfg->descriptor.qualifier         = NULL;
     cfg->descriptor.string            = s_str_desc;
     cfg->descriptor.string_count      = sizeof(s_str_desc) / sizeof(s_str_desc[0]);
-    cfg->descriptor.full_speed_config = s_fs_config;
+#if ESPD_USB_HAS_MSC
+    if (g_espd_cfg.usb_midi_mode == ESPD_USB_MIDI_DEVICE) {
+        cfg->descriptor.full_speed_config = s_fs_config_nomsc;
 #if ESPD_USB_HAS_HS_DESC
-    cfg->descriptor.high_speed_config = s_hs_config;
+        cfg->descriptor.high_speed_config = s_hs_config_nomsc;
 #endif
+    } else
+#endif
+    {
+        cfg->descriptor.full_speed_config = s_fs_config_msc;
+#if ESPD_USB_HAS_HS_DESC
+        cfg->descriptor.high_speed_config = s_hs_config_msc;
+#endif
+    }
 }
 
 #endif /* CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MIDI */

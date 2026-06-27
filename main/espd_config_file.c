@@ -96,9 +96,13 @@ void espd_config_load(void)
         /* USB MIDI mode: omit key for OFF; device | host to enable */
         if (!strcmp(k, "usb_midi_role"))
         {
-            if (!strcasecmp(v, "host"))
+            if (!strcasecmp(v, "host")) {
+#if CONFIG_ESPD_USE_USB_MIDI_HOST
                 g_espd_cfg.usb_midi_mode = ESPD_USB_MIDI_HOST;
-            else if (!strcasecmp(v, "device"))
+#else
+                ESP_LOGW(TAG, "ignoring usb_midi_role=host (USB-MIDI host not enabled)");
+#endif
+            } else if (!strcasecmp(v, "device"))
                 g_espd_cfg.usb_midi_mode = ESPD_USB_MIDI_DEVICE;
             else if (*v)
                 ESP_LOGW(TAG, "ignoring usb_midi_role=%s (use device or host)", v);

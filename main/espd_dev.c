@@ -399,7 +399,7 @@ static int dev_put_commit(const char *final_full)
         return -1;
     unlink(final_full);
     if (rename(s_put_tmp, final_full) != 0) {
-        ESP_LOGW(TAG, "rename %s failed (%d)", s_put_rel, errno);
+        ESP_LOGW(TAG, "rename %s -> %s failed (%d)", s_put_tmp, final_full, errno);
         dev_put_cleanup_temp();
         return -1;
     }
@@ -685,17 +685,17 @@ static void dev_put_finish(void)
     }
     if (!dev_build_path(final_full, sizeof(final_full), s_put_rel)) {
         dev_put_cleanup_temp();
-        dev_reply("-ERR commit failed");
+        dev_reply("-ERR commit failed (path)");
         return;
     }
 
 #if CONFIG_SPIRAM
     if (s_put_buf) {
-        /* Write validated buffer directly to the final path — no .tmp needed. */
         FILE *fp = fopen(final_full, "wb");
         if (!fp) {
+            ESP_LOGW(TAG, "PUT commit fopen %s failed (%d)", final_full, errno);
             dev_put_cleanup_temp();
-            dev_reply("-ERR commit failed");
+            dev_reply("-ERR commit failed (open)");
             return;
         }
         size_t written = fwrite(s_put_buf, 1, s_put_total, fp);
@@ -704,8 +704,9 @@ static void dev_put_finish(void)
         s_put_buf = NULL;
         s_put_buf_pos = 0;
         if (written != s_put_total) {
+            ESP_LOGW(TAG, "PUT commit fwrite %s: %zu/%zu", final_full, written, s_put_total);
             unlink(final_full);
-            dev_reply("-ERR commit failed");
+            dev_reply("-ERR commit failed (write)");
             return;
         }
     } else
@@ -717,7 +718,7 @@ static void dev_put_finish(void)
         fflush(fp);
         fclose(fp);
         if (dev_put_commit(final_full) != 0) {
-            dev_reply("-ERR commit failed");
+            dev_reply("-ERR commit failed (rename)");
             return;
         }
     }

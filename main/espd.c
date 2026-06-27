@@ -14,7 +14,6 @@
 #include "espd_storage.h"
 #include "bsp/bsp_io.h"
 #include "../pd/src/m_pd.h"
-
 #if CONFIG_ESPD_USE_USB_OTG
 #include <tinyusb.h>
 #include <tinyusb_cdc_acm.h>
@@ -55,13 +54,8 @@ static void espd_wifi_config_defaults(void)
 
 static int espd_wifi_config_txt_allows_sta(void)
 {
-    if (!espd_storage_config_path()) {
-#ifdef ESPD_USE_SDCARD
+    if (!espd_storage_config_path())
         return 0;
-#else
-        return 1;
-#endif
-    }
     return g_espd_cfg.wifi_have_ssid;
 }
 #endif /* ESPD_USE_WIFI */
@@ -294,32 +288,6 @@ void app_main(void)
         wifi_prepare_phy();
 #endif
 
-#if CONFIG_ESPD_USE_USB_OTG
-    /* usb_midi_mode from config.txt: OFF = CDC+MSC, DEVICE = +MIDI class, HOST = OTG host.
-     * Mutually exclusive — one OTG PHY. */
-    bool usb_host_mode = (g_espd_cfg.usb_midi_mode == ESPD_USB_MIDI_HOST);
-#if !CONFIG_ESPD_USE_USB_MIDI_HOST
-    if (usb_host_mode) {
-        ESP_LOGW(TAG, "config.txt usb_midi_role=host, but USB-MIDI host not compiled "
-            "(enable ESPD_USE_USB_MIDI_HOST) — falling back to device mode");
-        usb_host_mode = false;
-    }
-#endif
-    if (usb_host_mode) {
-#if CONFIG_ESPD_USE_USB_MIDI_HOST
-        ESP_LOGI(TAG, "USB MIDI: host. Serial monitor unavailable while hosting.");
-        if (espd_usb_host_midi_start() != ESP_OK)
-            ESP_LOGE(TAG, "USB host: start failed");
-#endif
-    } else {
-        const char *midi_name = (g_espd_cfg.usb_midi_mode == ESPD_USB_MIDI_DEVICE)
-            ? "device (CDC+MSC+MIDI)" : "off (CDC+MSC only)";
-        ESP_LOGI(TAG, "USB MIDI: %s", midi_name);
-        if (!espd_usb_start_after_wifi())
-            ESP_LOGE(TAG, "USB: boot init failed");
-    }
-#endif
-
 #ifdef ESPD_USE_WIFI
     if (espd_wifi_net_enabled)
         wifi_start_sta();
@@ -378,41 +346,81 @@ void app_main(void)
     }
 #endif
 
+#if CONFIG_ESPD_USE_USB_OTG
+    /* OTG: TinyUSB + MSC mount before touching I2S. Pd loads from /storage first;
+     * codec comes up last so flash/USB setup cannot disturb the ES8311 path. */
+    bool usb_host_mode = false;
+#if CONFIG_ESPD_USE_USB_MIDI_HOST
+    usb_host_mode = (g_espd_cfg.usb_midi_mode == ESPD_USB_MIDI_HOST);
+#else
+    if (g_espd_cfg.usb_midi_mode == ESPD_USB_MIDI_HOST) {
+        ESP_LOGW(TAG, "config.txt usb_midi_role=host, but USB-MIDI host not "
+            "compiled — falling back to device mode");
+    }
+#endif
+    if (usb_host_mode) {
+#if CONFIG_ESPD_USE_USB_MIDI_HOST
+        ESP_LOGI(TAG, "USB MIDI: host. Serial monitor unavailable while hosting.");
+        if (espd_usb_host_midi_start() != ESP_OK)
+            ESP_LOGE(TAG, "USB host: start failed");
+#endif
+    } else {
+        const char *midi_name = (g_espd_cfg.usb_midi_mode == ESPD_USB_MIDI_DEVICE)
+            ? "device (CDC+MSC+MIDI)" : "off (CDC+MSC only)";
+        ESP_LOGI(TAG, "USB MIDI: %s", midi_name);
+        if (!espd_usb_start_after_wifi())
+            ESP_LOGE(TAG, "USB: boot init failed");
+    }
+
 #if CONFIG_ESPD_USE_USB_MSC
 #if CONFIG_ESPD_DEV_CDC_SYNC
-    /* Dev-sync CDC is up before drive-mode gate so STATUS/RESET work if needed. */
-    espd_dev_init();
-    esp_log_set_vprintf(espd_serial_sync_log);
-#endif
-
 #ifdef ESPD_USE_SDCARD
     if (espd_storage_sdcard_ready()) {
-        /* SD card is the patch store, so the internal flash is NOT Pd's — there is
-         * no conflict. Expose the internal flash to the host as a USB drive AND run
-         * Pd from /sdcard concurrently; never halt for an eject. (No-op if no host
-         * is attached; the drive stays available for whenever one shows up.) */
         (void)espd_usb_expose_msc_to_host();
         ESP_LOGI(TAG, "SD card is the store: internal flash exposed to host, Pd runs");
-    } else
+    }
+    /* Flash-only + CDC sync: composite stays up through pdmain_init; MSC host
+     * expose runs after Pd boot (below). */
 #endif
-    {
-        /* Internal flash is Pd's only store: it cannot be both a host USB drive and
-         * the app's /storage at once. On a real power-on with a host attached, enter
-         * drive mode (Pd suspended until eject); a software reset — notably the
-         * dev-sync RESET — returns straight to Pd so the host can't re-grab it. Then
-         * hand the flash to the app (direct VFS) so the host can never auto-mount it
-         * while Pd is running. */
+#else /* !CONFIG_ESPD_DEV_CDC_SYNC — legacy drive-mode gate */
+    if (!usb_host_mode) {
         if (esp_reset_reason() == ESP_RST_POWERON
             && espd_usb_msc_storage_present()
             && espd_usb_wait_for_host(pdMS_TO_TICKS(2000))) {
             espd_usb_drive_mode_wait();
         }
         espd_usb_msc_disable_and_remount_vfs();
+    } else {
+        ESP_LOGI(TAG, "USB host mode: keeping early /storage VFS (no MSC teardown)");
     }
 #endif
+#endif /* CONFIG_ESPD_USE_USB_MSC */
 
+    pdmain_init();
+    espd_initdacs();
+#else
     espd_initdacs();
     pdmain_init();
+#endif
+
+    ESP_LOGI(TAG, "codec=%s", s_audio ? "ok" : "FAILED");
+
+#if CONFIG_ESPD_USE_USB_MSC && CONFIG_ESPD_DEV_CDC_SYNC
+    /* OTG CDC boards (c6342f5): keep the composite through Pd boot; expose MSC
+     * after pdmain_init. Skip host MSC when USB-MIDI device — composite must stay
+     * intact for a USB host (e.g. P4 Type-A). */
+    if (espd_usb_msc_storage_present()
+#if CONFIG_ESPD_USE_USB_MIDI
+        && g_espd_cfg.usb_midi_mode != ESPD_USB_MIDI_DEVICE
+#endif
+    ) {
+        esp_err_t exp = espd_usb_expose_msc_to_host();
+        if (exp == ESP_OK)
+            ESP_LOGI(TAG, "USB: /storage exposed to host");
+        else
+            ESP_LOGW(TAG, "USB: host MSC expose: %s", esp_err_to_name(exp));
+    }
+#endif
 
     espd_aout_init();
     espd_dout_init();
@@ -437,14 +445,10 @@ void app_main(void)
     while (1)
     {
         uint64_t t0 = (uint64_t)esp_timer_get_time();
-        if (!espd_dev_sync_active()) {
-            pd_pollhost();
-            espd_pd_io_poll();
-            pdmain_tick();
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(1));
-        }
+        pd_pollhost();
+        espd_pd_io_poll();
         espd_dev_sync_poll();
+        pdmain_tick();
         cputime += (unsigned int)((uint64_t)esp_timer_get_time() - t0);
         senddacs();
     }

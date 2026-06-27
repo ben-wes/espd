@@ -7,6 +7,7 @@
 #include "espd_usb.h"
 #include "espd_storage.h"
 #include "espd_config_file.h"
+#include "bsp/bsp_io.h"
 
 #include <esp_system.h>
 #include <esp_partition.h>
@@ -82,6 +83,7 @@ static esp_err_t espd_usb_unmount_flash_early_vfs(void)
     wl_handle = WL_INVALID_HANDLE;
     return err;
 }
+
 /* ─── Dynamic storage partition ─── */
 
 /* Register a FAT "storage" partition spanning all flash after the last partition
@@ -248,7 +250,7 @@ static void espd_usb_msc_event_callback(tinyusb_msc_storage_handle_t handle,
 static esp_err_t espd_usb_msc_driver_ensure(void)
 {
     tinyusb_msc_driver_config_t msc_drv_cfg = {
-        .user_flags.auto_mount_off = (esp_reset_reason() != ESP_RST_POWERON),
+        .user_flags.auto_mount_off = 1,
         .callback = espd_usb_msc_event_callback,
         .callback_arg = NULL,
     };
@@ -509,7 +511,7 @@ static bool usb_init_on_core0(void)
 
     espd_usb_release_usj_for_otg();
 
-#if CONFIG_ESPD_USE_USB_MSC
+#if CONFIG_ESPD_USE_USB_MSC && !CONFIG_ESPD_DEV_CDC_SYNC
     if (espd_usb_msc_driver_ensure() != ESP_OK)
         ESP_LOGW(TAG, "MSC driver pre-install failed");
 #endif
@@ -523,7 +525,7 @@ static bool usb_init_on_core0(void)
      * at runtime (usb_midi_role=device). */
     if (g_espd_cfg.usb_midi_mode == ESPD_USB_MIDI_DEVICE) {
         espd_usb_apply_midi_descriptor(&tusb_cfg);
-        ESP_LOGI(TAG, "USB composite descriptor includes MIDI");
+        ESP_LOGI(TAG, "USB composite: CDC+MIDI (MSC omitted — /storage stays app-writable)");
     }
 #endif
 #if CONFIG_IDF_TARGET_ESP32P4 && CONFIG_ESPD_USB_VBUS_MONITOR_GPIO >= 0
@@ -532,6 +534,7 @@ static bool usb_init_on_core0(void)
     err = tinyusb_driver_install(&tusb_cfg);
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "TinyUSB install failed: %s", esp_err_to_name(err));
+        (void)bsp_led_fill(32, 0, 0);
         return false;
     }
 
@@ -548,6 +551,7 @@ static bool usb_init_on_core0(void)
     err = tinyusb_cdcacm_init(&acm_cfg);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "CDC init: %s", esp_err_to_name(err));
+        (void)bsp_led_fill(32, 0, 0);
         return false;
     }
 
@@ -565,6 +569,18 @@ static bool usb_init_on_core0(void)
 #endif
 
 #if CONFIG_ESPD_USE_USB_MSC
+#if CONFIG_ESPD_DEV_CDC_SYNC
+    /* CDC dev sync uses PUT to /storage; keep direct FAT (early VFS) so the host
+     * cannot block writes via the MSC class while the CDC port is open. */
+    if (!s_flash_vfs_early) {
+        err = espd_usb_mount_flash_early_vfs();
+        if (err != ESP_OK)
+            ESP_LOGW(TAG, "/storage early VFS mount failed: %s", esp_err_to_name(err));
+        else
+            espd_storage_resolve_paths();
+    }
+    ESP_LOGI(TAG, "/storage on direct VFS (CDC dev sync)");
+#else
     if (msc_handle == NULL && !s_msc_disabled_after_eject) {
         err = espd_usb_mount_storage_app();
         if (err != ESP_OK)
@@ -573,7 +589,9 @@ static bool usb_init_on_core0(void)
             espd_storage_resolve_paths();
     }
 #endif
+#endif
     ESP_LOGI(TAG, "ready (cu.usbmodem%s1)", CONFIG_TINYUSB_DESC_SERIAL_STRING);
+    (void)bsp_led_fill(0, 32, 0);
     return true;
 }
 
