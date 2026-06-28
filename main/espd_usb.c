@@ -518,15 +518,22 @@ static bool usb_init_on_core0(void)
     tusb_cfg = TINYUSB_DEFAULT_CONFIG();
     tusb_cfg.task = TINYUSB_TASK_CUSTOM(
         TINYUSB_DEFAULT_TASK_SIZE, ESPD_USB_DEVICE_TASK_PRIO, ESPD_USB_TASK_CORE);
+    {
+        bool custom_desc = false;
 #if CONFIG_ESPD_USE_USB_MIDI
-    /* esp_tinyusb's auto descriptor builder cannot add the MIDI class, so supply
-     * a hand-built composite (CDC [+MSC] + MIDI) descriptor when MIDI is enabled
-     * at runtime (usb_midi_role=device). */
-    if (g_espd_cfg.usb_midi_mode == ESPD_USB_MIDI_DEVICE) {
-        espd_usb_apply_midi_descriptor(&tusb_cfg);
-        ESP_LOGI(TAG, "USB composite: CDC+MIDI (MSC omitted — /storage stays app-writable)");
-    }
+        if (g_espd_cfg.usb_midi_mode == ESPD_USB_MIDI_DEVICE) {
+            espd_usb_apply_midi_descriptor(&tusb_cfg);
+            custom_desc = true;
+            ESP_LOGI(TAG, "USB composite: CDC+MIDI (MSC omitted)");
+        }
 #endif
+#if CONFIG_ESPD_DEV_CDC_SYNC
+        if (!custom_desc) {
+            espd_usb_apply_cdc_sync_descriptor(&tusb_cfg);
+            ESP_LOGI(TAG, "USB: CDC only (dev sync — MSC omitted)");
+        }
+#endif
+    }
 #if CONFIG_IDF_TARGET_ESP32P4 && CONFIG_ESPD_USB_VBUS_MONITOR_GPIO >= 0
     espd_usb_apply_p4_vbus_sense(&tusb_cfg);
 #endif

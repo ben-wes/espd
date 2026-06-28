@@ -120,10 +120,13 @@ if(CONFIG_ESPD_USE_USB_OTG)
     endif()
 endif()
 
+if(CONFIG_ESPD_USE_USB_MIDI OR CONFIG_ESPD_DEV_CDC_SYNC)
+    target_sources(${COMPONENT_LIB} PRIVATE "espd_usb_descriptors.c")
+endif()
+
 if(CONFIG_ESPD_USE_USB_MIDI)
     target_sources(${COMPONENT_LIB} PRIVATE
         "espd_midi.c"
-        "espd_usb_descriptors.c"
         "../pd/src/s_midi.c"
         "../pd/src/x_midi.c"
     )
