@@ -1195,20 +1195,15 @@ bool espd_dev_pdmsg_take(char *out, size_t outsz)
     return true;
 }
 
-bool espd_dev_sync_active(void)
-{
-    return s_sync_active;
-}
-
-void espd_dev_sync_poll(void)
+bool espd_dev_sync_poll(void)
 {
     if (espd_dev_reload_pending()) {
         ESP_LOGI(TAG, "RELOAD executing from %s", espd_dev_reload_dir());
         pdmain_reload_patch_from(espd_dev_reload_dir());
         espd_dev_clear_reload_pending();
     }
-    {
-        char pdmsg[272];
+    if (s_pdmsg_pending) {
+        char pdmsg[ESPD_DEV_LINE_MAX + 16];
         if (espd_dev_pdmsg_take(pdmsg, sizeof(pdmsg))) {
             size_t n = strlen(pdmsg);
             if (n > 0 && pdmsg[n - 1] != ';' && n + 1 < sizeof(pdmsg)) {
@@ -1219,6 +1214,7 @@ void espd_dev_sync_poll(void)
                 pd_sendmsg(pdmsg, (int)n);
         }
     }
+    return s_sync_active;
 }
 
 #else /* !CONFIG_ESPD_DEV_SYNC */
@@ -1233,7 +1229,6 @@ bool espd_dev_pdmsg_take(char *out, size_t outsz)
     (void)outsz;
     return false;
 }
-bool espd_dev_sync_active(void) { return false; }
-void espd_dev_sync_poll(void) {}
+bool espd_dev_sync_poll(void) { return false; }
 
 #endif /* CONFIG_ESPD_DEV_SYNC */

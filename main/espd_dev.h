@@ -18,10 +18,8 @@ const char *espd_dev_reload_dir(void);
 /** Copy one queued MSG line (audio thread only); clears pending. */
 bool espd_dev_pdmsg_take(char *out, size_t outsz);
 
-/** Poll dev sync reload/messages. Must be called on the audio thread synchronously with Pd. */
-void espd_dev_sync_poll(void);
-
-/** Returns true if a SYNC operation (PUT) is currently in progress. */
-bool espd_dev_sync_active(void);
+/** Audio-thread hook: pending RELOAD/MSG. Returns true while a host dev-sync batch is
+ *  in progress (PUT/LIST/… until RELOAD/STATUS); skip Pd ticks when true. */
+bool espd_dev_sync_poll(void);
 
 extern bool g_espd_pd_running;
