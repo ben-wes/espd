@@ -156,31 +156,45 @@ On **ESP32-S3**, for example:
 Classic **ESP32** keeps smaller flash partitions and IDF’s default 512-byte WL
 (see `sdkconfig.defaults.esp32`).
 
-### USB OTG + `/storage` (board YAML only)
+### USB OTG kits
 
-Add this to your board YAML **only if** the kit has OTG, internal-flash MSC, and
-`espd_sync` (see [espd-kits](https://github.com/ben-wes/espd-kits) for a full example):
+OTG **ESPD policy** (enable OTG, dev sync, CDC vs serial backend, MSC off, MIDI)
+comes from **Kconfig** — board `features.imply` turns on `ESPD_USE_USB_OTG`,
+`ESPD_USE_USB_MIDI`, etc. Do **not** repeat those in `profile:`.
+
+`gen_board_plugins.py` only fills **IDF console/PHY glue** Kconfig cannot express
+(`ESP_CONSOLE_NONE`, USJ off, `ESP_PHY_ENABLE_USB` on Wi‑Fi + OTG S3).
+
+Minimal OTG + CDC dev-sync board:
 
 ```yaml
 features:
   imply:
     - ESPD_USE_USB_OTG
+    - ESPD_USE_SDCARD
+```
+
+OTG + USB MIDI (host vs device is board-specific — pin in `profile:`):
+
+```yaml
+features:
+  imply:
+    - ESPD_USE_USB_OTG
+    - ESPD_USE_USB_MIDI
 
 profile:
-  USB OTG:
-    ESPD_USE_USB_OTG: y
-    ESPD_USE_USB_MSC: y
-    TINYUSB_MSC_ENABLED: y
-    TINYUSB_CDC_ENABLED: y
-    ESPD_DEV_CDC_SYNC: y
-    ESP_CONSOLE_NONE: y   # when logs go to OTG CDC
+  USB MIDI:
+    ESPD_USE_USB_MIDI_HOST: n   # or y on P4 Nano MIDI
 ```
+
+UART dev sync on a separate port (P4 CH343) — keep `ESPD_DEV_SERIAL_SYNC` in
+`profile:`; Kconfig defaults CDC sync only when OTG + SD without that override.
 
 Do **not** set `WL_SECTOR_SIZE_*` or `TINYUSB_MSC_BUFSIZE` in the board file —
 they live in **`sdkconfig.defaults.esp32s3`**. After changing WL sector size,
 reformat `/storage` once ([DEV_SYNC.md — Reformat internal flash](DEV_SYNC.md#reformat-internal-flash-storage)).
 
-SD-only kits: skip the USB OTG block; enable `ESPD_USE_SDCARD` only.
+SD-only kits without OTG: skip `ESPD_USE_USB_OTG`; enable `ESPD_USE_SDCARD` only.
 
 SD-card expander detect (`BSP_SD_DET`) is handled automatically by the shared
 I/O glue when the esp-bsp header defines it.

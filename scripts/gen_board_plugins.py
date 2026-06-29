@@ -163,6 +163,21 @@ def _profile_has_wifi(data: dict) -> bool:
     return _feature_implied(data, "ESPD_USE_WIFI")
 
 
+def _usb_otg_board_active(data: dict) -> bool:
+    """OTG implied by features and not explicitly disabled in profile."""
+    if not _profile_has_usb_otg(data):
+        return False
+    if str(data.get("target")) not in _USB_OTG_TARGETS:
+        return False
+    profile = data.get("profile") or {}
+    for options in profile.values():
+        if isinstance(options, dict):
+            val = options.get("ESPD_USE_USB_OTG")
+            if val is not None and not _kconfig_value(val):
+                return False
+    return True
+
+
 def _otg_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str, object]]:
     """Hand the shared USB PHY to OTG: console off, USB Serial/JTAG off.
 
@@ -172,17 +187,7 @@ def _otg_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str,
     by putting any ESP_CONSOLE_* member in its profile (e.g. keep a UART
     primary on a board that exposes one), and the matching default is skipped.
     """
-    # Profile may explicitly disable USB OTG (overrides features.imply).
-    profile = data.get("profile") or {}
-    usb_otg_disabled = False
-    for options in profile.values():
-        if isinstance(options, dict):
-            val = options.get("ESPD_USE_USB_OTG")
-            if val is not None and not _kconfig_value(val):
-                usb_otg_disabled = True
-                break
-
-    if not _profile_has_usb_otg(data) or usb_otg_disabled or str(data.get("target")) not in _USB_OTG_TARGETS:
+    if not _usb_otg_board_active(data):
         return []
     
     _CONSOLE_PRIMARY_MEMBERS = {
@@ -370,11 +375,11 @@ def _gen_sdkconfig_defaults(data: dict, src: str) -> str:
     # Cache feature checks
     has_usb_otg = _profile_has_usb_otg(data)
     has_wifi = _profile_has_wifi(data)
-    
-    extras = _otg_sdkconfig_extras(data, profile_keys) if has_usb_otg else []
-    if extras:
+
+    otg_console = _otg_sdkconfig_extras(data, profile_keys) if has_usb_otg else []
+    if otg_console:
         lines.append("# --- USB OTG console handoff (auto) ---\n\n")
-        for key, value in extras:
+        for key, value in otg_console:
             lines.append(_config_line(key, value))
         lines.append("\n")
     coexist = _wifi_usb_coexist_extras(data, profile_keys) if has_usb_otg and has_wifi else []

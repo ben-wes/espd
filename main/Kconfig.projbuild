@@ -124,12 +124,13 @@ config ESPD_USE_USB_OTG
     bool "Enable TinyUSB device stack on OTG port"
     depends on SOC_USB_OTG_SUPPORTED
     default n
+    imply ESPD_DEV_SYNC
     help
         USB device on the OTG port (ESP32-S3, ESP32-P4). Enables OTG CDC
-        (Pd printf, ESP_LOG on cu.usbmodem*) and, by default, internal-flash
-        USB mass storage. Uncheck MSC if you do not want a host-visible data partition.
-        Patch sync (espd_sync) is a separate option and needs microSD.
-        Requires CONFIG_ESP_CONSOLE_NONE (a board profile may set this).
+        (Pd printf, ESP_LOG on cu.usbmodem*) for monitor and espd_sync.
+        USB mass storage and MIDI are separate options (off by default on
+        shipped kits). Requires CONFIG_ESP_CONSOLE_NONE (set automatically
+        for OTG boards in generated sdkconfig.defaults).
 
         Reflash: BOOT + RESET (download mode), then idf.py flash — not
         cu.debug-console on macOS (esptool often gets no data there). App
@@ -142,25 +143,23 @@ if ESPD_USE_USB_OTG
     config ESPD_USE_USB_MSC
         bool "USB mass storage (internal flash drive)"
         select TINYUSB_MSC_ENABLED
-        default y
+        default n
         help
             Expose the "storage" partition as a USB drive. Slow; shares flash
-            with the CPU. Rapid dev uses SD only — uncheck if you do not need
-            the drive on the same cable.
+            with the CPU. Shipped OTG kits leave this off; dev sync uses CDC PUT.
 
     config ESPD_USE_USB_MIDI
         bool "USB MIDI port (native Pd MIDI objects)"
-        default y
+        default n
         help
             Compile Pd's native MIDI objects ([notein], [ctlin], [noteout], …),
             the platform MIDI backend (espd_midi.c), and the USB MIDI device
-            class so the host can see the board as a MIDI interface. Runs
-            alongside the CDC serial monitor on the same cable via a composite
-            descriptor. When disabled, MIDI code is omitted from the firmware.
+            class so the host can see the board as a MIDI interface. Enable
+            per board via features.imply in boards/*.yaml.
 
             At runtime, USB MIDI is active only when config.txt sets
             usb_midi_role=device or usb_midi_role=host; omit the key and MIDI
-            stays off (CDC and MSC still run).
+            stays off.
 
             Adds one IN + one OUT endpoint. CDC + MSC + MIDI is near the
             ESP32-S3 endpoint limit; if you hit it, disable USB mass storage.
@@ -171,7 +170,7 @@ if ESPD_USE_USB_OTG
     config ESPD_USE_USB_MIDI_HOST
         bool "USB-MIDI host mode (config.txt: usb_midi_role=host)"
         depends on ESPD_USE_USB_MIDI
-        default y
+        default n
         help
             Compile the USB-MIDI *host* driver in addition to the device
             stack, so the same firmware can act as either a USB-MIDI device
@@ -180,7 +179,7 @@ if ESPD_USE_USB_OTG
             it into Pd's native MIDI objects).
 
             Mode is chosen at boot from config.txt (omit key = MIDI off):
-                usb_midi_role = device  -> CDC + MSC + MIDI device
+                usb_midi_role = device  -> CDC + MIDI device
                 usb_midi_role = host    -> USB-MIDI host
             The three are mutually exclusive (one OTG PHY) and switching
             requires a power-cycle.
@@ -225,9 +224,12 @@ config ESPD_DEV_SYNC
     choice ESPD_DEV_SYNC_BACKEND
         prompt "Dev Sync Backend"
         depends on ESPD_DEV_SYNC
+        default ESPD_DEV_CDC_SYNC if ESPD_USE_USB_OTG && ESPD_USE_SDCARD
         default ESPD_DEV_SERIAL_SYNC
         help
-            Select the communication backend for Dev Sync.
+            Select the communication backend for Dev Sync. OTG kits with SD
+            default to CDC; boards with a separate UART (e.g. P4 CH343) pin
+            ESPD_DEV_SERIAL_SYNC in profile.
 
         config ESPD_DEV_SERIAL_SYNC
             bool "Serial port (UART or USB Serial JTAG)"
