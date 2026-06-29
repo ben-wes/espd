@@ -163,6 +163,19 @@ def _profile_has_wifi(data: dict) -> bool:
     return _feature_implied(data, "ESPD_USE_WIFI")
 
 
+def _profile_has_usb_midi(data: dict) -> bool:
+    return _feature_implied(data, "ESPD_USE_USB_MIDI")
+
+
+def _midi_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str, object]]:
+    """TinyUSB MIDI class count — required for TUD_MIDI_DESCRIPTOR (all OTG targets)."""
+    if not _profile_has_usb_midi(data):
+        return []
+    if "TINYUSB_MIDI_COUNT" in profile_keys:
+        return []
+    return [("TINYUSB_MIDI_COUNT", 1)]
+
+
 def _usb_otg_board_active(data: dict) -> bool:
     """OTG implied by features and not explicitly disabled in profile."""
     if not _profile_has_usb_otg(data):
@@ -386,6 +399,12 @@ def _gen_sdkconfig_defaults(data: dict, src: str) -> str:
     if coexist:
         lines.append("# --- Wi-Fi + OTG (auto) ---\n\n")
         for key, value in coexist:
+            lines.append(_config_line(key, value))
+        lines.append("\n")
+    midi_tusb = _midi_sdkconfig_extras(data, profile_keys)
+    if midi_tusb:
+        lines.append("# --- USB MIDI (auto) ---\n\n")
+        for key, value in midi_tusb:
             lines.append(_config_line(key, value))
         lines.append("\n")
     for section, options in profile.items():

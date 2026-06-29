@@ -163,7 +163,8 @@ comes from **Kconfig** — board `features.imply` turns on `ESPD_USE_USB_OTG`,
 `ESPD_USE_USB_MIDI`, etc. Do **not** repeat those in `profile:`.
 
 `gen_board_plugins.py` only fills **IDF console/PHY glue** Kconfig cannot express
-(`ESP_CONSOLE_NONE`, USJ off, `ESP_PHY_ENABLE_USB` on Wi‑Fi + OTG S3).
+(`ESP_CONSOLE_NONE`, USJ off, `ESP_PHY_ENABLE_USB` on Wi‑Fi + OTG S3,
+`TINYUSB_MIDI_COUNT=1` when `ESPD_USE_USB_MIDI` is in `features.imply`).
 
 Minimal OTG + CDC dev-sync board:
 
