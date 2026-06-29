@@ -10,12 +10,16 @@
  */
 #pragma once
 
+/* True when config.txt sets usb_midi_role=device or host (MIDI transport active). */
+bool espd_midi_runtime_active(void);
+
 /* Reset the MIDI timing queues and open the (single) USB MIDI in/out device.
- * Call once after pd_init() when CONFIG_ESPD_USE_USB_MIDI is enabled. */
+ * Call once after pd_init() when CONFIG_ESPD_USE_USB_MIDI is enabled. No-op when
+ * usb_midi_role is omitted (ESPD_USB_MIDI_OFF). */
 void espd_midi_init(void);
 
 /* Drain inbound USB MIDI into Pd and flush Pd's outbound MIDI queue. Call once
- * per scheduler tick (block rate). */
+ * per scheduler tick (block rate). No-op when usb_midi_role is omitted. */
 void espd_midi_poll(void);
 
 /* ── Generic MIDI source/sink, shared by the device (TinyUSB) and host

@@ -20,10 +20,12 @@
 
 #include "sdkconfig.h"
 #include "espd_midi.h"
+#include "espd_config_file.h"
 #include "../pd/src/m_pd.h"
 #include "../pd/src/s_stuff.h"
 
 #include "esp_log.h"
+#include <stdbool.h>
 #include <string.h>
 
 static const char *TAG = "espd_midi";
@@ -190,8 +192,15 @@ void espd_midi_set_output(espd_midi_out_fn fn)
 
 /* ─── espd lifecycle ─── */
 
+bool espd_midi_runtime_active(void)
+{
+    return g_espd_cfg.usb_midi_mode != ESPD_USB_MIDI_OFF;
+}
+
 void espd_midi_init(void)
 {
+    if (!espd_midi_runtime_active())
+        return;
 #if ESPD_MIDI_USB
     if (!s_rx_stream) {
         s_rx_stream = xStreamBufferCreate(ESPD_MIDI_RX_BUF, 1);
@@ -214,5 +223,7 @@ void espd_midi_init(void)
 
 void espd_midi_poll(void)
 {
+    if (!espd_midi_runtime_active())
+        return;
     sys_pollmidiqueue();   /* polls input (sys_poll_midi) + flushes output queue */
 }

@@ -11,6 +11,7 @@
 #include "espd_midi.h"
 #endif
 #include <esp_attr.h>
+#include <esp_timer.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -1501,15 +1502,14 @@ void open_via_helppath(const char *name, const char *dir) {}
 
 /* --------------------- s_inter.c --------------- */
 
-    /* get "real time" in seconds; take the
-    first time we get called as a reference time of zero. */
+    /* Monotonic real time in seconds (esp_timer, µs). First call is t=0.
+     * Used by Pd MIDI de-jitter; must be cheap — called several times/block. */
 double sys_getrealtime(void)
 {
-    static struct timeval then;
-    struct timeval now;
-    gettimeofday(&now, 0);
-    if (then.tv_sec == 0 && then.tv_usec == 0) then = now;
-    return ((now.tv_sec - then.tv_sec) +
-        (1./1000000.) * (now.tv_usec - then.tv_usec));
+    static uint64_t then_us;
+    uint64_t now_us = (uint64_t)esp_timer_get_time();
+    if (then_us == 0)
+        then_us = now_us;
+    return (double)(now_us - then_us) * 1e-6;
 }
 
