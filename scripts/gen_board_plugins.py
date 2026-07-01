@@ -167,6 +167,175 @@ def _profile_has_usb_midi(data: dict) -> bool:
     return _feature_implied(data, "ESPD_USE_USB_MIDI")
 
 
+def _profile_has_wifi_ap_sync(data: dict) -> bool:
+    return _feature_implied(data, "ESPD_WIFI_AP_SYNC")
+
+
+def _bsp_component(data: dict) -> str:
+    bsp = data.get("bsp") or {}
+    return str(bsp.get("component") or "")
+
+
+def _uart_console_config(data: dict) -> dict | None:
+    bsp = data.get("bsp") or {}
+    uart = bsp.get("uart_console")
+    return uart if isinstance(uart, dict) else None
+
+
+def _has_uart_console(data: dict) -> bool:
+    return _uart_console_config(data) is not None
+
+
+def _merge_bsp_profile(data: dict, boards_dir: Path) -> None:
+    """Merge boards/profiles/<bsp.component>.yaml into data['bsp'] (kits layer)."""
+    component = _bsp_component(data)
+    if not component:
+        return
+    profile_path = boards_dir / "profiles" / f"{component}.yaml"
+    if not profile_path.is_file():
+        return
+    profile = yaml.safe_load(profile_path.read_text(encoding="utf-8"))
+    if not isinstance(profile, dict):
+        raise ValueError(f"{profile_path}: expected mapping at top level")
+    bsp = data.setdefault("bsp", {})
+    if isinstance(profile.get("uart_console"), dict):
+        merged = dict(profile["uart_console"])
+        merged.update(bsp.get("uart_console") or {})
+        bsp["uart_console"] = merged
+    if isinstance(profile.get("sdkconfig"), dict):
+        merged_sdk = dict(profile["sdkconfig"])
+        merged_sdk.update(bsp.get("sdkconfig") or {})
+        bsp["sdkconfig"] = merged_sdk
+    if isinstance(profile.get("lcd_types_off"), list):
+        board_lcd = list(bsp.get("lcd_types_off") or [])
+        for item in profile["lcd_types_off"]:
+            if item not in board_lcd:
+                board_lcd.append(item)
+        bsp["lcd_types_off"] = board_lcd
+
+
+def _append_sdkconfig_extras(
+    extras: list[tuple[str, object]],
+    profile_keys: set[str],
+    pairs: list[tuple[str, object]],
+) -> None:
+    for key, value in pairs:
+        if _config_key(key) not in profile_keys:
+            extras.append((key, value))
+
+
+def _uart_console_sdkconfig_extras(
+    data: dict, profile_keys: set[str]
+) -> list[tuple[str, object]]:
+    """Dedicated UART console (e.g. USB-UART bridge) — orthogonal to OTG."""
+    uart = _uart_console_config(data)
+    if uart is None:
+        return []
+    extras: list[tuple[str, object]] = []
+    num = uart.get("num", 0)
+    baud = uart.get("baud", 115200)
+    pairs: list[tuple[str, object]] = [
+        ("ESP_CONSOLE_UART_CUSTOM", True),
+        ("ESP_CONSOLE_UART", True),
+        ("ESP_CONSOLE_UART_NUM", num),
+        ("ESP_CONSOLE_UART_BAUDRATE", baud),
+        ("ESP_CONSOLE_SECONDARY_NONE", True),
+        ("ESPTOOLPY_MONITOR_BAUD", baud),
+    ]
+    if "tx_gpio" in uart:
+        pairs.append(("ESP_CONSOLE_UART_TX_GPIO", uart["tx_gpio"]))
+    if "rx_gpio" in uart:
+        pairs.append(("ESP_CONSOLE_UART_RX_GPIO", uart["rx_gpio"]))
+    if uart.get("usj_disable", True) and str(data.get("target")) in _USJ_SUPPORTED_TARGETS:
+        pairs.insert(0, ("USJ_ENABLE_USB_SERIAL_JTAG", False))
+    _append_sdkconfig_extras(extras, profile_keys, pairs)
+    return extras
+
+
+def _bsp_tuning_sdkconfig_extras(
+    data: dict, profile_keys: set[str]
+) -> list[tuple[str, object]]:
+    """IDF/BSP sdkconfig from bsp.sdkconfig + bsp.lcd_types_off (kits profile)."""
+    bsp = data.get("bsp") or {}
+    extras: list[tuple[str, object]] = []
+    sdkconfig = bsp.get("sdkconfig")
+    if isinstance(sdkconfig, dict):
+        _append_sdkconfig_extras(
+            extras, profile_keys, [(k, v) for k, v in sdkconfig.items()]
+        )
+    lcd_types = bsp.get("lcd_types_off")
+    if isinstance(lcd_types, list):
+        for lcd_type in lcd_types:
+            _append_sdkconfig_extras(extras, profile_keys, [(str(lcd_type), False)])
+    return extras
+
+
+def _uart_otg_dev_sync_extras(
+    data: dict, profile_keys: set[str]
+) -> list[tuple[str, object]]:
+    """UART console + OTG: dev sync on UART, not OTG CDC."""
+    if not _has_uart_console(data) or not _usb_otg_board_active(data):
+        return []
+    extras: list[tuple[str, object]] = []
+    _append_sdkconfig_extras(
+        extras,
+        profile_keys,
+        [
+            ("ESPD_DEV_SERIAL_SYNC", True),
+            ("ESPD_USB_CONSOLE_CDC", False),
+        ],
+    )
+    return extras
+
+
+def _p4_hosted_wifi_sdkconfig_extras(
+    data: dict, profile_keys: set[str]
+) -> list[tuple[str, object]]:
+    """ESP32-P4 coprocessor Wi-Fi (esp_wifi_remote / esp_hosted over SDIO)."""
+    if str(data.get("target")) != "esp32p4" or not _profile_has_wifi(data):
+        return []
+    extras: list[tuple[str, object]] = []
+    _append_sdkconfig_extras(
+        extras,
+        profile_keys,
+        [
+            ("SLAVE_IDF_TARGET_ESP32C6", True),
+            ("ESP_HOSTED_CP_TARGET_ESP32C6", True),
+            ("ESP_HOSTED_SDIO_OPTIMIZATION_RX_STREAMING_MODE", True),
+        ],
+    )
+    return extras
+
+
+def _wifi_ap_sync_sdkconfig_extras(
+    data: dict, profile_keys: set[str]
+) -> list[tuple[str, object]]:
+    """HTTPS SoftAP console tuning — follows ESPD_WIFI_AP_SYNC, not per-board YAML."""
+    if not _profile_has_wifi_ap_sync(data):
+        return []
+    extras: list[tuple[str, object]] = []
+    _append_sdkconfig_extras(
+        extras,
+        profile_keys,
+        [
+            ("ESPD_ENABLE_LEGACY_WIFI_TRANSPORT", False),
+            ("ESP_TLS_USE_DS_PERIPHERAL", False),
+            # Kconfig select on ESPD_WIFI_AP_SYNC is not always sticky in sdkconfig;
+            # board sdkconfig.defaults must pin TLS server mode (see waveshare_s3_ap).
+            ("MBEDTLS_TLS_SERVER_AND_CLIENT", True),
+            ("MBEDTLS_SSL_KEEP_PEER_CERTIFICATE", True),
+            ("MBEDTLS_DYNAMIC_BUFFER", True),
+            ("MBEDTLS_DYNAMIC_FREE_CONFIG_DATA", True),
+        ],
+    )
+    if (
+        "SPIRAM_MALLOC_RESERVE_INTERNAL" not in profile_keys
+        and str(data.get("target")) == "esp32s3"
+    ):
+        extras.append(("SPIRAM_MALLOC_RESERVE_INTERNAL", 131072))
+    return extras
+
+
 def _midi_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str, object]]:
     """TinyUSB MIDI class count — required for TUD_MIDI_DESCRIPTOR (all OTG targets)."""
     if not _profile_has_usb_midi(data):
@@ -218,7 +387,9 @@ def _otg_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str,
     extras: list[tuple[str, object]] = []
     # Board profile may override individual console/USJ settings; fill the rest.
     if not (profile_keys & _CONSOLE_PRIMARY_MEMBERS):
-        extras.append(("ESP_CONSOLE_NONE", True))
+        # Dedicated UART console (bsp.uart_console) stays primary; OTG is separate PHY/port.
+        if not _has_uart_console(data):
+            extras.append(("ESP_CONSOLE_NONE", True))
     if not (profile_keys & _CONSOLE_SECONDARY_MEMBERS):
         extras.append(("ESP_CONSOLE_SECONDARY_NONE", True))
     # OTG shares the USB PHY with Serial/JTAG on S3/P4 — keep USJ off unless opted in.
@@ -387,7 +558,32 @@ def _gen_sdkconfig_defaults(data: dict, src: str) -> str:
 
     # Cache feature checks
     has_usb_otg = _profile_has_usb_otg(data)
-    has_wifi = _profile_has_wifi(data)
+
+    p4_wifi = _p4_hosted_wifi_sdkconfig_extras(data, profile_keys)
+    if p4_wifi:
+        lines.append("# --- P4 hosted Wi-Fi (auto) ---\n\n")
+        for key, value in p4_wifi:
+            lines.append(_config_line(key, value))
+        lines.append("\n")
+    uart_console = _uart_console_sdkconfig_extras(data, profile_keys)
+    if uart_console:
+        lines.append("# --- UART console (auto) ---\n\n")
+        for key, value in uart_console:
+            lines.append(_config_line(key, value))
+        lines.append("\n")
+    bsp_tuning = _bsp_tuning_sdkconfig_extras(data, profile_keys)
+    if bsp_tuning:
+        component = _bsp_component(data) or "bsp"
+        lines.append(f"# --- {component} BSP tuning (auto) ---\n\n")
+        for key, value in bsp_tuning:
+            lines.append(_config_line(key, value))
+        lines.append("\n")
+    uart_sync = _uart_otg_dev_sync_extras(data, profile_keys)
+    if uart_sync:
+        lines.append("# --- UART + OTG dev sync (auto) ---\n\n")
+        for key, value in uart_sync:
+            lines.append(_config_line(key, value))
+        lines.append("\n")
 
     otg_console = _otg_sdkconfig_extras(data, profile_keys) if has_usb_otg else []
     if otg_console:
@@ -395,7 +591,7 @@ def _gen_sdkconfig_defaults(data: dict, src: str) -> str:
         for key, value in otg_console:
             lines.append(_config_line(key, value))
         lines.append("\n")
-    coexist = _wifi_usb_coexist_extras(data, profile_keys) if has_usb_otg and has_wifi else []
+    coexist = _wifi_usb_coexist_extras(data, profile_keys) if has_usb_otg and _profile_has_wifi(data) else []
     if coexist:
         lines.append("# --- Wi-Fi + OTG (auto) ---\n\n")
         for key, value in coexist:
@@ -405,6 +601,12 @@ def _gen_sdkconfig_defaults(data: dict, src: str) -> str:
     if midi_tusb:
         lines.append("# --- USB MIDI (auto) ---\n\n")
         for key, value in midi_tusb:
+            lines.append(_config_line(key, value))
+        lines.append("\n")
+    wifi_ap = _wifi_ap_sync_sdkconfig_extras(data, profile_keys)
+    if wifi_ap:
+        lines.append("# --- SoftAP sync (auto) ---\n\n")
+        for key, value in wifi_ap:
             lines.append(_config_line(key, value))
         lines.append("\n")
     for section, options in profile.items():
@@ -567,12 +769,13 @@ void espd_board_peripherals_init(void)
 """
 
 
-def _generate_board(repo: Path, yaml_path: Path) -> Path:
+def _generate_board(repo: Path, yaml_path: Path, boards_dir: Path) -> Path:
     try:
         rel_src = yaml_path.relative_to(repo).as_posix()
     except ValueError:
         rel_src = f"boards/{yaml_path.name}"
     data = _load_board(yaml_path)
+    _merge_bsp_profile(data, boards_dir)
     _validate_board(data, yaml_path)
 
     out_dir = repo / "components" / f"espd_board_{data['id']}"
@@ -647,7 +850,7 @@ def main(argv: list[str]) -> int:
         return 0
 
     for yaml_path in yaml_files:
-        out = _generate_board(repo, yaml_path)
+        out = _generate_board(repo, yaml_path, boards_dir)
         print(f"gen_board_plugins: {yaml_path} -> {out.relative_to(repo)}")
 
     _write_kconfig_inc(repo)

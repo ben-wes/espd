@@ -114,14 +114,15 @@ static void espd_sync_write_serial(const void *data, size_t len, uint32_t usj_ti
 #endif
 }
 
-static void espd_sync_write_wifi(const void *data, size_t len)
+static void espd_sync_write_wifi(const void *data, size_t len, bool wait)
 {
 #if CONFIG_ESPD_WIFI_AP_SYNC
     if (espd_dev_wifi_client_active())
-        espd_dev_wifi_write(data, len);
+        (void)espd_dev_wifi_write(data, len, wait);
 #else
     (void)data;
     (void)len;
+    (void)wait;
 #endif
 }
 
@@ -135,13 +136,16 @@ void espd_sync_write(const void *data, size_t len)
 #else
     espd_sync_write_serial(data, len, 0, false);
 #endif
-    espd_sync_write_wifi(data, len);
+    espd_sync_write_wifi(data, len, true);
 }
+
+static volatile uint8_t s_sync_log_depth;
 
 static void espd_sync_emit_log(const void *data, size_t len)
 {
     espd_sync_write_serial(data, len, 0, true);
-    espd_sync_write_wifi(data, len);
+    if (s_sync_log_depth <= 1)
+        espd_sync_write_wifi(data, len, false);
 }
 
 void espd_sync_print(const char *s)
@@ -162,7 +166,9 @@ int espd_sync_log(const char *fmt, va_list args)
         size_t w = (size_t)n;
         if (w >= sizeof(buf))
             w = sizeof(buf) - 1;
+        s_sync_log_depth++;
         espd_sync_emit_log(buf, w);
+        s_sync_log_depth--;
     }
     return n;
 }

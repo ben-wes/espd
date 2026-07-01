@@ -13,6 +13,7 @@
 #include <esp_log.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 extern const char index_html_start[] asm("_binary_index_html_start");
 extern const char index_html_end[] asm("_binary_index_html_end");
@@ -60,14 +61,19 @@ static esp_err_t devconsole_favicon_get(httpd_req_t *req)
     return ESP_OK;
 }
 
+static void devconsole_http_close(httpd_handle_t hd, int sockfd)
+{
+    (void)hd;
+    espd_dev_wifi_on_http_close(sockfd);
+    close(sockfd);
+}
+
 static esp_err_t devconsole_ws(httpd_req_t *req)
 {
     httpd_ws_frame_t ws_pkt;
     uint8_t *buf = NULL;
 
-    if (!espd_dev_wifi_client_active()) {
-        espd_dev_wifi_session_begin_ws(req);
-    }
+    espd_dev_wifi_session_begin_ws(req);
     httpd_sess_update_lru_counter(req->handle, httpd_req_to_sockfd(req));
 
     memset(&ws_pkt, 0, sizeof(ws_pkt));
@@ -152,15 +158,18 @@ void espd_dev_http_init(void)
     /* No cacert_pem — browser-friendly (no client certificate request). */
     conf.tls_version = ESP_TLS_VER_TLS_1_2;
     conf.httpd.server_port = 443;
-    conf.httpd.lru_purge_enable = true;
+    /* One browser tab: WS sync + occasional static assets; never LRU-drop the socket. */
+    conf.httpd.lru_purge_enable = false;
     conf.httpd.max_open_sockets = 7;
     conf.httpd.stack_size = 20480;
     /* Client may go silent while we commit a large PUT (flash write). */
     conf.httpd.recv_wait_timeout = 180;
+    conf.httpd.send_wait_timeout = 180;
     conf.httpd.keep_alive_enable = true;
     conf.httpd.keep_alive_idle = 30;
     conf.httpd.keep_alive_interval = 10;
     conf.httpd.keep_alive_count = 4;
+    conf.httpd.close_fn = devconsole_http_close;
 
     esp_err_t err = httpd_ssl_start(&s_httpd, &conf);
     if (err != ESP_OK) {

@@ -811,6 +811,19 @@ $('reset-btn').addEventListener('click', async () => {
 })
 
 setConnected(false)
+
+window.addEventListener('pageshow', ev => {
+  if (!ev.persisted) return
+  if (client?._ioAlive()) return
+  if (!watchWanted && !busy) return
+  reconnect()
+    .then(() => applyConnectedState(client?.lastStatus ? parseStatus(client.lastStatus) : null))
+    .catch(() => {
+      statusEl.textContent = 'Disconnected'
+      setConnected(false)
+    })
+})
+
 try {
   if (FOLDER_WATCH_OK) {
     requireBrowserApis()

@@ -278,6 +278,9 @@ config ESPD_WIFI_AP_SYNC
     default n
     select HTTPD_WS_SUPPORT
     select MBEDTLS_TLS_SERVER_AND_CLIENT
+    select MBEDTLS_SSL_KEEP_PEER_CERTIFICATE
+    select MBEDTLS_DYNAMIC_BUFFER
+    select MBEDTLS_DYNAMIC_FREE_CONFIG_DATA
     select ESP_HTTPS_SERVER_ENABLE
     help
         After boot, start a SoftAP (default 192.168.4.1) with an HTTPS device

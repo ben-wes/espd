@@ -39,6 +39,7 @@ static TaskHandle_t s_listen_task;
 static TaskHandle_t s_client_task;
 static int s_listen_fd = -1;
 static SemaphoreHandle_t s_rx_mux;
+static SemaphoreHandle_t s_write_mux;
 static uint8_t s_rx_buf[ESPD_DEV_WIFI_RX_CAP];
 static size_t s_rx_len;
 static volatile bool s_client_active;
@@ -176,6 +177,7 @@ void espd_dev_wifi_init(void)
     if (s_listen_task)
         return;
     s_rx_mux = xSemaphoreCreateMutex();
+    s_write_mux = xSemaphoreCreateMutex();
     if (xTaskCreatePinnedToCore(espd_dev_wifi_listen_task, "espd_wifi_srv",
             ESPD_DEV_WIFI_STACK, NULL, 3, &s_listen_task, 0) != pdPASS) {
         ESP_LOGW(TAG, "listen task create failed");
@@ -226,16 +228,38 @@ void espd_dev_wifi_touch_session(void)
         httpd_sess_update_lru_counter(s_ws_httpd, s_ws_fd);
 }
 
-void espd_dev_wifi_write(const void *data, size_t len)
+static void espd_dev_wifi_ws_invalidate(int sockfd, bool log_disconnect)
 {
-    if (!espd_dev_wifi_client_active() || !data || len == 0)
+    if (s_session_kind != SESSION_WS || s_ws_fd != sockfd)
         return;
+    if (log_disconnect) {
+        ESP_LOGI(TAG, "WebSocket sync client disconnected");
+        printf("sync: wifi WebSocket client disconnected\n");
+    }
+    s_ws_httpd = NULL;
+    s_ws_fd = -1;
+    s_session_kind = SESSION_NONE;
+    s_client_active = false;
+    espd_dev_wifi_clear_rx();
+    espd_dev_transport_reset();
+}
+
+bool espd_dev_wifi_write(const void *data, size_t len, bool wait)
+{
+    if (!espd_dev_wifi_client_active() || !data || len == 0 || !s_write_mux)
+        return false;
+
+    if (wait) {
+        if (xSemaphoreTake(s_write_mux, portMAX_DELAY) != pdTRUE)
+            return false;
+    } else if (xSemaphoreTake(s_write_mux, 0) != pdTRUE) {
+        return false;
+    }
 
     if (s_session_kind == SESSION_TCP && s_tcp_fd >= 0) {
         ssize_t sent = send(s_tcp_fd, data, len, 0);
-        if (sent < 0)
-            ESP_LOGW(TAG, "TCP send failed errno=%d", errno);
-        return;
+        xSemaphoreGive(s_write_mux);
+        return sent >= 0;
     }
 
     if (s_session_kind == SESSION_WS && s_ws_httpd && s_ws_fd >= 0) {
@@ -246,17 +270,30 @@ void espd_dev_wifi_write(const void *data, size_t len)
             .payload = (uint8_t *)data,
             .len = len,
         };
-        esp_err_t err = httpd_ws_send_frame_async(s_ws_httpd, s_ws_fd, &ws_pkt);
-        if (err != ESP_OK)
-            ESP_LOGW(TAG, "WS send failed %s", esp_err_to_name(err));
-        else
+        /* Must run on the httpd thread — do not call send_frame_async from dev task. */
+        esp_err_t err = httpd_ws_send_data(s_ws_httpd, s_ws_fd, &ws_pkt);
+        if (err == ESP_OK) {
             httpd_sess_update_lru_counter(s_ws_httpd, s_ws_fd);
+        } else {
+            printf("sync: wifi WS send failed %s\n", esp_err_to_name(err));
+            espd_dev_wifi_ws_invalidate(s_ws_fd, false);
+        }
+        xSemaphoreGive(s_write_mux);
+        return err == ESP_OK;
     }
+
+    xSemaphoreGive(s_write_mux);
+    return false;
 }
 
 void espd_dev_wifi_session_begin_ws(httpd_req_t *req)
 {
+    int fd;
+
     if (!req)
+        return;
+    fd = httpd_req_to_sockfd(req);
+    if (s_session_kind == SESSION_WS && s_ws_fd == fd && s_client_active)
         return;
     if (s_client_task || s_client_active) {
         espd_dev_wifi_session_close();
@@ -265,7 +302,7 @@ void espd_dev_wifi_session_begin_ws(httpd_req_t *req)
         }
     }
     s_ws_httpd = req->handle;
-    s_ws_fd = httpd_req_to_sockfd(req);
+    s_ws_fd = fd;
     s_session_kind = SESSION_WS;
     s_client_active = true;
     espd_dev_wifi_clear_rx();
@@ -276,17 +313,14 @@ void espd_dev_wifi_session_begin_ws(httpd_req_t *req)
 
 void espd_dev_wifi_session_end_ws(httpd_req_t *req)
 {
-    (void)req;
-    if (s_session_kind != SESSION_WS)
+    if (!req)
         return;
-    ESP_LOGI(TAG, "WebSocket sync client disconnected");
-    printf("sync: wifi WebSocket client disconnected\n");
-    s_ws_httpd = NULL;
-    s_ws_fd = -1;
-    s_session_kind = SESSION_NONE;
-    s_client_active = false;
-    espd_dev_wifi_clear_rx();
-    espd_dev_transport_reset();
+    espd_dev_wifi_ws_invalidate(httpd_req_to_sockfd(req), true);
+}
+
+void espd_dev_wifi_on_http_close(int sockfd)
+{
+    espd_dev_wifi_ws_invalidate(sockfd, true);
 }
 
 #endif /* CONFIG_ESPD_WIFI_AP_SYNC */

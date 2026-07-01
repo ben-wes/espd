@@ -166,7 +166,19 @@ comes from **Kconfig** — board `features.imply` turns on `ESPD_USE_USB_OTG`,
 (`ESP_CONSOLE_NONE`, USJ off, `ESP_PHY_ENABLE_USB` on Wi‑Fi + OTG S3,
 `TINYUSB_MIDI_COUNT=1` when `ESPD_USE_USB_MIDI` is in `features.imply`).
 
-Minimal OTG + CDC dev-sync board:
+Minimal **USB Serial JTAG** dev-sync board (no OTG — `waveshare_s3`):
+
+```yaml
+features:
+  imply:
+    - ESPD_USE_SDCARD
+    - ESPD_USE_WIFI
+    - ESPD_DEV_SYNC
+```
+
+Kconfig picks `ESPD_DEV_SERIAL_SYNC` when OTG is off (`default ESPD_DEV_SERIAL_SYNC`).
+
+Minimal OTG + CDC dev-sync board (`waveshare_s3_midi`; OTG also `imply`s dev sync):
 
 ```yaml
 features:
@@ -175,7 +187,9 @@ features:
     - ESPD_USE_SDCARD
 ```
 
-OTG + USB MIDI (host vs device is board-specific — pin in `profile:`):
+OTG + USB MIDI — host vs device is board-specific. `ESPD_USE_USB_MIDI_HOST`
+defaults to **n** (device); only set `ESPD_USE_USB_MIDI_HOST: y` in `profile:`
+when the board is meant as a USB-MIDI host (e.g. P4 Nano MIDI):
 
 ```yaml
 features:
@@ -185,11 +199,39 @@ features:
 
 profile:
   USB MIDI:
-    ESPD_USE_USB_MIDI_HOST: n   # or y on P4 Nano MIDI
+    ESPD_USE_USB_MIDI_HOST: y   # P4 Nano MIDI only; omit on S3 MIDI
 ```
 
-UART dev sync on a separate port (P4 CH343) — keep `ESPD_DEV_SERIAL_SYNC` in
-`profile:`; Kconfig defaults CDC sync only when OTG + SD without that override.
+### SoftAP wireless dev sync
+
+`ESPD_WIFI_AP_SYNC` in `features.imply` pulls in mbedtls/HTTPS Kconfig via
+`select` and auto sdkconfig glue (legacy TCP/UDP transport off, TLS heap tuning,
+larger internal RAM reserve on ESP32-S3). No `profile:` block needed — see
+`waveshare_s3_ap.yaml`.
+
+```yaml
+features:
+  imply:
+    - ESPD_USE_WIFI
+    - ESPD_DEV_SYNC
+    - ESPD_WIFI_AP_SYNC
+```
+
+UART dev sync on a separate port — declare `uart_console` under `bsp:` (or in
+`boards/profiles/<component>.yaml`). With OTG enabled, `gen_board_plugins.py`
+keeps dev sync on that UART (`ESPD_DEV_SERIAL_SYNC`, `ESPD_USB_CONSOLE_CDC=n`)
+instead of moving console to OTG CDC.
+
+### ESP32-P4 chip + hosted Wi-Fi
+
+**`sdkconfig.defaults.esp32p4`** carries dual-core layout, LWIP baseline, and
+TinyUSB MIDI class count (like `sdkconfig.defaults.esp32s3`).
+
+**`boards/profiles/<bsp.component>.yaml`** holds shared BSP tuning for a family
+of kits (e.g. `esp32_p4_nano.yaml`: CH343 `uart_console`, PSRAM, ES8311, LCD
+off, esp_hosted board/LDO). **`ESPD_USE_WIFI`** on `target: esp32p4` adds
+coprocessor C6 SDIO glue. Board YAML only needs variant overrides (e.g.
+`ESPD_USE_USB_OTG: n`, `ESPD_USE_USB_MIDI_HOST: y`).
 
 Do **not** set `WL_SECTOR_SIZE_*` or `TINYUSB_MSC_BUFSIZE` in the board file —
 they live in **`sdkconfig.defaults.esp32s3`**. After changing WL sector size,
