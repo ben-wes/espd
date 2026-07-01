@@ -8,10 +8,15 @@
 #include "espd_audio.h"
 #include "espd_pd_io.h"
 #include "espd_usb.h"
+#include "espd_sync_io.h"
 #include "espd_config_file.h"
 #include "espd_gpio_peripherals.h"
 #include "espd_dev.h"
 #include "espd_storage.h"
+#if CONFIG_ESPD_WIFI_AP_SYNC
+#include "espd_dev_wifi.h"
+#include "wifi.h"
+#endif
 #include "bsp/bsp_io.h"
 #include "../pd/src/m_pd.h"
 #if CONFIG_ESPD_USE_USB_OTG
@@ -193,14 +198,8 @@ void pdmain_print(const char *s)
     if (!s || !*s)
         return;
 
-
-#if ESPD_DEV_SERIAL_SYNC_UART || ESPD_DEV_SERIAL_SYNC_USJ
-    espd_serial_sync_write(s, strlen(s));
-#elif CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_DEV_CDC_SYNC
-    if (tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0))
-        espd_serial_sync_write(s, strlen(s));
-    else
-        printf("%s", s);
+#if CONFIG_ESPD_DEV_SERIAL_SYNC || CONFIG_ESPD_DEV_CDC_SYNC || CONFIG_ESPD_WIFI_AP_SYNC
+    espd_sync_write(s, strlen(s));
 #else
     printf("%s", s);
 #endif
@@ -282,22 +281,48 @@ void app_main(void)
 
 #ifdef ESPD_USE_WIFI
     espd_wifi_config_defaults();
+#if CONFIG_ESPD_WIFI_AP_SYNC
+    {
+        const char *ap_ssid = g_espd_cfg.wifi_ap_have_ssid ? g_espd_cfg.wifi_ap_ssid : NULL;
+        wifi_ap_configure(ap_ssid, g_espd_cfg.wifi_ap_password);
+        wifi_prepare_phy();
+        if (g_espd_cfg.wifi_have_ssid) {
+            espd_wifi_net_enabled = 1;
+            wifi_start_apsta();
+        } else {
+            espd_wifi_net_enabled = 0;
+            wifi_start_ap();
+        }
+        {
+            int ap_min = g_espd_cfg.wifi_sync_ap_minutes;
+            if (ap_min < 0)
+                ap_min = 30;
+            wifi_ap_boot_window_start(ap_min);
+        }
+    }
+#else
     if (!espd_wifi_config_txt_allows_sta())
         espd_wifi_net_enabled = 0;
     if (espd_wifi_net_enabled)
         wifi_prepare_phy();
 #endif
+#endif
 
 #ifdef ESPD_USE_WIFI
+#if !CONFIG_ESPD_WIFI_AP_SYNC
     if (espd_wifi_net_enabled)
         wifi_start_sta();
+#endif
 #endif
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
     espd_dev_init();
-#if ESPD_DEV_SERIAL_SYNC_UART || ESPD_DEV_SERIAL_SYNC_USJ
-    esp_log_set_vprintf(espd_serial_sync_log);
 #endif
+#if CONFIG_ESPD_DEV_SERIAL_SYNC || CONFIG_ESPD_DEV_CDC_SYNC || CONFIG_ESPD_WIFI_AP_SYNC
+    esp_log_set_vprintf(espd_sync_log);
+#endif
+#if CONFIG_ESPD_WIFI_AP_SYNC
+    espd_dev_wifi_init();
 #endif
 
 #if CONFIG_ESP_MAIN_TASK_STACK_SIZE < 16384

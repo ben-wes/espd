@@ -1,5 +1,5 @@
 /*
- * USB OTG subsystem: TinyUSB driver, MSC (mass storage), CDC (serial), dev-sync.
+ * USB OTG subsystem: TinyUSB driver, MSC (mass storage), CDC (serial).
  * Extracted from espd.c — preserves MSC sync mechanism and early VFS mount.
  */
 
@@ -20,7 +20,6 @@
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 #include <stdint.h>
-#include <driver/uart.h>
 
 #if CONFIG_ESPD_USE_USB_OTG
 #include <tinyusb.h>
@@ -31,6 +30,7 @@
 #include "espd_usb_descriptors.h"
 #include <driver/gpio.h>
 #endif
+#include "espd_sync_io.h"
 #if ESPD_DEV_SERIAL_SYNC_USJ
 #include <driver/usb_serial_jtag.h>
 #endif
@@ -156,53 +156,6 @@ static void espd_usb_apply_msc_volume_label_when_ready(void)
     else
         ESP_LOGW(TAG, "Failed to set MSC volume label (res=%d)", res);
 #endif
-}
-
-/* ─── CDC write (serialized for esp_log + protocol replies) ─── */
-
-void espd_serial_sync_write(const void *data, size_t len)
-{
-    if (!data || len == 0)
-        return;
-
-#if CONFIG_ESPD_DEV_SERIAL_SYNC
-#if ESPD_DEV_SERIAL_SYNC_UART
-    uart_write_bytes(CONFIG_ESP_CONSOLE_UART_NUM, data, len);
-#elif ESPD_DEV_SERIAL_SYNC_USJ
-    usb_serial_jtag_write_bytes(data, len, pdMS_TO_TICKS(100));
-#else
-    uart_write_bytes(UART_NUM_0, data, len);
-#endif
-#elif CONFIG_ESPD_DEV_CDC_SYNC
-    if (!tinyusb_cdcacm_initialized(TINYUSB_CDC_ACM_0) || !tud_mounted())
-        return;
-    {
-        size_t off = 0;
-        while (off < len) {
-            size_t w = tinyusb_cdcacm_write_queue(TINYUSB_CDC_ACM_0,
-                    (const uint8_t *)data + off, len - off);
-            if (w == 0)
-                break;   /* endpoint busy — drop remainder */
-            off += w;
-            if (off < len)
-                tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
-        }
-        (void)tinyusb_cdcacm_write_flush(TINYUSB_CDC_ACM_0, 0);
-    }
-#endif
-}
-
-int espd_serial_sync_log(const char *fmt, va_list args)
-{
-    char buf[256];
-    int n = vsnprintf(buf, sizeof(buf), fmt, args);
-    if (n > 0) {
-        size_t w = (size_t)n;
-        if (w >= sizeof(buf))
-            w = sizeof(buf) - 1;
-        espd_serial_sync_write(buf, w);
-    }
-    return n;
 }
 
 /* ─── TinyUSB MSC storage ─── */
@@ -561,7 +514,7 @@ static bool usb_init_on_core0(void)
 
 #if CONFIG_ESPD_DEV_CDC_SYNC
     espd_dev_init();
-    esp_log_set_vprintf(espd_serial_sync_log);
+    esp_log_set_vprintf(espd_sync_log);
 #elif CONFIG_ESPD_USB_CONSOLE_CDC
     err = tinyusb_console_init(TINYUSB_CDC_ACM_0);
     if (err != ESP_OK)

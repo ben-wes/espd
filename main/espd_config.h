@@ -39,6 +39,10 @@
 #define ESPD_USE_TOUCH 1
 #endif
 
+#if CONFIG_ESPD_WIFI_AP_SYNC
+#define ESPD_WIFI_AP_SYNC 1
+#endif
+
 #if CONFIG_ESPD_USE_AOUT
 #define ESPD_USE_AOUT 1
 #endif

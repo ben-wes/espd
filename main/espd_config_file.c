@@ -64,6 +64,7 @@ void espd_config_load(void)
     g_espd_cfg.din_task_period_ms  = -1;
     g_espd_cfg.touch_task_period_ms = -1;
     g_espd_cfg.touch_report_every  = -1;
+    g_espd_cfg.wifi_sync_ap_minutes = -1;
 
     if (!config_path)
     {
@@ -116,6 +117,19 @@ void espd_config_load(void)
         }
         else if (!strcmp(k, "wifi_password"))
             snprintf(g_espd_cfg.wifi_password, sizeof(g_espd_cfg.wifi_password), "%s", v);
+        else if (!strcmp(k, "wifi_ap_ssid"))
+        {
+            snprintf(g_espd_cfg.wifi_ap_ssid, sizeof(g_espd_cfg.wifi_ap_ssid), "%s", v);
+            g_espd_cfg.wifi_ap_have_ssid = (g_espd_cfg.wifi_ap_ssid[0] != '\0');
+        }
+        else if (!strcmp(k, "wifi_ap_password"))
+            snprintf(g_espd_cfg.wifi_ap_password, sizeof(g_espd_cfg.wifi_ap_password), "%s", v);
+        else if (!strcmp(k, "wifi_sync_ap_minutes"))
+        {
+            int m = atoi(v);
+            if (m >= 0 && m <= 24 * 60)
+                g_espd_cfg.wifi_sync_ap_minutes = m;
+        }
 
         /* Audio */
         else if (!strcmp(k, "audio_dma_desc_num"))

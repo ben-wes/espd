@@ -7,8 +7,15 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 #include "../main/espd.h"
+#include "wifi.h"
 #include "espd_bsp_sdcard.h"
 #include "esp_wifi_types_generic.h"
+#include "sdkconfig.h"
+
+#if CONFIG_ESPD_WIFI_AP_SYNC
+#include "espd_dev_http.h"
+#endif
+
 #ifdef ESPD_USE_WIFI
 #include <stdio.h>
 #include <string.h>
@@ -101,6 +108,7 @@ static int s_retry_num = 0;
 static EventGroupHandle_t s_wifi_event_group;
 static bool s_wifi_phy_ready;
 static bool s_wifi_sta_started;
+static bool s_wifi_driver_started;
 
 char wifi_mac[80];
 char wifi_ipaddr[20];
@@ -112,6 +120,11 @@ static void wifi_event_handler_common(wifi_connect_func_t connect_func,
                                        esp_event_base_t event_base,
                                        int32_t event_id, void* event_data)
 {
+#if CONFIG_ESPD_WIFI_AP_SYNC
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_START) {
+        espd_dev_http_init();
+    } else
+#endif
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         connect_func();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
@@ -195,6 +208,9 @@ static void wifi_phy_init(void)
 
     espd_netif_ensure_init();
     esp_netif_create_default_wifi_sta();
+#if CONFIG_ESPD_WIFI_AP_SYNC
+    esp_netif_create_default_wifi_ap();
+#endif
     ESP_ERROR_CHECK(esp_wifi_remote_init(&cfg));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
         ESP_EVENT_ANY_ID, &hosted_event_handler, NULL, NULL));
@@ -231,6 +247,9 @@ static void wifi_phy_init(void)
 
     espd_netif_ensure_init();
     esp_netif_create_default_wifi_sta();
+#if CONFIG_ESPD_WIFI_AP_SYNC
+    esp_netif_create_default_wifi_ap();
+#endif
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
         ESP_EVENT_ANY_ID, &event_handler, NULL, NULL));
@@ -283,6 +302,7 @@ void wifi_start_sta(void)
 #else
     ESP_ERROR_CHECK(esp_wifi_start());
 #endif
+    s_wifi_driver_started = true;
     s_wifi_sta_started = true;
 
     {
@@ -331,4 +351,162 @@ bool wifi_wait_sta(TickType_t ticks)
     }
     return false;
 }
+
+#if CONFIG_ESPD_WIFI_AP_SYNC
+
+#include <esp_mac.h>
+
+static bool s_wifi_ap_started;
+static bool s_wifi_apsta;
+static char s_ap_ssid[33];
+static char s_ap_password[65];
+static TimerHandle_t s_ap_boot_timer;
+
+static void wifi_ap_apply_config(void)
+{
+    wifi_config_t ap = {0};
+    size_t ssid_len = strlen(s_ap_ssid);
+
+    if (ssid_len == 0) {
+        uint8_t mac[6];
+        esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
+        snprintf(s_ap_ssid, sizeof(s_ap_ssid), "ESPD-%02X%02X", mac[4], mac[5]);
+        ssid_len = strlen(s_ap_ssid);
+    }
+    if (ssid_len >= sizeof(ap.ap.ssid))
+        ssid_len = sizeof(ap.ap.ssid) - 1;
+    memcpy(ap.ap.ssid, s_ap_ssid, ssid_len);
+    ap.ap.ssid_len = (uint8_t)ssid_len;
+    ap.ap.channel = 1;
+    ap.ap.max_connection = 4;
+    if (strlen(s_ap_password) >= 8) {
+        snprintf((char *)ap.ap.password, sizeof(ap.ap.password), "%s", s_ap_password);
+        ap.ap.authmode = WIFI_AUTH_WPA2_PSK;
+    } else {
+        ap.ap.authmode = WIFI_AUTH_OPEN;
+    }
+#if CONFIG_ESP_WIFI_REMOTE_ENABLED
+    ESP_ERROR_CHECK(esp_wifi_remote_set_config(WIFI_IF_AP, &ap));
+#else
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap));
+#endif
+}
+
+void wifi_ap_configure(const char *ssid, const char *password)
+{
+    s_ap_ssid[0] = '\0';
+    s_ap_password[0] = '\0';
+    if (ssid && ssid[0])
+        snprintf(s_ap_ssid, sizeof(s_ap_ssid), "%s", ssid);
+    if (password)
+        snprintf(s_ap_password, sizeof(s_ap_password), "%s", password);
+}
+
+static void wifi_ap_start_common(bool with_sta)
+{
+    if (s_wifi_ap_started)
+        return;
+
+    wifi_prepare_phy();
+    wifi_ap_apply_config();
+
+    if (with_sta && espd_wifi_ssid[0]) {
+        wifi_config_t sta = {0};
+        snprintf((char *)sta.sta.ssid, sizeof(sta.sta.ssid), "%s", espd_wifi_ssid);
+        snprintf((char *)sta.sta.password, sizeof(sta.sta.password), "%s", espd_wifi_password);
+        sta.sta.pmf_cfg.capable = true;
+        sta.sta.pmf_cfg.required = false;
+#if CONFIG_ESP_WIFI_REMOTE_ENABLED
+        ESP_ERROR_CHECK(esp_wifi_remote_set_mode(WIFI_MODE_APSTA));
+        ESP_ERROR_CHECK(esp_wifi_remote_set_config(WIFI_IF_STA, &sta));
+#else
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &sta));
+#endif
+        s_wifi_apsta = true;
+        xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+        s_retry_num = 0;
+    } else {
+#if CONFIG_ESP_WIFI_REMOTE_ENABLED
+        ESP_ERROR_CHECK(esp_wifi_remote_set_mode(WIFI_MODE_AP));
+#else
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+#endif
+        s_wifi_apsta = false;
+    }
+
+#if CONFIG_ESP_WIFI_REMOTE_ENABLED
+    if (!s_wifi_driver_started)
+        ESP_ERROR_CHECK(esp_wifi_remote_start());
+#else
+    if (!s_wifi_driver_started)
+        ESP_ERROR_CHECK(esp_wifi_start());
+#endif
+    s_wifi_driver_started = true;
+    if (s_wifi_apsta)
+        s_wifi_sta_started = true;
+
+    s_wifi_ap_started = true;
+    ESP_LOGI(TAG, "WIFI SoftAP ssid=%s%s", s_ap_ssid[0] ? s_ap_ssid : "(auto)",
+        with_sta && espd_wifi_ssid[0] ? " (APSTA)" : "");
+    printf("wifi: SoftAP %s (https://192.168.4.1/ · TCP sync :4499)\n",
+        s_ap_ssid[0] ? s_ap_ssid : "(auto)");
+}
+
+void wifi_start_ap(void)
+{
+    wifi_ap_start_common(false);
+}
+
+void wifi_start_apsta(void)
+{
+    wifi_ap_start_common(true);
+}
+
+void wifi_stop_ap(void)
+{
+    if (!s_wifi_ap_started)
+        return;
+#if CONFIG_ESP_WIFI_REMOTE_ENABLED
+    if (s_wifi_apsta && espd_wifi_ssid[0])
+        ESP_ERROR_CHECK(esp_wifi_remote_set_mode(WIFI_MODE_STA));
+    else
+        ESP_ERROR_CHECK(esp_wifi_remote_stop());
+#else
+    if (s_wifi_apsta && espd_wifi_ssid[0])
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    else
+        ESP_ERROR_CHECK(esp_wifi_stop());
+#endif
+    s_wifi_ap_started = false;
+    s_wifi_apsta = false;
+    ESP_LOGI(TAG, "WIFI SoftAP stopped");
+    printf("wifi: SoftAP off\n");
+}
+
+bool wifi_ap_running(void)
+{
+    return s_wifi_ap_started;
+}
+
+static void wifi_ap_boot_timer_cb(TimerHandle_t t)
+{
+    (void)t;
+    wifi_stop_ap();
+}
+
+void wifi_ap_boot_window_start(int minutes)
+{
+    if (minutes <= 0)
+        return;
+    if (!s_ap_boot_timer)
+        s_ap_boot_timer = xTimerCreate("ap_win", pdMS_TO_TICKS((uint32_t)minutes * 60000U),
+            pdFALSE, NULL, wifi_ap_boot_timer_cb);
+    if (s_ap_boot_timer)
+        xTimerStart(s_ap_boot_timer, 0);
+    ESP_LOGI(TAG, "WIFI SoftAP boot window %d min", minutes);
+}
+
+#endif /* CONFIG_ESPD_WIFI_AP_SYNC */
+
 #endif  /* ESPD_USE_WIFI */

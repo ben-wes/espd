@@ -242,6 +242,12 @@ extern char espd_wifi_password[65];
  * ESPD_USE_SDCARD, STA stays off; otherwise Kconfig/locale defaults apply.
  *   wifi_ssid=myap
  *   wifi_password=secret
+ * SoftAP patch sync (ESPD_WIFI_AP_SYNC builds): optional AP credentials and
+ * boot window (minutes; default 30 when unset). Send APOFF over sync to
+ * tear down SoftAP while keeping STA.
+ *   wifi_ap_ssid=ESPD-Kit
+ *   wifi_ap_password=secret
+ *   wifi_sync_ap_minutes=30
  * Analog in (when ESPD_USE_AIN compiled in): espd/ain starts only if config.txt
  *   has ain_pins= with at least one GPIO. Off when there is no config.txt,
  *   no ain_pins= key, or ain_pins= is empty.

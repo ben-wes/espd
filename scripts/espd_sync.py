@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-Watch a local Pure Data project folder and sync to ESP local storage over CDC.
+Watch a local Pure Data project folder and sync to ESP local storage over CDC or WiFi.
 
-Requires: pip install pyserial
+Requires: pip install pyserial (serial only; WiFi uses stdlib socket)
 
 Usage:
   python3 scripts/espd_sync.py [-p PORT] [./my_patch]
+  python3 scripts/espd_sync.py --host 192.168.4.1 [./my_patch]
 
 PORT is the OTG CDC serial device (pyserial): e.g. /dev/cu.usbmodem* (macOS),
 /dev/ttyACM0 (Linux), COM3 (Windows). See docs/DEV_SYNC.md.
 
-The ESP must have CONFIG_ESPD_DEV_CDC_SYNC for dev sync.
-Do not run idf.py monitor on the same port at the same time.
+Join the device SoftAP first for WiFi sync (default TCP port 4499).
+
+The ESP must have CONFIG_ESPD_DEV_CDC_SYNC or CONFIG_ESPD_WIFI_AP_SYNC for dev sync.
+Do not run idf.py monitor on the same serial port at the same time.
 """
 
 from __future__ import annotations
@@ -137,11 +140,11 @@ def log_device_line(line: bytes) -> None:
     if kind.startswith("esp-"):
         if not _out.show_esp:
             return
-        _styled(sys.stdout, text, kind)
+        _styled(sys.stderr, text, kind)
     elif kind == "espd":
         _styled(sys.stderr, text, kind)
     else:
-        _styled(sys.stdout, text, "pd")
+        _styled(sys.stderr, text, "pd")
 
 
 def _need_serial():
@@ -297,12 +300,55 @@ def wait_serial_ready(pattern: str, timeout: float = 45.0) -> str:
     raise TimeoutError(f"CDC port not ready within {timeout:.0f}s ({pattern!r})")
 
 
-class EspdCdc:
-    def __init__(self, port: str, open_timeout: float = 8.0):
-        self.port = port
-        self.last_status: bytes | None = None
-        self._ser = _serial_open_retry(port, open_timeout)
+def wifi_exchange(
+    host: str, text: str, port: int = 4499, timeout: float = 10.0
+) -> bytes:
+    """One-shot command (used internally; prefer EspdWifi)."""
+    import socket
 
+    payload = (text if text.endswith("\n") else text + "\n").encode()
+    with socket.create_connection((host, port), timeout=timeout) as sock:
+        sock.settimeout(timeout)
+        sock.sendall(payload)
+        buf = b""
+        while b"\n" not in buf:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+        line, _, _ = buf.partition(b"\n")
+        return line.strip(b"\r")
+
+
+@dataclass
+class SyncTarget:
+    wifi_host: str | None = None
+    port_pattern: str | None = None
+    wifi_port: int = 4499
+
+    @classmethod
+    def serial(cls, pattern: str) -> SyncTarget:
+        return cls(port_pattern=pattern)
+
+    @classmethod
+    def wifi(cls, host: str, port: int = 4499) -> SyncTarget:
+        return cls(wifi_host=host, wifi_port=port)
+
+    def reconnect_prepared(self, *, exit_on_fail: bool = True) -> EspdCdc | EspdWifi:
+        if self.wifi_host:
+            return connect_wifi_and_prepare(
+                self.wifi_host, self.wifi_port, exit_on_fail=exit_on_fail
+            )
+        return connect_and_prepare(self.port_pattern, exit_on_fail=exit_on_fail)
+
+
+class _EspdSyncBase:
+    """Shared espd_dev line protocol over a byte stream (serial or WiFi TCP)."""
+
+    last_status: bytes | None
+
+    def __init__(self) -> None:
+        self.last_status = None
         self._lock = threading.Lock()
         self._cmd_lock = threading.Lock()
         self._reply: bytes | None = None
@@ -315,7 +361,10 @@ class EspdCdc:
         self._put_last_pct = -1
         self._list_active = False
         self._list_paths: list[str] = []
+        self._awaiting_reply = False
         self._thread = threading.Thread(target=self._reader, daemon=True)
+
+    def _start_reader(self) -> None:
         self._thread.start()
 
     @property
@@ -327,31 +376,104 @@ class EspdCdc:
             return
         self._disconnected.set()
         self._reply_event.set()
-        reason_l = reason.lower()
-        if "not configured" in reason_l:
-            log_script(f"disconnected (USB re-enumeration): {reason}")
-        else:
-            log_script(f"disconnected: {reason}")
+        log_script(f"disconnected: {reason}")
 
     def close(self) -> None:
         self._stop.set()
         self._reply_event.set()
         if self._thread.is_alive():
             self._thread.join(timeout=1.0)
-        try:
-            if self._ser.is_open:
-                self._ser.close()
-        except Exception:
-            pass
+        self._close_io()
+
+    def _close_io(self) -> None:
+        raise NotImplementedError
+
+    def _read_chunk(self) -> bytes:
+        raise NotImplementedError
+
+    def _write_bytes(self, data: bytes) -> None:
+        raise NotImplementedError
+
+    def _handle_line(self, line: bytes) -> None:
+        if self._put_active:
+            if (
+                line.startswith(b"+OK PUT ack")
+                or line.startswith(b"+OK PUT done")
+                or line.startswith(b"-ERR")
+            ):
+                with self._lock:
+                    self._reply = line
+                self._reply_event.set()
+                if line.startswith(b"+OK PUT ack"):
+                    m = _PUT_ACK_RE.match(line.strip())
+                    if m and self._put_total_bytes > 0:
+                        acked = int(m.group(1), 10)
+                        pct = round((acked / self._put_total_bytes) * 100)
+                        if pct != self._put_last_pct:
+                            self._put_last_pct = pct
+                            sys.stderr.write(f"\r{self._put_rel_path}{pct}%")
+                            sys.stderr.flush()
+                elif line.startswith(b"+OK PUT done"):
+                    if self._put_last_pct >= 0:
+                        sys.stderr.write("\n")
+                        sys.stderr.flush()
+                    log_dev_rx(line)
+                else:
+                    log_dev_rx(line)
+            else:
+                log_device_line(line)
+            return
+        if self._list_active:
+            if line.startswith(b"+FILE "):
+                raw = line[6:]
+                try:
+                    rel = raw.decode("ascii")
+                except UnicodeDecodeError:
+                    log_script(f"warning: ignore device path {raw!r}")
+                else:
+                    if _dev_path_ok(rel):
+                        with self._lock:
+                            self._list_paths.append(rel)
+                    else:
+                        log_script(f"warning: ignore device path {raw!r}")
+                log_dev_rx(line)
+                return
+            proto = _extract_protocol_line(line)
+            if proto is not None:
+                if proto != line:
+                    idx = line.find(proto)
+                    if idx > 0:
+                        log_device_line(line[:idx].rstrip(b"\r"))
+                if proto.startswith(b"+OK LIST done") or proto.startswith(b"-ERR"):
+                    with self._lock:
+                        self._reply = proto
+                    self._reply_event.set()
+                    log_dev_rx(proto)
+                elif proto.startswith(b"+OK LIST"):
+                    log_dev_rx(proto)
+            else:
+                log_device_line(line)
+            return
+        proto = _extract_protocol_line(line)
+        if proto is not None:
+            if proto != line:
+                idx = line.find(proto)
+                if idx > 0:
+                    log_device_line(line[:idx].rstrip(b"\r"))
+            log_dev_rx(proto)
+            if self._awaiting_reply:
+                with self._lock:
+                    self._reply = proto
+                self._reply_event.set()
+        else:
+            log_device_line(line)
 
     def _reader(self) -> None:
-        import serial.serialutil
-
         buf = b""
         while not self._stop.is_set():
             try:
-                chunk = self._ser.read(4096)
-            except (serial.serialutil.SerialException, OSError) as e:
+                chunk = self._read_chunk()
+            except EspdDisconnected as e:
                 if self._stop.is_set():
                     break
                 self._mark_disconnected(str(e))
@@ -363,71 +485,12 @@ class EspdCdc:
             while b"\n" in buf:
                 raw, buf = buf.split(b"\n", 1)
                 line = raw.strip(b"\r")
-                if not line:
-                    continue
-                if self._put_active:
-                    if (
-                        line.startswith(b"+OK PUT ack")
-                        or line.startswith(b"+OK PUT done")
-                        or line.startswith(b"-ERR")
-                    ):
-                        with self._lock:
-                            self._reply = line
-                        self._reply_event.set()
-                        if line.startswith(b"+OK PUT ack"):
-                            m = _PUT_ACK_RE.match(line.strip())
-                            if m and self._put_total_bytes > 0:
-                                acked = int(m.group(1), 10)
-                                pct = round((acked / self._put_total_bytes) * 100)
-                                if pct != self._put_last_pct:
-                                    self._put_last_pct = pct
-                                    sys.stderr.write(f"\r{self._put_rel_path}{pct}%")
-                                    sys.stderr.flush()
-                        elif line.startswith(b"+OK PUT done"):
-                            if self._put_last_pct >= 0:
-                                sys.stderr.write("\n")
-                                sys.stderr.flush()
-                            log_dev_rx(line)
-                        else:
-                            log_dev_rx(line)
-                    continue
-                if self._list_active:
-                    if line.startswith(b"+FILE "):
-                        raw = line[6:]
-                        try:
-                            rel = raw.decode("ascii")
-                        except UnicodeDecodeError:
-                            log_script(f"warning: ignore device path {raw!r}")
-                        else:
-                            if _dev_path_ok(rel):
-                                with self._lock:
-                                    self._list_paths.append(rel)
-                            else:
-                                log_script(f"warning: ignore device path {raw!r}")
-                        log_dev_rx(line)
-                        continue
-                    proto = _extract_protocol_line(line)
-                    if proto is not None:
-                        if proto.startswith(b"+OK LIST done") or proto.startswith(b"-ERR"):
-                            with self._lock:
-                                self._reply = proto
-                            self._reply_event.set()
-                            log_dev_rx(proto)
-                        elif proto.startswith(b"+OK LIST"):
-                            log_dev_rx(proto)
-                    continue
-                proto = _extract_protocol_line(line)
-                if proto is not None:
-                    with self._lock:
-                        self._reply = proto
-                    self._reply_event.set()
-                    log_dev_rx(proto)
-                else:
-                    log_device_line(line)
+                if line:
+                    self._handle_line(line)
 
     def _check_alive(self) -> None:
         if not self.alive:
-            raise EspdDisconnected("serial port closed")
+            raise EspdDisconnected("device link closed")
 
     def _wait_reply(self, timeout: float) -> bytes:
         if not self._reply_event.wait(timeout):
@@ -448,16 +511,20 @@ class EspdCdc:
                 self._reply = None
             payload = text if text.endswith("\n") else text + "\n"
             log_dev_tx(text.strip())
+            self._awaiting_reply = True
             try:
-                self._ser.write(payload.encode())
-                self._ser.flush()
-            except OSError as e:
-                self._mark_disconnected(str(e))
-                raise EspdDisconnected(str(e)) from e
-            return self._wait_reply(timeout)
+                try:
+                    self._write_bytes(payload.encode())
+                except EspdDisconnected:
+                    raise
+                except OSError as e:
+                    self._mark_disconnected(str(e))
+                    raise EspdDisconnected(str(e)) from e
+                return self._wait_reply(timeout)
+            finally:
+                self._awaiting_reply = False
 
     def put_file(self, local_path: str, rel_path: str, crc: int) -> bool:
-        """PUT with CRC. Returns True if bytes were sent, False if device skipped."""
         data = open(local_path, "rb").read()
         rel_path = rel_path.replace(os.sep, "/")
         nbytes = len(data)
@@ -499,8 +566,7 @@ class EspdCdc:
                     self._reply_event.clear()
                     with self._lock:
                         self._reply = None
-                    self._ser.write(part)
-                    self._ser.flush()
+                    self._write_bytes(part)
                     line = self._wait_reply(ack_timeout)
                     m = _PUT_ACK_RE.match(line.strip())
                     if not m:
@@ -514,6 +580,9 @@ class EspdCdc:
                         raise RuntimeError(
                             f"PUT ack mismatch: expected {off + len(part)}, got {acked}"
                         )
+        except EspdDisconnected:
+            self._put_active = False
+            raise
         except OSError as e:
             self._put_active = False
             self._mark_disconnected(str(e))
@@ -529,11 +598,10 @@ class EspdCdc:
         finally:
             self._put_active = False
 
-    def reload(self) -> None:
-        self.command("RELOAD", timeout=30.0)
+    def reload(self) -> bytes:
+        return self.command("RELOAD", timeout=30.0)
 
     def send_pd(self, message: str) -> bytes:
-        """Send one Pd message (semicolon added on device if missing)."""
         msg = message.strip()
         if not msg:
             raise ValueError("empty Pd message")
@@ -543,7 +611,7 @@ class EspdCdc:
         try:
             self.command("RESET", timeout=2.0)
         except (EspdDisconnected, TimeoutError):
-            pass  # reboot disconnects CDC — expected
+            pass
 
     def status(self, timeout: float = 10.0) -> bytes:
         return self.command("STATUS", timeout=timeout)
@@ -558,8 +626,9 @@ class EspdCdc:
                 self._reply = None
             log_dev_tx("LIST")
             try:
-                self._ser.write(b"LIST\n")
-                self._ser.flush()
+                self._write_bytes(b"LIST\n")
+            except EspdDisconnected:
+                raise
             except OSError as e:
                 self._list_active = False
                 self._mark_disconnected(str(e))
@@ -580,6 +649,67 @@ class EspdCdc:
         line = self.command(f"RM {rel_path}", timeout=timeout)
         if line.startswith(b"-ERR"):
             raise RuntimeError(line.decode(errors="replace"))
+
+
+class EspdCdc(_EspdSyncBase):
+    def __init__(self, port: str, open_timeout: float = 8.0):
+        super().__init__()
+        self.port = port
+        self._ser = _serial_open_retry(port, open_timeout)
+        self._start_reader()
+
+    def _close_io(self) -> None:
+        try:
+            if self._ser.is_open:
+                self._ser.close()
+        except Exception:
+            pass
+
+    def _read_chunk(self) -> bytes:
+        import serial.serialutil
+
+        try:
+            return self._ser.read(4096)
+        except (serial.serialutil.SerialException, OSError) as e:
+            raise EspdDisconnected(str(e)) from e
+
+    def _write_bytes(self, data: bytes) -> None:
+        self._ser.write(data)
+        self._ser.flush()
+
+
+class EspdWifi(_EspdSyncBase):
+    def __init__(self, host: str, port: int = 4499, connect_timeout: float = 8.0):
+        import socket
+
+        super().__init__()
+        self.host = host
+        self.port = port
+        self._sock = socket.create_connection((host, port), timeout=connect_timeout)
+        self._sock.settimeout(0.05)
+        self._start_reader()
+
+    def _close_io(self) -> None:
+        try:
+            self._sock.close()
+        except Exception:
+            pass
+
+    def _read_chunk(self) -> bytes:
+        import socket
+
+        try:
+            return self._sock.recv(4096)
+        except socket.timeout:
+            return b""
+        except OSError as e:
+            raise EspdDisconnected(str(e)) from e
+
+    def _write_bytes(self, data: bytes) -> None:
+        self._sock.sendall(data)
+
+
+EspdClient = EspdCdc | EspdWifi
 
 
 def _extract_protocol_line(line: bytes) -> bytes | None:
@@ -623,31 +753,33 @@ def resolve_port_pattern(port_arg: str | None) -> str:
     return port
 
 
-def device_status(cdc: EspdCdc) -> dict[str, str]:
-    if cdc.last_status and cdc.last_status.startswith(b"+OK STATUS"):
-        return parse_status_info(cdc.last_status)
-    return parse_status_info(cdc.status())
+def device_status(client: EspdClient) -> dict[str, str]:
+    if client.last_status and client.last_status.startswith(b"+OK STATUS"):
+        return parse_status_info(client.last_status)
+    return parse_status_info(client.status())
 
 
 def sync_store_path(info: dict[str, str]) -> str:
     return "/sdcard" if info["sdcard"] == "yes" else "/storage"
 
 
-def prepare_for_sync(cdc: EspdCdc, port: str) -> EspdCdc:
+def prepare_for_sync(client: EspdClient, target: SyncTarget) -> EspdClient:
     """SD when a card is mounted; otherwise sync to internal flash (/storage)."""
-    info = device_status(cdc)
+    info = device_status(client)
     if info["sdcard"] == "yes":
         log_script("SD card available -- using /sdcard")
-        return cdc
+        return client
     if info["internal"] == "yes":
-        return cdc
-    return ensure_storage_for_write(cdc, port)
+        return client
+    if target.wifi_host:
+        return ensure_storage_for_write_wifi(client, target)
+    return ensure_storage_for_write(client, target.port_pattern)
 
 
-def wait_for_storage_ready(cdc: EspdCdc, timeout_s: float = 45.0) -> dict[str, str]:
+def wait_for_storage_ready(client: EspdClient, timeout_s: float = 45.0) -> dict[str, str]:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        info = device_status(cdc)
+        info = device_status(client)
         if info["internal"] == "yes":
             return info
         log_script("waiting for /storage on device…")
@@ -655,7 +787,23 @@ def wait_for_storage_ready(cdc: EspdCdc, timeout_s: float = 45.0) -> dict[str, s
     raise RuntimeError("/storage not ready on device (boot still in progress?)")
 
 
-def ensure_storage_for_write(cdc: EspdCdc, port: str) -> EspdCdc:
+def ensure_storage_for_write_wifi(client: EspdWifi, target: SyncTarget) -> EspdWifi:
+    """Reset the device so /storage is APP-mounted (exits drive mode)."""
+    log_script("internal storage not available -- resetting device")
+    client.reset_device()
+    client.close()
+    log_script("waiting for WiFi sync after reboot (up to 60s)…")
+    time.sleep(2.0)
+    client = connect_wifi(target.wifi_host, target.wifi_port, ready_timeout=60.0)
+    info = wait_for_storage_ready(client)
+    if info["internal"] != "yes":
+        raise RuntimeError(
+            f"/storage still not available after reset (internal={info['internal']})"
+        )
+    return client
+
+
+def ensure_storage_for_write(client: EspdCdc, port: str) -> EspdCdc:
     """Reset the device so /storage is APP-mounted (exits drive mode)."""
     log_script("internal storage not available -- resetting device")
     cdc.reset_device()
@@ -669,6 +817,65 @@ def ensure_storage_for_write(cdc: EspdCdc, port: str) -> EspdCdc:
             f"/storage still not available after reset (internal={info['internal']})"
         )
     return cdc
+
+
+def connect_wifi(host: str, port: int = 4499, ready_timeout: float = 8.0) -> EspdWifi:
+    deadline = time.monotonic() + ready_timeout
+    last_err = ""
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        client: EspdWifi | None = None
+        try:
+            client = EspdWifi(host, port, connect_timeout=min(remaining, 8.0))
+            for _ in range(5):
+                try:
+                    last = client.status(timeout=3.0)
+                    if b"+OK STATUS" in last:
+                        log_script(
+                            f"connected ({host}:{port}): "
+                            f"{last.decode(errors='replace')}"
+                        )
+                        connected = client
+                        connected.last_status = last
+                        client = None
+                        return connected
+                except EspdDisconnected as e:
+                    last_err = str(e)
+                    break
+                except TimeoutError:
+                    pass
+        except (TimeoutError, EspdDisconnected, OSError) as e:
+            last_err = str(e)
+        finally:
+            if client is not None:
+                client.close()
+        time.sleep(0.5)
+    raise TimeoutError(
+        f"WiFi connect failed within {ready_timeout:.0f}s"
+        + (f" ({last_err})" if last_err else "")
+    )
+
+
+def connect_wifi_and_prepare(
+    host: str, port: int = 4499, *, exit_on_fail: bool = False
+) -> EspdWifi:
+    """Connect over WiFi TCP and prepare SD or internal-flash sync path."""
+    target = SyncTarget.wifi(host, port)
+    while True:
+        try:
+            client = connect_wifi(host, port, ready_timeout=60.0)
+            try:
+                return prepare_for_sync(client, target)
+            except Exception:
+                client.close()
+                raise
+        except (TimeoutError, EspdDisconnected, RuntimeError, OSError) as e:
+            log_script(f"waiting for device ({e})…")
+            if exit_on_fail:
+                raise
+            time.sleep(1.5)
 
 
 def connect_cdc(port_pattern: str, ready_timeout: float = 8.0) -> EspdCdc:
@@ -718,11 +925,12 @@ def connect_and_prepare(
     port_pattern: str, *, exit_on_fail: bool = False
 ) -> EspdCdc:
     """Connect over CDC and prepare SD or internal-flash sync path."""
+    target = SyncTarget.serial(port_pattern)
     while True:
         try:
             cdc = connect_cdc(port_pattern, ready_timeout=60.0)
             try:
-                return prepare_for_sync(cdc, port_pattern)
+                return prepare_for_sync(cdc, target)
             except Exception:
                 cdc.close()
                 raise
@@ -744,59 +952,59 @@ def local_file_hash(path: str) -> tuple[int, int]:
     return os.path.getsize(path), crc & 0xFFFFFFFF
 
 
-def mirror_prune(cdc: EspdCdc, keep: set[str], port: str) -> EspdCdc:
+def mirror_prune(client: EspdClient, keep: set[str], target: SyncTarget) -> EspdClient:
     keep_norm = {r.replace(os.sep, "/") for r in keep}
     while True:
         try:
-            on_device = set(cdc.list_files())
+            on_device = set(client.list_files())
             break
         except (EspdDisconnected, TimeoutError) as e:
             kind = "timeout" if isinstance(e, TimeoutError) else "disconnect"
             log_script(f"{kind} during LIST; reconnecting…")
-            cdc.close()
-            cdc = connect_and_prepare(port, exit_on_fail=True)
+            client.close()
+            client = target.reconnect_prepared()
     orphans = sorted(p for p in (on_device - keep_norm) if _dev_path_ok(p))
     skipped = sorted(p for p in (on_device - keep_norm) if not _dev_path_ok(p))
     for rel in skipped:
         log_script(f"warning: cannot mirror-remove invalid device path {rel!r}")
     if not orphans:
-        return cdc
+        return client
     log_script(f"mirror: removing {len(orphans)} file(s) not in project")
     for rel in orphans:
         while True:
             try:
                 log_script(f"remove {rel}")
-                cdc.rm_file(rel)
+                client.rm_file(rel)
                 break
             except (EspdDisconnected, TimeoutError) as e:
                 kind = "timeout" if isinstance(e, TimeoutError) else "disconnect"
                 log_script(f"{kind} during RM {rel}; reconnecting…")
-                cdc.close()
-                cdc = connect_and_prepare(port, exit_on_fail=True)
+                client.close()
+                client = target.reconnect_prepared()
             except RuntimeError as e:
                 msg = str(e)
                 if "not mounted" in msg:
                     log_script("storage not ready during RM; reconnecting…")
-                    cdc.close()
-                    cdc = connect_and_prepare(port, exit_on_fail=True)
+                    client.close()
+                    client = target.reconnect_prepared()
                     continue
                 if "not found" in msg or "bad path" in msg:
                     log_script(f"skip {rel} ({msg.strip()})")
                     break
                 raise
-    return cdc
+    return client
 
 
 def sync_files(
-    cdc: EspdCdc,
+    client: EspdClient,
     watch_dir: str,
     rels: list[str],
-    port: str,
+    target: SyncTarget,
     *,
     mirror: bool = True,
-) -> EspdCdc:
+) -> EspdClient:
     if mirror:
-        cdc = mirror_prune(cdc, set(rels), port)
+        client = mirror_prune(client, set(rels), target)
     reload_needed = False
     reset_needed = False
     uploaded = 0
@@ -808,13 +1016,13 @@ def sync_files(
         _size, crc = local_file_hash(local)
         while True:
             try:
-                sent = cdc.put_file(local, rel, crc)
+                sent = client.put_file(local, rel, crc)
             except (EspdDisconnected, TimeoutError) as e:
                 kind = "timeout" if isinstance(e, TimeoutError) else "disconnect"
                 log_script(f"{kind} during PUT {rel}; reconnecting…")
-                cdc.close()
+                client.close()
                 try:
-                    cdc = connect_and_prepare(port, exit_on_fail=True)
+                    client = target.reconnect_prepared()
                 except (TimeoutError, EspdDisconnected, RuntimeError) as re_err:
                     log_script(f"reconnect failed during PUT {rel}: {re_err}")
                     time.sleep(1.0)
@@ -826,8 +1034,8 @@ def sync_files(
                     continue
                 if "not mounted" in str(e):
                     log_script("storage not ready during PUT; reconnecting…")
-                    cdc.close()
-                    cdc = connect_and_prepare(port, exit_on_fail=True)
+                    client.close()
+                    client = target.reconnect_prepared()
                     continue
                 if "no space" in str(e):
                     log_script(f"skip {rel} (device full)")
@@ -845,22 +1053,22 @@ def sync_files(
     if reset_needed:
         log_script("RESET (config.txt applies on boot)")
         try:
-            cdc.reset_device()
+            client.reset_device()
         except (EspdDisconnected, TimeoutError):
             pass
         try:
-            cdc.close()
+            client.close()
         except Exception:
             pass
         try:
-            cdc = connect_and_prepare(port, exit_on_fail=False)
+            client = target.reconnect_prepared(exit_on_fail=False)
         except (TimeoutError, EspdDisconnected, RuntimeError) as e:
             log_script(f"reconnect after RESET: {e}")
-            cdc = None
+            client = None
     elif reload_needed:
         log_script("RELOAD")
         try:
-            cdc.reload()
+            client.reload()
         except (EspdDisconnected, TimeoutError):
             log_script("timeout/disconnect during RELOAD (patch may still reload on device)")
     log_script(
@@ -868,10 +1076,10 @@ def sync_files(
         f"({uploaded} uploaded, {skipped} unchanged)"
     )
     try:
-        cdc.status()
+        client.status()
     except (EspdDisconnected, TimeoutError):
         pass
-    return cdc
+    return client
 
 
 def collect_files(root: str) -> dict[str, float]:
@@ -888,8 +1096,18 @@ def collect_files(root: str) -> dict[str, float]:
 
 
 def main() -> int:
-    _need_serial()
-    ap = argparse.ArgumentParser(description="ESPD rapid sync over CDC")
+    ap = argparse.ArgumentParser(description="ESPD rapid sync over CDC or WiFi SoftAP")
+    ap.add_argument(
+        "--host",
+        metavar="IP",
+        help="device SoftAP address for WiFi sync (default serial); e.g. 192.168.4.1",
+    )
+    ap.add_argument(
+        "--wifi-port",
+        type=int,
+        default=4499,
+        help="TCP sync port when using --host (default: 4499)",
+    )
     ap.add_argument("-p", "--port", help="CDC serial port path (auto-detect if omitted)")
     ap.add_argument(
         "watch_dir",
@@ -910,11 +1128,11 @@ def main() -> int:
         metavar="TEXT",
         help="send one MSG to Pd and exit (e.g. '; pd dsp 1' or 'print hello')",
     )
-    ap.add_argument("--reset", action="store_true", help="RESET device over CDC and exit")
+    ap.add_argument("--reset", action="store_true", help="RESET device and exit")
     ap.add_argument(
         "--reload",
         action="store_true",
-        help="RELOAD main.pd from active store over CDC and exit",
+        help="RELOAD main.pd from active store and exit",
     )
     ap.add_argument("--no-color", action="store_true", help="disable ANSI colors")
     ap.add_argument(
@@ -925,7 +1143,7 @@ def main() -> int:
     ap.add_argument(
         "--no-reconnect",
         action="store_true",
-        help="exit when USB disconnects instead of waiting for the port",
+        help="exit when the device disconnects instead of waiting to reconnect",
     )
     ap.add_argument(
         "--no-initial-sync",
@@ -947,64 +1165,96 @@ def main() -> int:
     _out.color = not args.no_color
     _out.show_esp = not args.no_esp_log
 
+    if args.host:
+        target = SyncTarget.wifi(args.host, args.wifi_port)
+    else:
+        _need_serial()
+        try:
+            port_pattern = resolve_port_pattern(args.port)
+        except EspdDisconnected as e:
+            sys.exit(f"port detect failed: {e}")
+        target = SyncTarget.serial(port_pattern)
+
     watch_dir = os.path.abspath(args.watch_dir)
     if not os.path.isdir(watch_dir):
         sys.exit(f"not a directory: {watch_dir}")
     confirm_watch_dir_has_main(watch_dir, yes=args.yes)
 
-    try:
-        port_pattern = resolve_port_pattern(args.port)
-    except EspdDisconnected as e:
-        sys.exit(f"port detect failed: {e}")
-
-    cdc: EspdCdc | None = None
+    client: EspdClient | None = None
     try:
         def run_sync(label: str) -> None:
-            nonlocal cdc
+            nonlocal client
             rels = list(collect_files(watch_dir))
             if not rels:
                 log_script(f"{label}: nothing to send")
                 return
             log_script(f"{label} ({len(rels)} files)")
-            cdc = sync_files(
-                cdc, watch_dir, rels, port_pattern, mirror=not args.no_mirror
+            client = sync_files(
+                client, watch_dir, rels, target, mirror=not args.no_mirror
             )
+
+        connect_timeout = 30.0
 
         if args.reset:
             try:
-                cdc = connect_cdc(port_pattern, ready_timeout=30.0)
-                cdc.reset_device()
+                if target.wifi_host:
+                    client = connect_wifi(
+                        target.wifi_host, target.wifi_port, ready_timeout=connect_timeout
+                    )
+                else:
+                    client = connect_cdc(target.port_pattern, ready_timeout=connect_timeout)
+                client.reset_device()
             except (TimeoutError, EspdDisconnected):
                 pass
-            cdc = None
+            client = None
             if args.no_reconnect:
                 return 0
-            cdc = connect_and_prepare(port_pattern)
+            client = target.reconnect_prepared(exit_on_fail=False)
             if not args.no_initial_sync:
                 run_sync("sync after reset")
             return 0
 
         if args.reload:
-            cdc = connect_cdc(port_pattern, ready_timeout=30.0)
-            line = cdc.reload()
+            if target.wifi_host:
+                client = connect_wifi(
+                    target.wifi_host, target.wifi_port, ready_timeout=connect_timeout
+                )
+            else:
+                client = connect_cdc(target.port_pattern, ready_timeout=connect_timeout)
+            line = client.reload()
             log_script(line.decode(errors="replace").strip())
             return 0
 
         if args.status:
-            cdc = connect_cdc(port_pattern, ready_timeout=30.0)
-            note = explain_status(device_status(cdc))
+            if target.wifi_host:
+                client = connect_wifi(
+                    target.wifi_host, target.wifi_port, ready_timeout=connect_timeout
+                )
+            else:
+                client = connect_cdc(target.port_pattern, ready_timeout=connect_timeout)
+            line = client.last_status or client.status()
+            log_script(line.decode(errors="replace"))
+            info = device_status(client)
+            note = explain_status(info)
             if note:
                 log_script(note)
+            store = sync_store_path(info)
+            log_script(f"sync target would be {store}")
             return 0
 
         if args.pd_msg:
-            cdc = connect_cdc(port_pattern, ready_timeout=30.0)
-            line = cdc.send_pd(args.pd_msg)
+            if target.wifi_host:
+                client = connect_wifi(
+                    target.wifi_host, target.wifi_port, ready_timeout=connect_timeout
+                )
+            else:
+                client = connect_cdc(target.port_pattern, ready_timeout=connect_timeout)
+            line = client.send_pd(args.pd_msg)
             log_script(line.decode(errors="replace").strip())
             return 0
 
-        cdc = connect_and_prepare(port_pattern)
-        store = sync_store_path(device_status(cdc))
+        client = target.reconnect_prepared(exit_on_fail=False)
+        store = sync_store_path(device_status(client))
 
         if not args.no_initial_sync:
             run_sync("sync")
@@ -1015,21 +1265,21 @@ def main() -> int:
         )
 
         while True:
-            if cdc is None or not cdc.alive:
+            if client is None or not client.alive:
                 if args.no_reconnect:
                     log_script("device disconnected — exiting")
                     return 1
-                if cdc is not None:
-                    cdc.close()
-                cdc = None
+                if client is not None:
+                    client.close()
+                client = None
                 prev_store = store
                 try:
-                    cdc = connect_and_prepare(port_pattern)
+                    client = target.reconnect_prepared(exit_on_fail=False)
                 except (TimeoutError, EspdDisconnected, RuntimeError) as e:
                     log_script(str(e))
                     time.sleep(1.0)
                     continue
-                store = sync_store_path(device_status(cdc))
+                store = sync_store_path(device_status(client))
                 if store != prev_store:
                     log_script(f"sync target: {store}")
                     if not args.no_initial_sync:
@@ -1052,33 +1302,33 @@ def main() -> int:
                 ]
                 if not changed:
                     continue
-                cdc = sync_files(
-                    cdc, watch_dir, changed, port_pattern, mirror=False
+                client = sync_files(
+                    client, watch_dir, changed, target, mirror=False
                 )
                 mtimes = now2
             except (EspdDisconnected, TimeoutError):
                 log_script("timeout/disconnect during watch sync; staying in watch mode")
                 try:
-                    cdc.close()
+                    client.close()
                 except Exception:
                     pass
-                cdc = None
+                client = None
                 continue
             except RuntimeError as e:
                 log_script(f"sync error: {e}; staying in watch mode")
                 try:
-                    cdc.close()
+                    client.close()
                 except Exception:
                     pass
-                cdc = None
+                client = None
                 continue
 
     except KeyboardInterrupt:
         log_script("stopped")
         return 0
     finally:
-        if cdc:
-            cdc.close()
+        if client:
+            client.close()
 
 
 if __name__ == "__main__":

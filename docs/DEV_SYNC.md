@@ -25,6 +25,15 @@ python3 scripts/espd_sync.py -p /dev/cu.usbmodem1234561
 
 Use **`1234561` only** for runtime. Flash on `101`, then close the port before reset.
 
+### SoftAP / Wi‑Fi sync (`ESPD_WIFI_AP_SYNC`)
+
+Join the device SoftAP (boot log shows `ESPD-XXXX`), then either:
+
+- **Web console:** [https://192.168.4.1/](https://192.168.4.1/) — monitor, Pd control, live folder watch (accept the self-signed cert warning once).
+- **Python:** `python3 scripts/espd_sync.py --host 192.168.4.1 ./my_patch` (TCP port **4499**, full folder sync)
+
+Same line protocol as USB CDC. USB Serial JTAG monitor still works when a cable is attached.
+
 ## Active store
 
 Boot and CDC sync use the same rule as firmware storage ([espd_storage.c](../main/espd_storage.c)):
@@ -170,6 +179,6 @@ python3 scripts/espd_sync.py --status
 
 **CRC mismatch / disconnect during PUT:** often USB pacing or re-enumeration — script reconnects when possible; see firmware `espd_dev` task priority and host chunk pacing in script source.
 
-**Throughput:** host pacing in `espd_sync.py` (~800 KB/s) helps SD most. **ESP32-S3** builds use **4 KiB wear-levelling** and aligned MSC/PUT buffers (`sdkconfig.defaults.esp32s3` + `espd_dev.c`); internal flash is still slower than SD because of wear levelling + per-file `fsync`.
+**Throughput:** PUT is **stop-and-wait per 8 KiB window** (`+OK PUT ack` after each chunk) on USB and Wi‑Fi alike. Host pacing in `espd_sync.py` (~800 KB/s) helps SD most; **internal flash** is usually slower anyway (wear levelling, per-file `fsync`). Wi‑Fi link speed rarely limits sync — **device storage writes** do. Do not chase larger windows or TCP tuning unless you measure a real bottleneck on SD.
 
 **Logs:** stderr shows `→` / `←` dev traffic; stdout is mostly Pd `print:`.

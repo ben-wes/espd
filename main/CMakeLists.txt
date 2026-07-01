@@ -8,6 +8,7 @@ set(MAIN_SRCS
     "pd_posix_file_compat.c"
     "pd_pdcontrol_compat.c"
     "espd_storage.c"
+    "espd_sync_io.c"
     "espd_dev.c"
     "pdmain.c"
     "espdsp_osc_override.c"
@@ -108,7 +109,7 @@ set(MAIN_REQUIRES
 
 idf_component_register(
     SRCS ${MAIN_SRCS}
-    INCLUDE_DIRS "."
+    INCLUDE_DIRS "." "../wifi"
     REQUIRES ${MAIN_REQUIRES}
 )
 
@@ -141,6 +142,16 @@ endif()
 
 if(CONFIG_ESPD_DEV_SERIAL_SYNC)
     idf_component_optional_requires(PRIVATE esp_driver_usb_serial_jtag)
+endif()
+
+if(CONFIG_ESPD_WIFI_AP_SYNC)
+    idf_component_optional_requires(PRIVATE esp_https_server)
+    target_sources(${COMPONENT_LIB} PRIVATE "espd_dev_wifi.c" "espd_dev_http.c")
+    set(_devconsole_dir "${CMAKE_CURRENT_SOURCE_DIR}/device_console")
+    target_add_binary_data(${COMPONENT_LIB} "${_devconsole_dir}/index.html" BINARY RENAME_TO "index.html")
+    target_add_binary_data(${COMPONENT_LIB} "${_devconsole_dir}/app.js" BINARY RENAME_TO "app.js")
+    target_add_binary_data(${COMPONENT_LIB} "${_devconsole_dir}/certs/servercert.pem" TEXT RENAME_TO "servercert.pem")
+    target_add_binary_data(${COMPONENT_LIB} "${_devconsole_dir}/certs/prvtkey.pem" TEXT RENAME_TO "prvtkey.pem")
 endif()
 
 if(CONFIG_ESPD_USE_WIFI)

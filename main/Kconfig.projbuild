@@ -272,6 +272,21 @@ config ESPD_ENABLE_LEGACY_WIFI_TRANSPORT
         Old host-driven patch loading over TCP/UDP. Not needed for Pd
         [netsend] / [netreceive]. Generic I2S profile enables this by default.
 
+config ESPD_WIFI_AP_SYNC
+    bool "SoftAP wireless patch sync (HTTPS :443, TCP :4499)"
+    depends on ESPD_USE_WIFI && ESPD_DEV_SYNC
+    default n
+    select HTTPD_WS_SUPPORT
+    select MBEDTLS_TLS_SERVER_AND_CLIENT
+    select ESP_HTTPS_SERVER_ENABLE
+    help
+        After boot, start a SoftAP (default 192.168.4.1) with an HTTPS device
+        web console (WebSocket /ws) and the espd_dev sync protocol on TCP 4499
+        for scripts. Open https://192.168.4.1/ and accept the self-signed cert
+        warning once. espd_sync.py --host 192.168.4.1 for Wi-Fi sync without
+        a browser. Optional STA via wifi_ssid= in config.txt (APSTA). Boot
+        window: wifi_sync_ap_minutes= in config.txt.
+
 endmenu
 
 config ESPD_USE_CONSOLE

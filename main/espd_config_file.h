@@ -26,6 +26,10 @@ typedef struct {
     bool wifi_have_ssid;
     char wifi_ssid[33];
     char wifi_password[65];
+    bool wifi_ap_have_ssid;
+    char wifi_ap_ssid[33];
+    char wifi_ap_password[65];
+    int wifi_sync_ap_minutes; /* -1 = not set */
 
     /* Audio DMA / sample rate */
     int audio_dma_desc_num;   /* -1 = not set */

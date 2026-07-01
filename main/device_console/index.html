@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ESPD</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f5f5f5; color: #111; }
+    header { padding: 1.25rem 1.5rem; background: #000; color: #fff; }
+    header h1 { margin: 0; font-size: 1rem; letter-spacing: .12em; text-transform: uppercase; }
+    header p { margin: .35rem 0 0; font-size: .85rem; color: #bbb; }
+    main { max-width: 52rem; margin: 0 auto; padding: 1.5rem; }
+    section { margin-bottom: 2rem; }
+    h2 { margin: 0 0 .75rem; font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: #666; }
+    .row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .75rem; }
+    button, label.btn {
+      border: 1px solid #ccc; background: #fff; padding: .55rem .9rem;
+      font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+      cursor: pointer;
+    }
+    button:hover:not(:disabled), label.btn:hover { border-color: #000; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    #status { font-size: .8rem; color: #666; min-height: 1.2em; }
+    #log {
+      height: 16rem; overflow: auto; border: 1px solid #ddd; background: #fafafa;
+      padding: .75rem; font: .75rem/1.5 ui-monospace, monospace; white-space: pre-wrap;
+    }
+    #log .dev { color: #0a7; }
+    #log .sync { color: #06c; }
+    #pd-form { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+    #pd-input {
+      flex: 1 1 12rem; min-width: 0; border: 1px solid #ccc; padding: .5rem .65rem;
+      font: .75rem ui-monospace, monospace;
+    }
+    .hint { font-size: .75rem; color: #888; margin-top: .5rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ESPD device console</h1>
+    <p id="hdr-sub">Patch sync and monitor over Wi‑Fi</p>
+  </header>
+  <main>
+    <section>
+      <h2>Connection</h2>
+      <div class="row">
+        <button type="button" id="connect-btn">Connect</button>
+        <button type="button" id="disconnect-btn" disabled>Disconnect</button>
+      </div>
+      <p id="status">Not connected</p>
+    </section>
+
+    <section>
+      <h2>Log</h2>
+      <div id="log"></div>
+      <form id="pd-form">
+        <input id="pd-input" maxlength="220" placeholder="Pd message, e.g. pd dsp 1" disabled autocomplete="off" spellcheck="false" />
+        <button type="submit" id="pd-btn" disabled>Send</button>
+        <button type="button" id="reload-btn" disabled>Reload</button>
+        <button type="button" id="reset-btn" disabled>Reset</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>Patch sync</h2>
+      <div class="row">
+        <button type="button" id="folder-btn">Choose folder &amp; sync</button>
+        <button type="button" id="sync-btn" disabled>Sync now</button>
+        <label><input type="checkbox" id="mirror-cb" checked /> Remove old files</label>
+      </div>
+      <p id="folder-name" class="hint"></p>
+      <p id="watch-hint" class="hint"></p>
+      <p class="hint">Join the SoftAP, open <strong>https://192.168.4.1/</strong>, and accept the browser’s self-signed warning (<em>Advanced → Proceed</em>). Or use <code>espd_sync.py --host 192.168.4.1</code> from a computer.</p>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

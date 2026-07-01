@@ -12,16 +12,21 @@
  *   RELOAD
  *   MSG <pd-message>  (queued; evaluated on audio thread via pd_sendmsg)
  *   RESET  (reboot ESP after reply)
+ *   APOFF  (SoftAP builds only: stop SoftAP, keep STA if configured)
  *
- * Device replies (one line each, prefixed for filtering):
+ * WiFi (CONFIG_ESPD_WIFI_AP_SYNC): same line protocol over TCP port 4499 on
+ * the SoftAP interface (device at 192.168.4.1).
  *   +OK ...
  *   -ERR ...
  */
 
 #include "espd.h"
 #include "espd_dev.h"
-#include "espd_usb.h"
+#include "espd_sync_io.h"
 #include "espd_storage.h"
+#if CONFIG_ESPD_WIFI_AP_SYNC
+#include "espd_dev_wifi.h"
+#endif
 
 #if CONFIG_ESPD_DEV_SYNC
 
@@ -140,6 +145,13 @@ static int dev_put_read_hw(uint8_t *buf, size_t max)
 
     if (want > ESPD_DEV_RX_CHUNK)
         want = ESPD_DEV_RX_CHUNK;
+#if CONFIG_ESPD_WIFI_AP_SYNC
+    {
+        int wn = espd_dev_wifi_read_hw(buf, want);
+        if (wn > 0)
+            return wn;
+    }
+#endif
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
 #if ESPD_DEV_SERIAL_SYNC_UART
     int n = uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM, buf, want, pdMS_TO_TICKS(0));
@@ -190,7 +202,7 @@ static void dev_reply(const char *msg)
     n = snprintf(line, sizeof(line), "%s\r\n", msg);
     if (n <= 0)
         return;
-    espd_serial_sync_write(line, (size_t)n);
+    espd_sync_write(line, (size_t)n);
 }
 
 static const char *dev_target_mount(dev_target_t target)
@@ -998,6 +1010,14 @@ static void dev_handle_line(char *line)
         esp_restart();
         return;
     }
+#if CONFIG_ESPD_WIFI_AP_SYNC
+    if (!strcmp(line, "APOFF")) {
+        dev_reply("+OK APOFF");
+        espd_dev_wifi_stop_ap();
+        s_sync_active = false;
+        return;
+    }
+#endif
     if (!strcmp(line, "LIST")) {
         dev_do_list();
         return;
@@ -1165,6 +1185,11 @@ void espd_dev_init(void)
 #endif
 }
 
+TaskHandle_t espd_dev_task_handle(void)
+{
+    return s_dev_task;
+}
+
 bool espd_dev_reload_pending(void)
 {
     return s_reload_pending;
@@ -1230,5 +1255,6 @@ bool espd_dev_pdmsg_take(char *out, size_t outsz)
     return false;
 }
 bool espd_dev_sync_poll(void) { return false; }
+TaskHandle_t espd_dev_task_handle(void) { return NULL; }
 
 #endif /* CONFIG_ESPD_DEV_SYNC */
