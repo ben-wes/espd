@@ -68,6 +68,7 @@ static esp_err_t devconsole_ws(httpd_req_t *req)
     if (!espd_dev_wifi_client_active()) {
         espd_dev_wifi_session_begin_ws(req);
     }
+    httpd_sess_update_lru_counter(req->handle, httpd_req_to_sockfd(req));
 
     memset(&ws_pkt, 0, sizeof(ws_pkt));
     esp_err_t ret = httpd_ws_recv_frame(req, &ws_pkt, 0);
@@ -82,6 +83,7 @@ static esp_err_t devconsole_ws(httpd_req_t *req)
         ret = httpd_ws_recv_frame(req, &ws_pkt, ws_pkt.len);
         if (ret == ESP_OK && ws_pkt.len > 0)
             espd_dev_wifi_rx_feed(buf, ws_pkt.len);
+        httpd_sess_update_lru_counter(req->handle, httpd_req_to_sockfd(req));
         free(buf);
         if (ret != ESP_OK)
             return ret;
@@ -151,8 +153,14 @@ void espd_dev_http_init(void)
     conf.tls_version = ESP_TLS_VER_TLS_1_2;
     conf.httpd.server_port = 443;
     conf.httpd.lru_purge_enable = true;
-    conf.httpd.max_open_sockets = 4;
+    conf.httpd.max_open_sockets = 7;
     conf.httpd.stack_size = 20480;
+    /* Client may go silent while we commit a large PUT (flash write). */
+    conf.httpd.recv_wait_timeout = 180;
+    conf.httpd.keep_alive_enable = true;
+    conf.httpd.keep_alive_idle = 30;
+    conf.httpd.keep_alive_interval = 10;
+    conf.httpd.keep_alive_count = 4;
 
     esp_err_t err = httpd_ssl_start(&s_httpd, &conf);
     if (err != ESP_OK) {

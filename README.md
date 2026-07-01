@@ -2,7 +2,7 @@
 
 Pure Data (Pd) on Espressif ESP32 microcontrollers
 
-Requires [ESP-IDF v6.0.1](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html).
+Requires [ESP-IDF v6.0.2](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html).
 
 ## Documentation
 
@@ -16,7 +16,7 @@ Requires [ESP-IDF v6.0.1](https://docs.espressif.com/projects/esp-idf/en/latest/
 
 ## Requirements
 
-- ESP-IDF **v6.0.1** (`install.sh` once in the IDF tree)
+- ESP-IDF **v6.0.2** (`install.sh` once in the IDF tree)
 - USB serial for flash/monitor
 - **Generic I2S:** ESP32 or ESP32-S3 + manual I2S wiring (e.g. INMP441 + MAX98357A)
 - **Board kit:** ESP32-S3 with an esp-bsp package (see [boards/](boards/))
@@ -32,7 +32,7 @@ git submodule update --init --recursive   # pd @ 0.56-3
 Activate IDF in every new shell:
 
 ```bash
-. $HOME/.espressif/v6.0.1/esp-idf/export.sh
+. $HOME/.espressif/v6.0.2/esp-idf/export.sh
 ```
 
 ## Configuration layers

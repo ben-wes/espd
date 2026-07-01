@@ -242,7 +242,7 @@ idf.py set-target esp32s3 build
 `espd/sdkconfig.defaults.local` before build — the **`espd` submodule** is not committed
 with those changes.
 
-Activate IDF v6.0.1 per [README.md](../README.md).
+Activate IDF v6.0.2 per [README.md](../README.md).
 
 ## Pd I/O surface (core — not board-specific)
 

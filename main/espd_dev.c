@@ -56,7 +56,7 @@ static const char *TAG = "espd_dev";
 /* Below TinyUSB device task (4) so CDC RX is not starved during PUT. */
 #define ESPD_DEV_TASK_PRIO          3
 #define ESPD_DEV_RX_CHUNK           4192
-/* PUT recv + stdio; 6 KiB stack overflowed before RX_CHUNK was 4 KiB. */
+/* PUT recv + stdio; path scratch is static (see s_dev_full). 8 KiB fits flat patches. */
 #define ESPD_DEV_TASK_STACK         8192
 /* Room for PUT <path-with-spaces> <size> <crc> (path up to ESPD_DEV_PATH_MAX). */
 #define ESPD_DEV_LINE_MAX           256
@@ -90,6 +90,8 @@ static uint32_t s_put_expect_crc;
 static uint32_t s_put_crc;
 static FILE *s_put_fp;
 static char s_put_tmp[ESPD_DEV_PATH_MAX];
+/* Full path scratch for espd_dev task handlers (single-threaded). */
+static char s_dev_full[ESPD_DEV_PATH_MAX];
 #if CONFIG_SPIRAM
 #define ESPD_DEV_PSRAM_RESERVE (256u * 1024u)  /* headroom kept for Pd/audio */
 static uint8_t *s_put_buf;   /* PSRAM-backed receive buffer, or NULL */
@@ -112,9 +114,10 @@ struct dev_crc_cache_entry {
 };
 static struct dev_crc_cache_entry *s_crc_cache;
 
-static volatile bool s_sync_active = false;
 /* Shared HW read buffer for line commands and PUT windows (espd_dev task only). */
 static uint8_t s_cdc_rx_buf[ESPD_DEV_RX_CHUNK];
+static char s_line_buf[ESPD_DEV_LINE_MAX];
+static size_t s_line_len;
 
 static void dev_reply(const char *msg);
 static void dev_put_cleanup_temp(void);
@@ -131,7 +134,7 @@ static void dev_maybe_suspend(void);
 #if CONFIG_ESPD_DEV_CDC_SYNC
 static void dev_maybe_suspend(void)
 {
-    if (s_sync_active || s_cmd != DEV_CMD_NONE)
+    if (s_cmd != DEV_CMD_NONE)
         return;
     (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(0));
     vTaskSuspend(NULL);
@@ -146,11 +149,9 @@ static int dev_put_read_hw(uint8_t *buf, size_t max)
     if (want > ESPD_DEV_RX_CHUNK)
         want = ESPD_DEV_RX_CHUNK;
 #if CONFIG_ESPD_WIFI_AP_SYNC
-    {
-        int wn = espd_dev_wifi_read_hw(buf, want);
-        if (wn > 0)
-            return wn;
-    }
+    /* WiFi session owns the protocol path — never mix in USJ bytes while connected. */
+    if (espd_dev_wifi_client_active())
+        return espd_dev_wifi_read_hw(buf, want);
 #endif
 #if CONFIG_ESPD_DEV_SERIAL_SYNC
 #if ESPD_DEV_SERIAL_SYNC_UART
@@ -158,6 +159,8 @@ static int dev_put_read_hw(uint8_t *buf, size_t max)
     return n > 0 ? n : 0;
 #elif ESPD_DEV_SERIAL_SYNC_USJ
     int n = usb_serial_jtag_read_bytes(buf, want, pdMS_TO_TICKS(0));
+    if (n > 0)
+        espd_sync_note_serial_rx();
     return n > 0 ? n : 0;
 #else
     int n = uart_read_bytes(UART_NUM_0, buf, want, pdMS_TO_TICKS(0));
@@ -450,7 +453,6 @@ static int dev_mkdir_parents(const char *fullpath)
 
 static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
 {
-    char full[ESPD_DEV_PATH_MAX];
     int open_errno = 0;
     size_t on_disk = 0;
     uint32_t disk_crc = 0;
@@ -480,25 +482,28 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         dev_reply("-ERR bad size");
         return;
     }
-    if (!dev_build_path(full, sizeof(full), rel)) {
+    if (!dev_build_path(s_dev_full, sizeof(s_dev_full), rel)) {
         dev_reply("-ERR path too long");
         return;
     }
 
-    if (stat(full, &st) == 0 && S_ISREG(st.st_mode) && (size_t)st.st_size == nbytes) {
-        err = dev_file_hash(full, &on_disk, &disk_crc);
+    if (stat(s_dev_full, &st) == 0 && S_ISREG(st.st_mode) && (size_t)st.st_size == nbytes) {
+        err = dev_file_hash(s_dev_full, &on_disk, &disk_crc);
         if (err == 0 && disk_crc == expect_crc) {
             dev_reply("+OK PUT skip");
             return;
         }
     }
 
+    /* Pause DSP through setup, transfer, and flash commit (see dev_put_finish). */
+    s_cmd = DEV_CMD_PUT;
+
     /* If updating an existing file, remove it now so the .tmp only competes
      * with free space, not with the old copy. On failure (new file) this is a
      * no-op. Then check free space against the full payload. */
-    if (stat(full, &st) == 0 && S_ISREG(st.st_mode)) {
-        dev_crc_cache_invalidate(full);
-        unlink(full);
+    if (stat(s_dev_full, &st) == 0 && S_ISREG(st.st_mode)) {
+        dev_crc_cache_invalidate(s_dev_full);
+        unlink(s_dev_full);
     }
     {
         espd_storage_stats_t stats;
@@ -508,7 +513,7 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
             snprintf(msg, sizeof(msg),
                 "-ERR no space: need %zu bytes, %lu KB free",
                 nbytes, (unsigned long)stats.free_kb);
-            dev_reply(msg);
+            dev_put_fail(msg);
             return;
         }
     }
@@ -517,8 +522,8 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     while (dev_put_read_hw(s_cdc_rx_buf, sizeof(s_cdc_rx_buf)) > 0)
         continue;
 
-    if (dev_mkdir_parents(full) != 0) {
-        dev_reply("-ERR invalid parent path");
+    if (dev_mkdir_parents(s_dev_full) != 0) {
+        dev_put_fail("-ERR invalid parent path");
         return;
     }
     dev_put_cleanup_temp();
@@ -539,14 +544,14 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     ESP_LOGI(TAG, "PUT %s: using .tmp file", rel);
 #endif
 
-    if (snprintf(s_put_tmp, sizeof(s_put_tmp), "%s.tmp", full) >= (int)sizeof(s_put_tmp)) {
-        dev_reply("-ERR path too long");
+    if (snprintf(s_put_tmp, sizeof(s_put_tmp), "%s.tmp", s_dev_full) >= (int)sizeof(s_put_tmp)) {
+        dev_put_fail("-ERR path too long");
         return;
     }
     /* Parent creation for tmp path too (handles reconnect/mount races). */
     if (dev_mkdir_parents(s_put_tmp) != 0) {
-        dev_reply("-ERR invalid parent path");
         s_put_tmp[0] = '\0';
+        dev_put_fail("-ERR invalid parent path");
         return;
     }
     /* Drop a partial temp from an earlier attempt; keep s_put_tmp for fopen. */
@@ -555,8 +560,8 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
     if (!s_put_fp && errno == ENOENT) {
         /* Deterministic fallback: ensure parent exists, then retry once. */
         if (dev_mkdir_parents(s_put_tmp) != 0) {
-            dev_reply("-ERR invalid parent path");
             s_put_tmp[0] = '\0';
+            dev_put_fail("-ERR invalid parent path");
             return;
         }
         s_put_fp = fopen(s_put_tmp, "wb");
@@ -567,22 +572,19 @@ static void dev_put_offer(const char *rel, size_t nbytes, uint32_t expect_crc)
         char msg[80];
         open_errno = errno;
         snprintf(msg, sizeof(msg), "-ERR open failed (%d)", open_errno);
-        dev_reply(msg);
         ESP_LOGW(TAG, "PUT open %s failed (%d)", s_put_tmp, open_errno);
         s_put_tmp[0] = '\0';
+        dev_put_fail(msg);
         return;
     }
 #if CONFIG_SPIRAM
 put_ready:
 #endif
 
-    strncpy(s_put_rel, rel, sizeof(s_put_rel) - 1);
-    s_put_rel[sizeof(s_put_rel) - 1] = '\0';
     s_put_total = nbytes;
     s_put_remain = nbytes;
     s_put_expect_crc = expect_crc;
     s_put_crc = 0;
-    s_cmd = DEV_CMD_PUT;
     {
         char reply[48];
         snprintf(reply, sizeof(reply), "+OK PUT ready window=%u",
@@ -673,7 +675,6 @@ static void dev_put_recv_window(void)
 
 static void dev_put_finish(void)
 {
-    char final_full[ESPD_DEV_PATH_MAX];
     char reply[96];
 
 #if CONFIG_SPIRAM
@@ -685,7 +686,6 @@ static void dev_put_finish(void)
 #endif
     if (s_cmd != DEV_CMD_PUT || s_put_remain > 0)
         return;
-    s_cmd = DEV_CMD_NONE;
 
     if (s_put_crc != s_put_expect_crc) {
         dev_put_cleanup_temp();
@@ -693,21 +693,24 @@ static void dev_put_finish(void)
             "-ERR PUT crc exp %08" PRIx32 " got %08" PRIx32,
             s_put_expect_crc, s_put_crc);
         dev_reply(reply);
+        s_cmd = DEV_CMD_NONE;
         return;
     }
-    if (!dev_build_path(final_full, sizeof(final_full), s_put_rel)) {
+    if (!dev_build_path(s_dev_full, sizeof(s_dev_full), s_put_rel)) {
         dev_put_cleanup_temp();
         dev_reply("-ERR commit failed (path)");
+        s_cmd = DEV_CMD_NONE;
         return;
     }
 
 #if CONFIG_SPIRAM
     if (s_put_buf) {
-        FILE *fp = fopen(final_full, "wb");
+        FILE *fp = fopen(s_dev_full, "wb");
         if (!fp) {
-            ESP_LOGW(TAG, "PUT commit fopen %s failed (%d)", final_full, errno);
+            ESP_LOGW(TAG, "PUT commit fopen %s failed (%d)", s_dev_full, errno);
             dev_put_cleanup_temp();
             dev_reply("-ERR commit failed (open)");
+            s_cmd = DEV_CMD_NONE;
             return;
         }
         size_t written = fwrite(s_put_buf, 1, s_put_total, fp);
@@ -716,21 +719,23 @@ static void dev_put_finish(void)
         s_put_buf = NULL;
         s_put_buf_pos = 0;
         if (written != s_put_total) {
-            ESP_LOGW(TAG, "PUT commit fwrite %s: %zu/%zu", final_full, written, s_put_total);
-            unlink(final_full);
+            ESP_LOGW(TAG, "PUT commit fwrite %s: %zu/%zu", s_dev_full, written, s_put_total);
+            unlink(s_dev_full);
             dev_reply("-ERR commit failed (write)");
+            s_cmd = DEV_CMD_NONE;
             return;
         }
     } else
 #endif
     {
-        ESP_LOGI(TAG, "PUT commit %s via .tmp rename (%zu bytes)", final_full, s_put_total);
+        ESP_LOGI(TAG, "PUT commit %s via .tmp rename (%zu bytes)", s_dev_full, s_put_total);
         FILE *fp = s_put_fp;
         s_put_fp = NULL;
         fflush(fp);
         fclose(fp);
-        if (dev_put_commit(final_full) != 0) {
+        if (dev_put_commit(s_dev_full) != 0) {
             dev_reply("-ERR commit failed (rename)");
+            s_cmd = DEV_CMD_NONE;
             return;
         }
     }
@@ -738,13 +743,14 @@ static void dev_put_finish(void)
     /* Cache the CRC we just computed during the write — free hit for next sync. */
     if (s_put_total >= ESPD_DEV_CRC_CACHE_MIN_SIZE) {
         struct stat st;
-        if (stat(final_full, &st) == 0 && S_ISREG(st.st_mode))
-            dev_crc_cache_store(final_full, (uint32_t)st.st_size,
+        if (stat(s_dev_full, &st) == 0 && S_ISREG(st.st_mode))
+            dev_crc_cache_store(s_dev_full, (uint32_t)st.st_size,
                 (uint32_t)st.st_mtime, s_put_crc);
     }
     snprintf(reply, sizeof(reply), "+OK PUT done %08" PRIx32, s_put_crc);
     dev_reply(reply);
     espd_storage_resolve_paths();
+    s_cmd = DEV_CMD_NONE;
 }
 
 static void dev_queue_pdmsg(const char *text)
@@ -848,7 +854,6 @@ static void dev_do_list(void)
 
 static void dev_do_rm(const char *rel)
 {
-    char full[ESPD_DEV_PATH_MAX];
     struct stat st;
 
 #if CONFIG_ESPD_USE_USB_MSC
@@ -870,11 +875,11 @@ static void dev_do_rm(const char *rel)
         dev_reply("-ERR bad path");
         return;
     }
-    if (!dev_build_path(full, sizeof(full), rel)) {
+    if (!dev_build_path(s_dev_full, sizeof(s_dev_full), rel)) {
         dev_reply("-ERR path too long");
         return;
     }
-    if (stat(full, &st) != 0) {
+    if (stat(s_dev_full, &st) != 0) {
         dev_reply("-ERR not found");
         return;
     }
@@ -882,7 +887,7 @@ static void dev_do_rm(const char *rel)
         dev_reply("-ERR not a file");
         return;
     }
-    if (unlink(full) != 0) {
+    if (unlink(s_dev_full) != 0) {
         dev_reply("-ERR unlink failed");
         return;
     }
@@ -979,8 +984,6 @@ static void dev_handle_line(char *line)
         return;
 
     if (!strcmp(line, "STATUS")) {
-        // activate sync mode after STATUS command
-        s_sync_active = false;
         char reply[128];
         snprintf(reply, sizeof(reply), "+OK STATUS sdcard=%s internal=%s",
             dev_sdcard_available() ? "yes" : "no",
@@ -996,12 +999,8 @@ static void dev_handle_line(char *line)
         return;
     }
 
-    // deactivate sync mode for all other commands
-    s_sync_active = true;
-
     if (!strcmp(line, "RELOAD")) {
         dev_do_reload();
-        s_sync_active = false;
         return;
     }
     if (!strcmp(line, "RESET")) {
@@ -1014,7 +1013,6 @@ static void dev_handle_line(char *line)
     if (!strcmp(line, "APOFF")) {
         dev_reply("+OK APOFF");
         espd_dev_wifi_stop_ap();
-        s_sync_active = false;
         return;
     }
 #endif
@@ -1030,11 +1028,10 @@ static void dev_handle_line(char *line)
         return;
     }
     if (!strncmp(line, "PUT ", 4)) {
-        char rel[ESPD_DEV_PATH_MAX];
         size_t nbytes = 0;
         uint32_t expect_crc = 0;
-        if (dev_parse_put_line(line, rel, sizeof(rel), &nbytes, &expect_crc))
-            dev_put_offer(rel, nbytes, expect_crc);
+        if (dev_parse_put_line(line, s_put_rel, sizeof(s_put_rel), &nbytes, &expect_crc))
+            dev_put_offer(s_put_rel, nbytes, expect_crc);
         else
             dev_reply("-ERR PUT syntax");
         return;
@@ -1044,8 +1041,6 @@ static void dev_handle_line(char *line)
 
 static void dev_feed_bytes(const uint8_t *buf, size_t rx)
 {
-    static char line[ESPD_DEV_LINE_MAX];
-    static size_t line_len;
     size_t i;
 
     for (i = 0; i < rx; i++) {
@@ -1054,15 +1049,15 @@ static void dev_feed_bytes(const uint8_t *buf, size_t rx)
         if (c == '\r')
             continue;
         if (c == '\n') {
-            if (line_len > 0) {
-                line[line_len] = '\0';
-                dev_handle_line(line);
-                line_len = 0;
+            if (s_line_len > 0) {
+                s_line_buf[s_line_len] = '\0';
+                dev_handle_line(s_line_buf);
+                s_line_len = 0;
             }
             continue;
         }
-        if (line_len + 1 < sizeof(line))
-            line[line_len++] = (char)c;
+        if (s_line_len + 1 < sizeof(s_line_buf))
+            s_line_buf[s_line_len++] = (char)c;
     }
 }
 
@@ -1085,8 +1080,12 @@ static void espd_dev_task(void *arg)
 #if CONFIG_SPIRAM
                      || s_put_buf
 #endif
-                    )
+                    ) {
+#if CONFIG_ESPD_WIFI_AP_SYNC
+                espd_dev_wifi_touch_session();
+#endif
                 dev_put_finish();
+            }
             taskYIELD();
             (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(0));
         } else {
@@ -1108,7 +1107,6 @@ void espd_dev_init(void)
     s_put_tmp[0] = '\0';
     s_cmd = DEV_CMD_NONE;
     s_reload_pending = false;
-    s_sync_active = false;
     s_target = dev_default_target();
 
 #if CONFIG_SPIRAM
@@ -1190,6 +1188,11 @@ TaskHandle_t espd_dev_task_handle(void)
     return s_dev_task;
 }
 
+void espd_dev_transport_reset(void)
+{
+    s_line_len = 0;
+}
+
 bool espd_dev_reload_pending(void)
 {
     return s_reload_pending;
@@ -1222,7 +1225,7 @@ bool espd_dev_pdmsg_take(char *out, size_t outsz)
 
 bool espd_dev_sync_poll(void)
 {
-    if (espd_dev_reload_pending()) {
+    if (espd_dev_reload_pending() && s_cmd != DEV_CMD_PUT) {
         ESP_LOGI(TAG, "RELOAD executing from %s", espd_dev_reload_dir());
         pdmain_reload_patch_from(espd_dev_reload_dir());
         espd_dev_clear_reload_pending();
@@ -1239,7 +1242,8 @@ bool espd_dev_sync_poll(void)
                 pd_sendmsg(pdmsg, (int)n);
         }
     }
-    return s_sync_active;
+    /* Pause Pd while flash sync is active (offer setup, transfer, commit). */
+    return s_cmd == DEV_CMD_PUT;
 }
 
 #else /* !CONFIG_ESPD_DEV_SYNC */

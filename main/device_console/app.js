@@ -7,12 +7,22 @@ const PUT_ACK_RE = /^\+OK PUT ack (\d+)$/
 const PUT_READY_RE = /^\+OK PUT ready window=(\d+)$/
 const LIST_DONE_RE = /^\+OK LIST done (\d+)$/
 const DEBOUNCE_MS = 350
+const LOG_MAX_LINES = 1000
+const CONNECT_OPEN_MS = 8000
+const RECONNECT_OPEN_MS = 4000
+const RECONNECT_DELAY_MS = 600
+const RECONNECT_BOOT_WAIT_MS = 2500
+const RECONNECT_ATTEMPTS = 24
+
+const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 const $ = id => document.getElementById(id)
 const logEl = $('log')
 const statusEl = $('status')
 
 let client = null
+let connectPromise = null
+let suppressDisconnectReconnect = false
 let syncDirHandle = null
 let syncMtimes = new Map()
 let syncObserver = null
@@ -35,7 +45,7 @@ function log(msg, cls = '') {
   if (cls) line.className = cls
   line.textContent = msg
   logEl.appendChild(line)
-  while (logEl.children.length > 500) logEl.removeChild(logEl.firstChild)
+  while (logEl.children.length > LOG_MAX_LINES) logEl.removeChild(logEl.firstChild)
   logEl.scrollTop = logEl.scrollHeight
 }
 
@@ -45,14 +55,31 @@ const FOLDER_WATCH_OK =
   FOLDER_SYNC_OK && 'FileSystemObserver' in window
 
 function setConnected(on) {
-  $('connect-btn').disabled = on || busy
-  $('disconnect-btn').disabled = !on || busy
-  $('pd-input').disabled = !on || busy
-  $('pd-btn').disabled = !on || busy
-  $('reload-btn').disabled = !on || busy
-  $('reset-btn').disabled = !on || busy
-  $('sync-btn').disabled = !on || busy || !syncDirHandle
+  const live = on && client && client._ioAlive()
+  $('connect-btn').disabled = live || busy || !!connectPromise
+  $('disconnect-btn').disabled = !live || busy
+  $('pd-input').disabled = !live || busy
+  $('pd-btn').disabled = !live || busy
+  $('reload-btn').disabled = !live || busy
+  $('reset-btn').disabled = !live || busy
+  $('sync-btn').disabled = !live || busy || !syncDirHandle
+  /* Folder pick does not require an open socket (runSync connects). */
   $('folder-btn').disabled = busy || !FOLDER_SYNC_OK
+}
+
+function applyConnectedState(info) {
+  if (!client || !client._ioAlive()) {
+    setConnected(false)
+    return
+  }
+  setConnected(true)
+  if (info) {
+    statusEl.textContent = `Connected · sync target ${syncStorePath(info)}`
+  } else if (watchWanted && syncDirHandle) {
+    setWatchingStatus()
+  } else {
+    statusEl.textContent = 'Connected'
+  }
 }
 
 function wsUrl() {
@@ -83,6 +110,25 @@ function parseStatus(line) {
 
 function syncStorePath(info) {
   return info.sdcard === 'yes' ? '/sdcard' : '/storage'
+}
+
+function matchDevReply(verb, line) {
+  switch (verb) {
+    case 'STATUS':
+      return line.startsWith('+OK STATUS')
+    case 'MSG':
+      return line.startsWith('+OK MSG') || line.startsWith('-ERR MSG')
+    case 'RELOAD':
+      return line.startsWith('+OK RELOAD') || line.startsWith('-ERR')
+    case 'RESET':
+      return line.startsWith('+OK RESET')
+    case 'RM':
+      return line.startsWith('+OK RM') || line.startsWith('-ERR')
+    case 'PUT':
+      return line.startsWith('+OK PUT') || line.startsWith('-ERR')
+    default:
+      return line.startsWith('+OK') || line.startsWith('-ERR')
+  }
 }
 
 function syncIsSnapshot(src) {
@@ -170,9 +216,9 @@ async function collectChangedRels() {
 }
 
 function setWatchingStatus() {
-  if (!client || !syncDirHandle || !watchWanted) return
+  if (!client?._ioAlive() || !syncDirHandle || !watchWanted) return
   const n = syncMtimes.size
-  statusEl.textContent = `Watching ${n} file${n === 1 ? '' : 's'}`
+  statusEl.textContent = `Connected · watching ${n} file${n === 1 ? '' : 's'}`
 }
 
 class EspdWsClient {
@@ -187,6 +233,8 @@ class EspdWsClient {
     this.listActive = false
     this.listPaths = []
     this.pendingReply = null
+    this._replyAccept = null
+    this._pendingVerb = null
     this.lastStatus = null
     this._buf = new Uint8Array(0)
   }
@@ -205,10 +253,16 @@ class EspdWsClient {
   }
 
   _resolveReply(line) {
-    if (this.pendingReply) {
-      this.pendingReply(line)
-      this.pendingReply = null
+    if (!this.pendingReply) return
+    if (this._replyAccept && !this._replyAccept(line)) {
+      this.onLine(line, line.startsWith('+') || line.startsWith('-ERR') ? 'dev' : 'device')
+      return
     }
+    const fn = this.pendingReply
+    this.pendingReply = null
+    this._replyAccept = null
+    this._pendingVerb = null
+    fn(line)
   }
 
   _processLines() {
@@ -245,7 +299,7 @@ class EspdWsClient {
       }
       if (line.startsWith('+') || line.startsWith('-ERR')) {
         this.onLine(line, 'dev')
-        this._resolveReply(line)
+        if (this.pendingReply) this._resolveReply(line)
       } else {
         this.onLine(line, 'device')
       }
@@ -261,21 +315,31 @@ class EspdWsClient {
     this._processLines()
   }
 
-  open() {
+  open(connectTimeoutMs = CONNECT_OPEN_MS) {
     return new Promise((resolve, reject) => {
       this.stopped = false
       this.disconnected = false
       const ws = new WebSocket(wsUrl())
       ws.binaryType = 'arraybuffer'
       this.ws = ws
-      const t = setTimeout(() => reject(new Error('WebSocket connect timeout')), 8000)
-      ws.onopen = () => { clearTimeout(t); resolve() }
-      ws.onerror = () => {
+      let settled = false
+      const finish = (fn, arg) => {
+        if (settled) return
+        settled = true
         clearTimeout(t)
-        reject(new Error(
-          'WebSocket error — accept the certificate warning, reload, and try again'
-        ))
+        fn(arg)
       }
+      const t = setTimeout(() => {
+        try { ws.close() } catch (_) {}
+        finish(reject, new Error('WebSocket connect timeout'))
+      }, connectTimeoutMs)
+      ws.onopen = () => {
+        this._buf = new Uint8Array(0)
+        finish(resolve)
+      }
+      ws.onerror = () => finish(reject, new Error(
+        'WebSocket error — accept the certificate warning, reload, and try again',
+      ))
       ws.onclose = () => {
         if (!this.stopped) {
           this._markDisconnected()
@@ -290,6 +354,8 @@ class EspdWsClient {
     this.stopped = true
     this.disconnected = true
     this.pendingReply = null
+    this._replyAccept = null
+    this._pendingVerb = null
     if (this.ws) {
       try { this.ws.close() } catch (_) {}
       this.ws = null
@@ -300,6 +366,8 @@ class EspdWsClient {
     return new Promise((resolve, reject) => {
       const t = setTimeout(() => {
         this.pendingReply = null
+        this._replyAccept = null
+        this._pendingVerb = null
         reject(new Error(this._ioAlive() ? 'device reply timeout' : 'disconnected'))
       }, timeoutMs)
       this.pendingReply = line => {
@@ -314,12 +382,26 @@ class EspdWsClient {
     this.ws.send(data)
   }
 
+  async _sendAndWait(data, timeoutMs) {
+    const replyPromise = this._waitReply(timeoutMs)
+    await this._writeBytes(data)
+    return replyPromise
+  }
+
   async command(text, timeoutMs = 10000) {
     if (!this._ioAlive()) throw new Error('disconnected')
-    this.pendingReply = null
+    this._buf = new Uint8Array(0)
+    const verb = text.trim().split(/\s+/)[0]
+    this._pendingVerb = verb
+    this._replyAccept = line => matchDevReply(verb, line)
     this.onLog(`→ ${text.trim()}`, 'sync')
-    await this._writeBytes(new TextEncoder().encode(text.endsWith('\n') ? text : `${text}\n`))
-    return this._waitReply(timeoutMs)
+    const payload = new TextEncoder().encode(text.endsWith('\n') ? text : `${text}\n`)
+    try {
+      return await this._sendAndWait(payload, timeoutMs)
+    } finally {
+      this._replyAccept = null
+      this._pendingVerb = null
+    }
   }
 
   async status(timeoutMs = 10000) {
@@ -348,13 +430,15 @@ class EspdWsClient {
 
   async listFiles(timeoutMs = 120000) {
     if (!this._ioAlive()) throw new Error('disconnected')
-    this.pendingReply = null
+    this._buf = new Uint8Array(0)
     this.listPaths = []
     this.listActive = true
     try {
       this.onLog('→ LIST', 'sync')
-      await this._writeBytes(new TextEncoder().encode('LIST\n'))
-      const line = await this._waitReply(timeoutMs)
+      const line = await this._sendAndWait(
+        new TextEncoder().encode('LIST\n'),
+        timeoutMs,
+      )
       if (line.startsWith('-ERR')) throw new Error(line)
       if (!LIST_DONE_RE.test(line.trim())) throw new Error(`unexpected LIST: ${line}`)
       return [...this.listPaths]
@@ -391,8 +475,7 @@ class EspdWsClient {
       this.pendingReply = null
       for (let off = 0; off < data.length; off += putWindow) {
         const part = data.subarray(off, off + putWindow)
-        await this._writeBytes(part)
-        const ackLine = await this._waitReply(ackTimeout)
+        const ackLine = await this._sendAndWait(part, ackTimeout)
         const am = ackLine.trim().match(PUT_ACK_RE)
         if (!am) {
           if (ackLine.startsWith('-ERR')) throw new Error(ackLine)
@@ -414,51 +497,101 @@ class EspdWsClient {
   }
 }
 
-async function connectClient() {
-  const c = new EspdWsClient({
-    onLine: (line, kind) => log(kind === 'dev' ? `← ${line}` : line, kind === 'dev' ? 'dev' : ''),
-    onLog: (msg, cls) => log(msg, cls || 'sync'),
-    onDisconnect: () => {
-      client = null
-      setConnected(false)
-      if (watchWanted) {
-        statusEl.textContent = 'Disconnected — reconnecting…'
-        ensureClient().then(() => setWatchingStatus()).catch(() => {
+async function connectClient({ openTimeoutMs = CONNECT_OPEN_MS } = {}) {
+  if (client?._ioAlive()) return client
+  if (connectPromise) return connectPromise
+
+  const work = (async () => {
+    statusEl.textContent = 'Connecting…'
+    setConnected(false)
+
+    const c = new EspdWsClient({
+      onLine: (line, kind) => log(kind === 'dev' ? `← ${line}` : line, kind === 'dev' ? 'dev' : ''),
+      onLog: (msg, cls) => log(msg, cls || 'sync'),
+      onDisconnect: () => {
+        if (client !== c) return
+        setConnected(false)
+        if (busy || suppressDisconnectReconnect) {
+          statusEl.textContent = 'Connection lost — recovering…'
+          return
+        }
+        client = null
+        if (watchWanted) {
+          statusEl.textContent = 'Disconnected — reconnecting…'
+          reconnect()
+            .then(() => {
+              applyConnectedState(
+                client?.lastStatus ? parseStatus(client.lastStatus) : null,
+              )
+              if (watchWanted && syncDirHandle && !busy) startSyncWatch()
+            })
+            .catch(() => {
+              statusEl.textContent = 'Disconnected'
+            })
+        } else {
           statusEl.textContent = 'Disconnected'
-        })
-      } else {
-        statusEl.textContent = 'Disconnected'
-      }
-    },
+        }
+      },
+    })
+
+    await c.open(openTimeoutMs)
+    client = c
+    return await c.status()
+  })()
+
+  connectPromise = work.finally(() => {
+    connectPromise = null
   })
-  await c.open()
-  const info = await c.status()
-  client = c
-  setConnected(true)
-  statusEl.textContent = `Connected · sync target ${syncStorePath(info)}`
-  return c
+
+  try {
+    const info = await connectPromise
+    applyConnectedState(info)
+    return client
+  } catch (e) {
+    client = null
+    setConnected(false)
+    throw e
+  }
 }
 
-async function reconnect() {
-  await client?.close().catch(() => {})
-  client = null
-  for (let i = 0; i < 30; i++) {
-    try {
-      return await connectClient()
-    } catch (_) {
-      await new Promise(r => setTimeout(r, 500))
+async function reconnect({ afterReset = false } = {}) {
+  suppressDisconnectReconnect = true
+  try {
+    if (client) {
+      client.stopped = true
+      await client.close().catch(() => {})
     }
+    client = null
+    setConnected(false)
+    if (afterReset) {
+      statusEl.textContent = 'Waiting for device reboot…'
+      await sleep(RECONNECT_BOOT_WAIT_MS)
+    }
+    statusEl.textContent = 'Reconnecting…'
+    for (let i = 0; i < RECONNECT_ATTEMPTS; i++) {
+      try {
+        return await connectClient({ openTimeoutMs: RECONNECT_OPEN_MS })
+      } catch (_) {
+        if ((i + 1) % 6 === 0) {
+          statusEl.textContent = afterReset
+            ? `Reconnecting after reset… (attempt ${i + 1})`
+            : `Reconnecting… (attempt ${i + 1})`
+        }
+        await sleep(RECONNECT_DELAY_MS)
+      }
+    }
+    throw new Error('reconnect failed')
+  } finally {
+    suppressDisconnectReconnect = false
   }
-  throw new Error('reconnect failed')
 }
 
 async function ensureClient() {
-  if (client && client._ioAlive()) return client
-  statusEl.textContent = 'Connecting…'
-  return reconnect()
+  if (client?._ioAlive()) return client
+  return connectClient()
 }
 
-async function runSync(label, onlyRels = null) {
+async function runSync(label, onlyRels = null, allowRetry = true) {
   if (!syncDirHandle || busy) return
   await ensureClient()
   if (!client) return
@@ -502,24 +635,52 @@ async function runSync(label, onlyRels = null) {
     if (resetNeeded) {
       log('RESET (config.txt)', 'sync')
       await client.resetDevice()
-      client = await reconnect()
+      client = await reconnect({ afterReset: true })
+      applyConnectedState(await client.status().catch(() => null))
     } else if (reloadNeeded) {
       log('RELOAD', 'sync')
       await client.reload()
     }
     log(`sync done (${uploaded} uploaded, ${skipped} unchanged)`, 'sync')
     await refreshSyncMtimes()
-    await client.status().catch(() => {})
-    setWatchingStatus()
+    if (client?._ioAlive()) {
+      await client.status().catch(() => {})
+      applyConnectedState(client.lastStatus ? parseStatus(client.lastStatus) : null)
+    }
   } catch (e) {
-    log(`sync error: ${e.message || e}`, 'sync')
-    try { client = await reconnect() } catch (_) { client = null }
-    setWatchingStatus()
+    const msg = String(e.message || e)
+    log(`sync error: ${msg}`, 'sync')
+    const retriable = /disconnected|reply timeout/i.test(msg)
+    if (allowRetry && retriable) {
+      try {
+        statusEl.textContent = 'Reconnecting after sync drop…'
+        client = await reconnect()
+        applyConnectedState(await client.status().catch(() => null))
+        busy = false
+        watchPaused = false
+        return runSync(label, onlyRels, false)
+      } catch (_) {
+        client = null
+        setConnected(false)
+        statusEl.textContent = 'Disconnected'
+        return
+      }
+    }
+    try {
+      client = await reconnect()
+      applyConnectedState(await client.status().catch(() => null))
+    } catch (_) {
+      client = null
+      setConnected(false)
+      statusEl.textContent = 'Disconnected'
+    }
   } finally {
-    busy = false
-    watchPaused = false
-    setConnected(!!client)
-    if (watchWanted && client) await startSyncWatch()
+    if (busy) {
+      busy = false
+      watchPaused = false
+      applyConnectedState(client?.lastStatus ? parseStatus(client.lastStatus) : null)
+      if (watchWanted && client?._ioAlive()) await startSyncWatch()
+    }
   }
 }
 
@@ -552,7 +713,6 @@ async function pickFolder() {
   if (FOLDER_WATCH_OK) {
     $('watch-hint').textContent = 'Watching folder for saves.'
   }
-  setConnected(!!client)
   await runSync('initial sync')
 }
 
@@ -565,12 +725,17 @@ $('connect-btn').addEventListener('click', async () => {
     setConnected(false)
   }
 })
-
 $('disconnect-btn').addEventListener('click', async () => {
   watchWanted = false
+  suppressDisconnectReconnect = true
   stopSyncWatch()
-  await client?.close().catch(() => {})
+  if (client) {
+    client.stopped = true
+    await client.close().catch(() => {})
+  }
   client = null
+  connectPromise = null
+  suppressDisconnectReconnect = false
   syncDirHandle = null
   syncMtimes.clear()
   $('folder-name').textContent = ''
@@ -591,33 +756,57 @@ $('sync-btn').addEventListener('click', () => runSync('sync now'))
 $('pd-form').addEventListener('submit', async ev => {
   ev.preventDefault()
   const msg = $('pd-input').value
-  if (!client || !msg.trim()) return
+  if (!client?._ioAlive() || !msg.trim() || busy) return
+  busy = true
+  setConnected(true)
   try {
-    const line = await client.sendPd(msg)
-    log(`← ${line}`, 'dev')
+    await client.sendPd(msg)
     $('pd-input').value = ''
   } catch (e) {
     log(`send failed: ${e.message || e}`, 'sync')
+    if (!client?._ioAlive()) {
+      try {
+        await reconnect()
+        applyConnectedState(await client.status().catch(() => null))
+      } catch (_) {
+        client = null
+        setConnected(false)
+        statusEl.textContent = 'Disconnected'
+      }
+    }
+  } finally {
+    busy = false
+    applyConnectedState(client?.lastStatus ? parseStatus(client.lastStatus) : null)
   }
 })
 
 $('reload-btn').addEventListener('click', async () => {
   if (!client) return
   try {
-    const line = await client.reload()
-    log(`← ${line}`, 'dev')
+    await client.reload()
   } catch (e) {
     log(`reload failed: ${e.message || e}`, 'sync')
   }
 })
 
 $('reset-btn').addEventListener('click', async () => {
-  if (!client) return
+  if (!client?._ioAlive()) return
+  busy = true
   try {
+    statusEl.textContent = 'Resetting…'
     await client.resetDevice()
-    client = await reconnect()
+    client = await reconnect({ afterReset: true })
+    applyConnectedState(await client.status().catch(() => null))
   } catch (e) {
     log(`reset failed: ${e.message || e}`, 'sync')
+    client = null
+    setConnected(false)
+    statusEl.textContent = 'Disconnected'
+  } finally {
+    busy = false
+    if (client?._ioAlive()) {
+      applyConnectedState(client.lastStatus ? parseStatus(client.lastStatus) : null)
+    }
   }
 })
 
@@ -630,7 +819,13 @@ try {
     $('watch-hint').textContent =
       'Folder pick needs Chrome/Edge (accept the certificate warning first).'
   }
-  setTimeout(() => $('connect-btn').click(), 400)
+  setTimeout(() => {
+    connectClient().catch(e => {
+      log(`connect failed: ${e.message || e}`, 'sync')
+      statusEl.textContent = 'Not connected'
+      setConnected(false)
+    })
+  }, 400)
 } catch (e) {
   log(e.message, 'sync')
   statusEl.textContent = e.message

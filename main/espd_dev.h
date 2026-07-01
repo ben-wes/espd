@@ -30,6 +30,8 @@ bool espd_dev_sync_poll(void);
 #if CONFIG_ESPD_DEV_SYNC
 /** espd_dev FreeRTOS task (WiFi transport notifier). */
 TaskHandle_t espd_dev_task_handle(void);
+/** Clear partial line parser state (new WiFi sync session). */
+void espd_dev_transport_reset(void);
 #endif
 
 extern bool g_espd_pd_running;

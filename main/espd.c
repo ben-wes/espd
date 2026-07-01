@@ -199,7 +199,7 @@ void pdmain_print(const char *s)
         return;
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC || CONFIG_ESPD_DEV_CDC_SYNC || CONFIG_ESPD_WIFI_AP_SYNC
-    espd_sync_write(s, strlen(s));
+    espd_sync_print(s);
 #else
     printf("%s", s);
 #endif

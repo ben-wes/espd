@@ -2,79 +2,209 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>ESPD</title>
   <style>
-    :root { color-scheme: light; font-family: system-ui, sans-serif; }
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, -apple-system, sans-serif;
+      --log-bg: #0c0c0c;
+      --log-fg: #d4d4d4;
+      --dock-bg: rgba(18, 18, 18, 0.88);
+      --dock-border: rgba(255, 255, 255, 0.1);
+      --accent: #3dd68c;
+      --sync: #5eb3ff;
+      --muted: #888;
+      --dock-top: 3.25rem;
+      --dock-bottom: 7.5rem;
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; background: #f5f5f5; color: #111; }
-    header { padding: 1.25rem 1.5rem; background: #000; color: #fff; }
-    header h1 { margin: 0; font-size: 1rem; letter-spacing: .12em; text-transform: uppercase; }
-    header p { margin: .35rem 0 0; font-size: .85rem; color: #bbb; }
-    main { max-width: 52rem; margin: 0 auto; padding: 1.5rem; }
-    section { margin-bottom: 2rem; }
-    h2 { margin: 0 0 .75rem; font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: #666; }
-    .row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .75rem; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--log-bg);
+      color: var(--log-fg);
+      overflow: hidden;
+    }
+
+    /* Full-viewport scrollable monitor */
+    #log {
+      position: fixed;
+      inset: 0;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      padding:
+        calc(var(--dock-top) + env(safe-area-inset-top, 0px))
+        max(0.75rem, env(safe-area-inset-right, 0px))
+        calc(var(--dock-bottom) + env(safe-area-inset-bottom, 0px))
+        max(0.75rem, env(safe-area-inset-left, 0px));
+      font: 0.8rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #log .dev { color: var(--accent); }
+    #log .sync { color: var(--sync); }
+
+    /* Floating docks */
+    .dock {
+      position: fixed;
+      left: 0;
+      right: 0;
+      z-index: 10;
+      background: var(--dock-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-color: var(--dock-border);
+      border-style: solid;
+      padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+      padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+    }
+    .dock-top {
+      top: 0;
+      border-bottom-width: 1px;
+      padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+      padding-bottom: 0.5rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem 0.75rem;
+    }
+    .dock-bottom {
+      bottom: 0;
+      border-top-width: 1px;
+      padding-top: 0.6rem;
+      padding-bottom: max(0.6rem, env(safe-area-inset-bottom, 0px));
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .brand {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #fff;
+      margin-right: 0.25rem;
+    }
+    #status {
+      flex: 1 1 8rem;
+      min-width: 0;
+      font-size: 0.72rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      align-items: center;
+    }
+    .row-grow { flex: 1 1 auto; min-width: 0; }
+
     button, label.btn {
-      border: 1px solid #ccc; background: #fff; padding: .55rem .9rem;
-      font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+      border: 1px solid var(--dock-border);
+      background: rgba(255, 255, 255, 0.06);
+      color: #eee;
+      padding: 0.45rem 0.7rem;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover:not(:disabled), label.btn:hover {
+      border-color: rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.1);
+    }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #pd-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      align-items: center;
+    }
+    #pd-input {
+      flex: 1 1 10rem;
+      min-width: 0;
+      border: 1px solid var(--dock-border);
+      background: rgba(0, 0, 0, 0.35);
+      color: #eee;
+      padding: 0.5rem 0.65rem;
+      border-radius: 4px;
+      font: 0.75rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    #pd-input::placeholder { color: #666; }
+    #pd-input:focus {
+      outline: none;
+      border-color: rgba(61, 214, 140, 0.5);
+    }
+
+    .sync-panel {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem 0.75rem;
+      align-items: center;
+      padding-top: 0.15rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .sync-panel label {
+      font-size: 0.68rem;
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
       cursor: pointer;
     }
-    button:hover:not(:disabled), label.btn:hover { border-color: #000; }
-    button:disabled { opacity: .45; cursor: not-allowed; }
-    #status { font-size: .8rem; color: #666; min-height: 1.2em; }
-    #log {
-      height: 16rem; overflow: auto; border: 1px solid #ddd; background: #fafafa;
-      padding: .75rem; font: .75rem/1.5 ui-monospace, monospace; white-space: pre-wrap;
+    .hint {
+      font-size: 0.65rem;
+      color: var(--muted);
+      margin: 0;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
-    #log .dev { color: #0a7; }
-    #log .sync { color: #06c; }
-    #pd-form { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
-    #pd-input {
-      flex: 1 1 12rem; min-width: 0; border: 1px solid #ccc; padding: .5rem .65rem;
-      font: .75rem ui-monospace, monospace;
+    #folder-name { color: #aaa; }
+    #watch-hint { color: var(--accent); }
+
+    @media (max-width: 480px) {
+      :root { --dock-bottom: 9.5rem; }
+      .dock-top .brand { display: none; }
     }
-    .hint { font-size: .75rem; color: #888; margin-top: .5rem; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>ESPD device console</h1>
-    <p id="hdr-sub">Patch sync and monitor over Wi‑Fi</p>
-  </header>
-  <main>
-    <section>
-      <h2>Connection</h2>
-      <div class="row">
-        <button type="button" id="connect-btn">Connect</button>
-        <button type="button" id="disconnect-btn" disabled>Disconnect</button>
-      </div>
-      <p id="status">Not connected</p>
-    </section>
+  <div id="log" aria-live="polite"></div>
 
-    <section>
-      <h2>Log</h2>
-      <div id="log"></div>
-      <form id="pd-form">
-        <input id="pd-input" maxlength="220" placeholder="Pd message, e.g. pd dsp 1" disabled autocomplete="off" spellcheck="false" />
-        <button type="submit" id="pd-btn" disabled>Send</button>
-        <button type="button" id="reload-btn" disabled>Reload</button>
-        <button type="button" id="reset-btn" disabled>Reset</button>
-      </form>
-    </section>
+  <div class="dock dock-top">
+    <span class="brand">ESPD</span>
+    <p id="status">Not connected</p>
+    <div class="row">
+      <button type="button" id="connect-btn">Connect</button>
+      <button type="button" id="disconnect-btn" disabled>Disconnect</button>
+    </div>
+  </div>
 
-    <section>
-      <h2>Patch sync</h2>
-      <div class="row">
-        <button type="button" id="folder-btn">Choose folder &amp; sync</button>
-        <button type="button" id="sync-btn" disabled>Sync now</button>
-        <label><input type="checkbox" id="mirror-cb" checked /> Remove old files</label>
-      </div>
-      <p id="folder-name" class="hint"></p>
-      <p id="watch-hint" class="hint"></p>
-      <p class="hint">Join the SoftAP, open <strong>https://192.168.4.1/</strong>, and accept the browser’s self-signed warning (<em>Advanced → Proceed</em>). Or use <code>espd_sync.py --host 192.168.4.1</code> from a computer.</p>
-    </section>
-  </main>
+  <div class="dock dock-bottom">
+    <form id="pd-form">
+      <input id="pd-input" maxlength="220" placeholder="Pd message…" disabled autocomplete="off" spellcheck="false" />
+      <button type="submit" id="pd-btn" disabled>Send</button>
+      <button type="button" id="reload-btn" disabled>Reload</button>
+      <button type="button" id="reset-btn" disabled>Reset</button>
+    </form>
+    <div class="sync-panel">
+      <button type="button" id="folder-btn">Folder &amp; sync</button>
+      <button type="button" id="sync-btn" disabled>Sync now</button>
+      <label><input type="checkbox" id="mirror-cb" checked /> Mirror</label>
+      <span id="folder-name" class="hint"></span>
+      <span id="watch-hint" class="hint"></span>
+    </div>
+  </div>
+
   <script src="/app.js"></script>
 </body>
 </html>

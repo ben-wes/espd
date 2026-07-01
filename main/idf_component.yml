@@ -1,6 +1,6 @@
 ## Managed dependencies (see https://components.espressif.com/)
 dependencies:
-  idf: ">=6.0.1,<6.1"
+  idf: ">=6.0.2,<6.1"
   espressif/sock_utils: "*"
   espressif/esp_tinyusb:
     version: "^2.0.1~1"

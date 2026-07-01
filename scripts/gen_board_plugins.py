@@ -329,7 +329,7 @@ def _gen_idf_component_yml(data: dict, src: str) -> str:
             + 'version: "0.1.0"\n'
             + f'description: {data["name"]} board plugin for espd\n'
             + "dependencies:\n"
-            + '  idf: ">=6.0.1,<6.1"\n'
+            + '  idf: ">=6.0.2,<6.1"\n'
         )
     bsp = data["bsp"]
     comp = bsp["component"]
@@ -341,7 +341,7 @@ def _gen_idf_component_yml(data: dict, src: str) -> str:
         'version: "0.1.0"\n',
         f'description: {data["name"]} board plugin for espd\n',
         "dependencies:\n",
-        '  idf: ">=6.0.1,<6.1"\n',
+        '  idf: ">=6.0.2,<6.1"\n',
         "  espd_integration:\n",
         "    path: ../espd_integration\n",
         f"  {registry_comp}:\n",
