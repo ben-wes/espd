@@ -403,19 +403,27 @@ void app_main(void)
     if (espd_storage_sdcard_ready()) {
         (void)espd_usb_expose_msc_to_host();
         ESP_LOGI(TAG, "SD card is the store: internal flash exposed to host, Pd runs");
-    }
-    /* Flash-only + CDC sync: composite stays up through pdmain_init; MSC host
-     * expose runs after Pd boot (below). */
+    } else
 #endif
-#else /* !CONFIG_ESPD_DEV_CDC_SYNC — legacy drive-mode gate */
-    if (!usb_host_mode) {
-        if (esp_reset_reason() == ESP_RST_POWERON
-            && espd_usb_msc_storage_present()
-            && espd_usb_wait_for_host(pdMS_TO_TICKS(2000))) {
-            espd_usb_drive_mode_wait();
+    {
+        /* Flash store: first-boot USB drive on OTG CDC. Drive mode only on cold
+         * power-on with a host; button reset and dev-sync RESET skip it. */
+        if (!usb_host_mode && espd_usb_msc_storage_present()) {
+            if (esp_reset_reason() == ESP_RST_POWERON
+                && espd_usb_wait_for_host(pdMS_TO_TICKS(2000))) {
+                espd_usb_drive_mode_wait();
+            } else if (esp_reset_reason() != ESP_RST_POWERON) {
+                ESP_LOGI(TAG, "warm reset — skipping USB drive mode, starting Pd");
+            }
+            if (espd_usb_msc_disable_and_remount_vfs() == ESP_OK)
+                espd_storage_resolve_paths();
         }
-        espd_usb_msc_disable_and_remount_vfs();
-    } else {
+    }
+#else /* MSC without OTG CDC dev-sync: no first-boot drive gate */
+    if (!usb_host_mode && espd_usb_msc_storage_present()) {
+        if (espd_usb_msc_disable_and_remount_vfs() == ESP_OK)
+            espd_storage_resolve_paths();
+    } else if (usb_host_mode) {
         ESP_LOGI(TAG, "USB host mode: keeping early /storage VFS (no MSC teardown)");
     }
 #endif
@@ -431,10 +439,10 @@ void app_main(void)
     ESP_LOGI(TAG, "codec=%s", s_audio ? "ok" : "FAILED");
 
 #if CONFIG_ESPD_USE_USB_MSC && CONFIG_ESPD_DEV_CDC_SYNC
-    /* OTG CDC boards (c6342f5): keep the composite through Pd boot; expose MSC
-     * after pdmain_init. Skip host MSC when USB-MIDI device — composite must stay
-     * intact for a USB host (e.g. P4 Type-A). */
-    if (espd_usb_msc_storage_present()
+#ifdef ESPD_USE_SDCARD
+    /* SD is the patch store: internal flash may stay exposed to the host. */
+    if (espd_storage_sdcard_ready()
+        && espd_usb_msc_storage_present()
 #if CONFIG_ESPD_USE_USB_MIDI
         && g_espd_cfg.usb_midi_mode != ESPD_USB_MIDI_DEVICE
 #endif
@@ -445,6 +453,7 @@ void app_main(void)
         else
             ESP_LOGW(TAG, "USB: host MSC expose: %s", esp_err_to_name(exp));
     }
+#endif
 #endif
 
     espd_aout_init();

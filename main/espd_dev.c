@@ -12,6 +12,7 @@
  *   RELOAD
  *   MSG <pd-message>  (queued; evaluated on audio thread via pd_sendmsg)
  *   RESET  (reboot ESP after reply)
+ *   MSC_SYNC  (MSC boards: leave USB drive mode without reboot)
  *   APOFF  (SoftAP builds only: stop SoftAP, keep STA if configured)
  *
  * WiFi (CONFIG_ESPD_WIFI_AP_SYNC): same line protocol over TCP port 4499 on
@@ -24,6 +25,9 @@
 #include "espd_dev.h"
 #include "espd_sync_io.h"
 #include "espd_storage.h"
+#if CONFIG_ESPD_USE_USB_MSC
+#include "espd_usb.h"
+#endif
 #if CONFIG_ESPD_WIFI_AP_SYNC
 #include "espd_dev_wifi.h"
 #endif
@@ -989,6 +993,12 @@ static void dev_handle_line(char *line)
             dev_sdcard_available() ? "yes" : "no",
             dev_flash_available() ? "yes" : "no");
         dev_reply(reply);
+#if CONFIG_ESPD_USE_USB_MSC
+        if (espd_usb_drive_mode_active()) {
+            dev_reply("+INFO USB drive mode — eject the ESPD volume "
+                      "(or MSC_SYNC) to start Pd");
+        }
+#endif
         return;
     }
     if (!strncmp(line, "MSG ", 4)) {
@@ -1007,6 +1017,15 @@ static void dev_handle_line(char *line)
         dev_reply("+OK RESET rebooting");
         vTaskDelay(pdMS_TO_TICKS(100));
         esp_restart();
+        return;
+    }
+    if (!strcmp(line, "MSC_SYNC")) {
+#if CONFIG_ESPD_USE_USB_MSC
+        espd_usb_request_drive_exit();
+        dev_reply("+OK MSC_SYNC leaving drive mode");
+#else
+        dev_reply("+OK MSC_SYNC no-op");
+#endif
         return;
     }
 #if CONFIG_ESPD_WIFI_AP_SYNC

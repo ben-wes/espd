@@ -805,7 +805,7 @@ def ensure_storage_for_write_wifi(client: EspdWifi, target: SyncTarget) -> EspdW
 
 def ensure_storage_for_write(client: EspdCdc, port: str) -> EspdCdc:
     """Reset the device so /storage is APP-mounted (exits drive mode)."""
-    log_script("internal storage not available -- resetting device")
+    log_script("internal storage in drive mode -- resetting device")
     cdc.reset_device()
     cdc.close()
     wait_port_gone(port, timeout=25.0)

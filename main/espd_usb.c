@@ -45,7 +45,8 @@ static const char *TAG = "espd_usb";
 
 #if CONFIG_ESPD_USE_USB_OTG && CONFIG_ESPD_USE_USB_MSC
 static tinyusb_msc_storage_handle_t msc_handle = NULL;
-static volatile bool s_msc_should_exit_drive_mode = false;
+static volatile bool s_drive_exit_requested;
+static volatile bool s_drive_mode_active;
 static bool s_msc_disabled_after_eject = false;
 #endif
 static wl_handle_t wl_handle = WL_INVALID_HANDLE;
@@ -173,9 +174,6 @@ static void espd_usb_msc_event_callback(tinyusb_msc_storage_handle_t handle,
         break;
     case TINYUSB_MSC_EVENT_MOUNT_COMPLETE:
         ESP_LOGI(TAG, "MSC mount complete (mount_point=%d)", event->mount_point);
-        if (event->mount_point == TINYUSB_MSC_STORAGE_MOUNT_APP) {
-            s_msc_should_exit_drive_mode = true;
-        }
         break;
     case TINYUSB_MSC_EVENT_MOUNT_FAILED:
         ESP_LOGW(TAG, "MSC mount failed (mount_point=%d)", event->mount_point);
@@ -202,7 +200,10 @@ static void espd_usb_msc_event_callback(tinyusb_msc_storage_handle_t handle,
 static esp_err_t espd_usb_msc_driver_ensure(void)
 {
     tinyusb_msc_driver_config_t msc_drv_cfg = {
-        .user_flags.auto_mount_off = 1,
+        /* auto_mount_off=0 on cold boot so host eject remounts /storage to the app
+         * (TinyUSB msc_storage_mount_to_app). After eject we reinstall with
+         * auto_mount_off=1 so Pd keeps /storage while USB stays connected. */
+        .user_flags.auto_mount_off = (esp_reset_reason() != ESP_RST_POWERON),
         .callback = espd_usb_msc_event_callback,
         .callback_arg = NULL,
     };
@@ -329,6 +330,9 @@ esp_err_t espd_usb_msc_unmount_storage(void)
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "MSC storage unmounted");
         msc_handle = NULL;
+        /* tinyusb MSC close() drops the wear-levelling binding; remount needs a
+         * fresh wl_mount via esp_vfs_fat_spiflash_mount_rw_wl. */
+        wl_handle = WL_INVALID_HANDLE;
     } else {
         ESP_LOGW(TAG, "MSC storage unmounting failed: %s", esp_err_to_name(err));
         return err;
@@ -396,10 +400,6 @@ esp_err_t espd_usb_msc_disable_and_remount_vfs(void)
     return err;
 }
 
-void espd_usb_msc_disable_after_eject()
-{
-    s_msc_disabled_after_eject = true;
-}
 #endif /* CONFIG_ESPD_USE_USB_MSC */
 
 /* ─── USJ teardown and TinyUSB boot ─── */
@@ -442,17 +442,78 @@ bool espd_usb_wait_for_host(uint32_t timeout_ticks)
     return true;
 }
 
+void espd_usb_request_drive_exit(void)
+{
+    /* Dev-sync MSC_SYNC: leave drive mode in place (no reboot). */
+    s_drive_exit_requested = true;
+}
+
+bool espd_usb_drive_mode_active(void)
+{
+    return s_drive_mode_active;
+}
+
+static void espd_usb_emit_drive_mode_hint(void)
+{
+    const char *msg;
+
+    if (!s_drive_mode_active || !tud_mounted())
+        return;
+    if (espd_usb_msc_host_mounted()) {
+        msg = "I espd_usb: USB drive active — eject the ESPD volume "
+              "(or send MSC_SYNC) to start Pd\r\n";
+    } else {
+        msg = "I espd_usb: USB drive mode — copy patches to the ESPD volume, "
+              "then eject (or MSC_SYNC) to start Pd\r\n";
+    }
+    espd_sync_write(msg, strlen(msg));
+}
+
+#if CONFIG_ESPD_DEV_CDC_SYNC
+static void espd_usb_cdc_line_state_cb(int itf, cdcacm_event_t *event)
+{
+    (void)itf;
+    if (event->type != CDC_EVENT_LINE_STATE_CHANGED)
+        return;
+    if (!event->line_state_changed_data.dtr)
+        return;
+    espd_usb_emit_drive_mode_hint();
+}
+#endif
+
 void espd_usb_drive_mode_wait(void)
 {
-    (void)espd_usb_expose_msc_to_host();
-    ESP_LOGI(TAG, "USB drive mode -- eject to start audio");
+    TickType_t last_reminder = 0;
 
-    s_msc_should_exit_drive_mode = false;
-    while (!s_msc_should_exit_drive_mode) {
+    s_drive_exit_requested = false;
+    s_drive_mode_active = true;
+    (void)espd_usb_expose_msc_to_host();
+    espd_usb_emit_drive_mode_hint();
+
+    /* Phase 1: wait until the host actually takes the USB volume. MSC mount
+     * callbacks alone are unreliable here (spurious APP-mount events during boot). */
+    while (!espd_usb_msc_host_mounted() && !s_drive_exit_requested)
+        vTaskDelay(pdMS_TO_TICKS(100));
+
+    /* Phase 2: wait until the host ejects (mount returns to APP) or dev-sync
+     * requests exit. A warm USB disconnect also ends phase 2. */
+    while (espd_usb_msc_host_mounted() && !s_drive_exit_requested) {
+        TickType_t now = xTaskGetTickCount();
+        if (last_reminder == 0
+            || (TickType_t)(now - last_reminder) >= pdMS_TO_TICKS(10000)) {
+            espd_usb_emit_drive_mode_hint();
+            last_reminder = now;
+        }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
-    ESP_LOGI(TAG, "USB drive ejected by host");
+    s_drive_mode_active = false;
+    {
+        const char *done = s_drive_exit_requested
+            ? "I espd_usb: drive mode exited by dev-sync (MSC_SYNC)\r\n"
+            : "I espd_usb: USB drive ejected by host\r\n";
+        espd_sync_write(done, strlen(done));
+    }
 }
 #endif
 
@@ -482,8 +543,14 @@ static bool usb_init_on_core0(void)
 #endif
 #if CONFIG_ESPD_DEV_CDC_SYNC
         if (!custom_desc) {
+#if CONFIG_ESPD_USE_USB_MSC
+            espd_usb_apply_cdc_msc_descriptor(&tusb_cfg);
+            ESP_LOGI(TAG, "USB composite: CDC+MSC (dev sync)");
+#else
             espd_usb_apply_cdc_sync_descriptor(&tusb_cfg);
             ESP_LOGI(TAG, "USB: CDC only (dev sync — MSC omitted)");
+#endif
+            custom_desc = true;
         }
 #endif
     }
@@ -500,6 +567,9 @@ static bool usb_init_on_core0(void)
     tinyusb_config_cdcacm_t acm_cfg = {
         .cdc_port = TINYUSB_CDC_ACM_0,
         .callback_rx = espd_dev_cdc_rx_cb,
+#if CONFIG_ESPD_USE_USB_MSC
+        .callback_line_state_changed = espd_usb_cdc_line_state_cb,
+#endif
     };
 #else
     tinyusb_config_cdcacm_t acm_cfg = {
@@ -526,9 +596,16 @@ static bool usb_init_on_core0(void)
 #endif
 
 #if CONFIG_ESPD_USE_USB_MSC
-#if CONFIG_ESPD_DEV_CDC_SYNC
-    /* CDC dev sync uses PUT to /storage; keep direct FAT (early VFS) so the host
-     * cannot block writes via the MSC class while the CDC port is open. */
+#if CONFIG_ESPD_DEV_CDC_SYNC && CONFIG_ESPD_USE_USB_MSC
+    if (msc_handle == NULL && !s_msc_disabled_after_eject) {
+        err = espd_usb_mount_storage_app();
+        if (err != ESP_OK)
+            ESP_LOGW(TAG, "/storage mount failed: %s", esp_err_to_name(err));
+        else
+            espd_storage_resolve_paths();
+    }
+#elif CONFIG_ESPD_DEV_CDC_SYNC
+    /* CDC-only dev sync: direct VFS so PUT works while the CDC port is open. */
     if (!s_flash_vfs_early) {
         err = espd_usb_mount_flash_early_vfs();
         if (err != ESP_OK)

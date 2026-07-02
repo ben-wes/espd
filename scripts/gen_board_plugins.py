@@ -167,6 +167,10 @@ def _profile_has_usb_midi(data: dict) -> bool:
     return _feature_implied(data, "ESPD_USE_USB_MIDI")
 
 
+def _profile_has_usb_msc(data: dict) -> bool:
+    return _feature_implied(data, "ESPD_USE_USB_MSC")
+
+
 def _profile_has_wifi_ap_sync(data: dict) -> bool:
     return _feature_implied(data, "ESPD_WIFI_AP_SYNC")
 
