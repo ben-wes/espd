@@ -68,6 +68,14 @@ typedef struct {
     int  touch_pins[ESPD_CFG_MAX_PINS];
     int  touch_task_period_ms;  /* -1 = not set */
     int  touch_report_every;    /* -1 = not set */
+
+    /* I2C (when ESPD_USE_I2C compiled in) */
+    bool i2c_bsp;
+    int  i2c_bsp_freq_hz;       /* -1 = not set */
+    bool i2c_have[2];
+    int  i2c_sda[2];
+    int  i2c_scl[2];
+    int  i2c_freq_hz[2];
 } espd_config_t;
 
 extern espd_config_t g_espd_cfg;

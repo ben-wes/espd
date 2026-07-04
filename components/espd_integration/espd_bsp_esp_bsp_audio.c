@@ -12,6 +12,7 @@
 #include <driver/i2s_std.h>
 #include <esp_check.h>
 #include <esp_log.h>
+#include <sdkconfig.h>
 
 #ifndef BSP_AUDIO_MCLK_MULTIPLE
 #define BSP_AUDIO_MCLK_MULTIPLE I2S_MCLK_MULTIPLE_384

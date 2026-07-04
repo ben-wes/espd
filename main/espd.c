@@ -13,6 +13,7 @@
 #include "espd_gpio_peripherals.h"
 #include "espd_dev.h"
 #include "espd_storage.h"
+#include "espd_i2c.h"
 #if CONFIG_ESPD_WIFI_AP_SYNC
 #include "espd_dev_wifi.h"
 #include "wifi.h"
@@ -372,8 +373,8 @@ void app_main(void)
 #endif
 
 #if CONFIG_ESPD_USE_USB_OTG
-    /* OTG: TinyUSB + MSC mount before touching I2S. Pd loads from /storage first;
-     * codec comes up last so flash/USB setup cannot disturb the ES8311 path. */
+    /* OTG: TinyUSB + MSC mount before touching I2S (codec init is below, after
+     * this block). Flash/USB teardown must finish before bsp_audio_init(). */
     bool usb_host_mode = false;
 #if CONFIG_ESPD_USE_USB_MIDI_HOST
     usb_host_mode = (g_espd_cfg.usb_midi_mode == ESPD_USB_MIDI_HOST);
@@ -429,12 +430,15 @@ void app_main(void)
 #endif
 #endif /* CONFIG_ESPD_USE_USB_MSC */
 
-    pdmain_init();
+#endif /* CONFIG_ESPD_USE_USB_OTG */
+
+    /* Codec (I2S + BSP I2C) before Pd. On OTG kits, USB/MSC teardown above
+     * already finished; patch objects (espd_i2c, etc.) see a live bus. */
     espd_initdacs();
-#else
-    espd_initdacs();
-    pdmain_init();
+#ifdef ESPD_USE_I2C
+    espd_i2c_init();
 #endif
+    pdmain_init();
 
     ESP_LOGI(TAG, "codec=%s", s_audio ? "ok" : "FAILED");
 

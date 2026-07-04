@@ -6,6 +6,7 @@
 #include "espd_config_file.h"
 #include "espd_storage.h"
 #include "espd_runtime_config.h"
+#include "espd_config.h"
 
 #include <strings.h>
 
@@ -44,6 +45,18 @@ static int cfg_parse_pin_list(const char *v, int *out, int max)
     return n;
 }
 
+static int cfg_parse_i2c_bus(const char *v, int *sda, int *scl, int *freq_hz)
+{
+    int vals[3];
+    int n = cfg_parse_pin_list(v, vals, 3);
+    if (n < 2)
+        return 0;
+    *sda = vals[0];
+    *scl = vals[1];
+    *freq_hz = (n >= 3 && vals[2] > 0) ? vals[2] : 100000;
+    return 1;
+}
+
 void espd_config_load(void)
 {
     const char *config_path = espd_storage_config_path();
@@ -65,6 +78,7 @@ void espd_config_load(void)
     g_espd_cfg.touch_task_period_ms = -1;
     g_espd_cfg.touch_report_every  = -1;
     g_espd_cfg.wifi_sync_ap_minutes = -1;
+    g_espd_cfg.i2c_bsp_freq_hz = -1;
 
     if (!config_path)
     {
@@ -232,6 +246,37 @@ void espd_config_load(void)
             if (r >= 1 && r <= 64)
                 g_espd_cfg.touch_report_every = r;
         }
+
+#ifdef ESPD_USE_I2C
+        else if (!strcmp(k, "i2c_bsp"))
+            g_espd_cfg.i2c_bsp = (atoi(v) != 0);
+        else if (!strcmp(k, "i2c_bsp_freq_hz"))
+        {
+            int hz = atoi(v);
+            if (hz >= 10000 && hz <= 1000000)
+                g_espd_cfg.i2c_bsp_freq_hz = hz;
+        }
+        else if (!strcmp(k, "i2c0"))
+        {
+            int sda, scl, hz;
+            g_espd_cfg.i2c_have[0] = true;
+            if (cfg_parse_i2c_bus(v, &sda, &scl, &hz)) {
+                g_espd_cfg.i2c_sda[0] = sda;
+                g_espd_cfg.i2c_scl[0] = scl;
+                g_espd_cfg.i2c_freq_hz[0] = hz;
+            }
+        }
+        else if (!strcmp(k, "i2c1"))
+        {
+            int sda, scl, hz;
+            g_espd_cfg.i2c_have[1] = true;
+            if (cfg_parse_i2c_bus(v, &sda, &scl, &hz)) {
+                g_espd_cfg.i2c_sda[1] = sda;
+                g_espd_cfg.i2c_scl[1] = scl;
+                g_espd_cfg.i2c_freq_hz[1] = hz;
+            }
+        }
+#endif
     }
     fclose(f);
 

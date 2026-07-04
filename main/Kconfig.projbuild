@@ -346,6 +346,14 @@ config ESPD_USE_DOUT
         config.txt lists GPIOs: dout_pins=8,9. Float >= 0.5 → high. No
         dout_pins= key or empty list → no GPIO outputs configured.
 
+config ESPD_USE_I2C
+    bool "Compile espd_i2c support (async I2C master)"
+    default n
+    help
+        Links async I2C master and the [espd_i2c] Pd object. Buses start only
+        when config.txt enables them: i2c_bsp=1 (share BSP codec bus) and/or
+        i2c0=SDA,SCL[,Hz] / i2c1=... for a dedicated bus. No I2C keys → off.
+
 menu "Generic board I2S pins"
     depends on ESPD_BOARD_GENERIC
 

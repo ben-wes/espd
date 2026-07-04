@@ -287,6 +287,11 @@ extern char espd_wifi_password[65];
  * config.txt has dout_pins= with at least one GPIO. Float >= 0.5 → high, else
  * low. No background polling. dout_pins=8,9 — GPIOs for espd/dout/0.. in order
  * (max 8) Audio (codec and generic I2S backends): audio_sample_rate=48000 — Hz
+ * I2C (when ESPD_USE_I2C compiled in): [espd_i2c] starts only when config.txt
+ *   enables a bus. Async read/write; byte lists on the right outlet.
+ *   i2c_bsp=1 — use the BSP codec I2C bus (e.g. Waveshare GPIO11/10).
+ *   i2c0=SDA,SCL[,Hz] — dedicated bus 0 (generic boards; max 2 with i2c1=).
+ *   i2c1=SDA,SCL[,Hz] — optional second bus. Omit all keys → I2C off.
  * (8000..192000; default CONFIG_ESPD_AUDIO_SAMPLE_RATE). Single source of
  * truth: same value flows into both the audio backend (I2S / codec) and Pd
  * (sys_getsr). If the codec / BSP cannot deliver this rate, audio init fails
