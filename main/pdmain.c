@@ -435,7 +435,9 @@ void d_soundfile_setup(void);
 void d_ugen_setup(void);
 void espdsp_osc_override_setup(void);
 void espd_pdcontrol_setup(void);
+#if CONFIG_ESPD_USE_I2C
 void espd_pd_i2c_setup(void);
+#endif
 void x_file_setup(void);
 void espd_cputime_setup(void);
 
@@ -493,7 +495,9 @@ void conf_init(void)
     expr_setup();
     x_file_setup();
     espd_pdcontrol_setup();
+#if CONFIG_ESPD_USE_I2C
     espd_pd_i2c_setup();
+#endif
     espd_cputime_setup();
     trymem(11);
 }

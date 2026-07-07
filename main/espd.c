@@ -237,6 +237,7 @@ unsigned int espd_cputime_get(void)
 
 void app_main(void)
 {
+    esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set("ESPD", ESP_LOG_INFO);
     esp_log_level_set("espd_usb", ESP_LOG_INFO);
     esp_log_level_set("espd_config", ESP_LOG_INFO);
@@ -246,7 +247,6 @@ void app_main(void)
     esp_log_level_set("espd_dev", ESP_LOG_INFO);
     esp_log_level_set("espd_audio", ESP_LOG_INFO);
     esp_log_level_set("espd_audio_dac", ESP_LOG_INFO);
-    esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set("sdmmc_sd", ESP_LOG_NONE);
     esp_log_level_set("sdmmc_common", ESP_LOG_NONE);
     esp_log_level_set("vfs_fat_sdmmc", ESP_LOG_NONE);

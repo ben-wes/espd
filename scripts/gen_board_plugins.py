@@ -340,6 +340,23 @@ def _wifi_ap_sync_sdkconfig_extras(
     return extras
 
 
+def _dac_backend_sdkconfig_extras(profile_keys: set[str]) -> list[tuple[str, object]]:
+    """Keep internal DAC usable when ESPD DAC backend is selected.
+
+    ESP-IDF may default ADC-side DAC-disable flags to on. If the board profile
+    opts into ESPD_AUDIO_BACKEND_DAC, force those flags off unless explicitly
+    provided in the profile.
+    """
+    if "ESPD_AUDIO_BACKEND_DAC" not in profile_keys:
+        return []
+    extras: list[tuple[str, object]] = []
+    if "ADC_DISABLE_DAC_OUTPUT" not in profile_keys:
+        extras.append(("ADC_DISABLE_DAC_OUTPUT", False))
+    if "ADC_DISABLE_DAC" not in profile_keys:
+        extras.append(("ADC_DISABLE_DAC", False))
+    return extras
+
+
 def _midi_sdkconfig_extras(data: dict, profile_keys: set[str]) -> list[tuple[str, object]]:
     """TinyUSB MIDI class count — required for TUD_MIDI_DESCRIPTOR (all OTG targets)."""
     if not _profile_has_usb_midi(data):
@@ -611,6 +628,12 @@ def _gen_sdkconfig_defaults(data: dict, src: str) -> str:
     if wifi_ap:
         lines.append("# --- SoftAP sync (auto) ---\n\n")
         for key, value in wifi_ap:
+            lines.append(_config_line(key, value))
+        lines.append("\n")
+    dac_extras = _dac_backend_sdkconfig_extras(profile_keys)
+    if dac_extras:
+        lines.append("# --- Internal DAC backend (auto) ---\n\n")
+        for key, value in dac_extras:
             lines.append(_config_line(key, value))
         lines.append("\n")
     for section, options in profile.items():
