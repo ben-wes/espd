@@ -434,7 +434,7 @@ void app_main(void)
 #endif /* CONFIG_ESPD_USE_USB_OTG */
 
     /* Codec (I2S + BSP I2C) before Pd. On OTG kits, USB/MSC teardown above
-     * already finished; patch objects ([i2c], etc.) see a live bus. */
+     * already finished; patch objects ([espdi2c], etc.) see a live bus. */
     espd_initdacs();
 #ifdef ESPD_USE_I2C
     espd_i2c_init();

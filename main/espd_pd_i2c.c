@@ -1,7 +1,7 @@
 /*
- * [i2c] — async I2C read/write.
+ * [espdi2c] — async I2C read/write.
  *
- *   [i2c <bus> <addr7>]
+ *   [espdi2c <bus> <addr7>]
  *   | read <reg> <len>
  *   | write <reg> <b0> ...
  *   | write_raw <b0> ...
@@ -219,11 +219,11 @@ static void *espd_i2c_new(t_symbol *s, int argc, t_atom *argv)
     if (argc >= 2)
         addr = atom_getint(argv + 1);
     if (bus < 0 || bus >= ESPD_I2C_MAX_BUSES) {
-        pd_error(x, "i2c: bus must be 0..%d", ESPD_I2C_MAX_BUSES - 1);
+        pd_error(x, "espdi2c: bus must be 0..%d", ESPD_I2C_MAX_BUSES - 1);
         bus = 0;
     }
     if (addr < 0 || addr > 127) {
-        pd_error(x, "i2c: 7-bit address must be 0..127");
+        pd_error(x, "espdi2c: 7-bit address must be 0..127");
         addr = 0x68;
     }
 
@@ -233,13 +233,13 @@ static void *espd_i2c_new(t_symbol *s, int argc, t_atom *argv)
     x->x_out_data = outlet_new(&x->x_obj, &s_list);
     x->x_out_status = outlet_new(&x->x_obj, &s_list);
     if (!espd_i2c_bus_ready(bus))
-        pd_error(x, "i2c: bus %d not configured in config.txt", bus);
+        pd_error(x, "espdi2c: bus %d not configured in config.txt", bus);
     return x;
 }
 
 void espd_pd_i2c_setup(void)
 {
-    espd_i2c_class = class_new(gensym("i2c"),
+    espd_i2c_class = class_new(gensym("espdi2c"),
         (t_newmethod)espd_i2c_new, (t_method)espd_i2c_free,
         sizeof(t_espd_i2c_obj), CLASS_DEFAULT, A_GIMME, 0);
     class_addmethod(espd_i2c_class, (t_method)espd_i2c_read, gensym("read"),

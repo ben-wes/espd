@@ -141,7 +141,7 @@ Bind with `[r espd/…]`. Indices are **numeric**.
 
 | Object | Messages | Enable |
 |--------|----------|--------|
-| **i2c** | `read reg len` → byte list (left); status lists (right) | **ESPD_USE_I2C** + `i2c_bsp=1` and/or `i2c0=` in `config.txt` |
+| **espdi2c** | `read reg len` → byte list (left); status lists (right) | **ESPD_USE_I2C** + `i2c_bsp=1` and/or `i2c0=` in `config.txt` |
 
 Async I2C. **Left:** byte list when `read` succeeds; bang when `write` / `write_raw` succeeds. **Right:** details only — `sync busy|nobus|args`, `read fail nack|timeout|error`, `write fail …`, etc. Use `[bang~]` to pace reads.
 
@@ -166,7 +166,7 @@ Physical buttons map to **`espd/din/0`**, **`espd/din/1`**, … Order is `io.but
 | **Patch sync over OTG CDC** | off (Generic); on (OTG BSP kits) | `espd_sync.py` |
 | **Embed fallback test patch** | off | If no `main.pd` on active store |
 | **Enable WiFi** | on | Pd net objects |
-| **Compile espd/ain**, **touch**, **aout**, **din GPIO**, **dout**, **i2c** | off | GPIO / I2C extras |
+| **Compile espd/ain**, **touch**, **aout**, **din GPIO**, **dout**, **espdi2c** | off | GPIO / I2C extras |
 
 Full `config.txt` keys: [main/espd.h](main/espd.h). Example: [test-patch/config.txt](test-patch/config.txt).
 
