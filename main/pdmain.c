@@ -239,10 +239,8 @@ void pdmain_reload_patch_from(const char *dir)
         t_pd *loaded = glob_evalfile(0, gensym("main.pd"), gensym(dir));
         espd_main_pd_loaded_from_store = 1;
         espd_main_pd_loaded_dir = dir;
-        if (loaded && *loaded == canvas_class) {
-            espd_pdcontrol_sync_cwd();
+        if (loaded && *loaded == canvas_class)
             canvas_update_dsp();
-        }
     }
     pdmain_print("RELOAD done: main.pd\n");
 }
@@ -284,7 +282,6 @@ void pdmain_init( void)
             if (loaded && *loaded == canvas_class) {
                 espd_main_pd_loaded_from_store = 1;
                 espd_main_pd_loaded_dir = dir;
-                espd_pdcontrol_sync_cwd();
                 canvas_update_dsp();
             }
         }
@@ -434,7 +431,7 @@ void d_osc_setup(void);
 void d_soundfile_setup(void);
 void d_ugen_setup(void);
 void espdsp_osc_override_setup(void);
-void espd_pdcontrol_setup(void);
+void espd_pd_control_setup(void);
 #if CONFIG_ESPD_USE_I2C
 void espd_pd_i2c_setup(void);
 #endif
@@ -494,7 +491,7 @@ void conf_init(void)
     d_misc_setup();
     expr_setup();
     x_file_setup();
-    espd_pdcontrol_setup();
+    espd_pd_control_setup();
 #if CONFIG_ESPD_USE_I2C
     espd_pd_i2c_setup();
 #endif

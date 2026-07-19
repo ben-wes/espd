@@ -131,6 +131,12 @@ Bind with `[r espd/…]`. Indices are **numeric**.
 | **espd/dout/N** | float ≥0.5 → high | **espd/dout** + `dout_pins=` |
 | **espd/touch/N** | float | **espd/touch** + `touch_pins=` |
 
+### Pd platform objects
+
+| Object | Messages | Notes |
+|--------|----------|--------|
+| **espdcontrol** | `ip` → 4 floats or `noip` | Wi‑Fi STA address |
+
 ### Pd I2C object
 
 | Object | Messages | Enable |

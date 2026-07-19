@@ -6,7 +6,7 @@ set(MAIN_SRCS
     "espd_pd_io.c"
     "pd_lseek64_compat.c"
     "pd_posix_file_compat.c"
-    "pd_pdcontrol_compat.c"
+    "espd_pd_control.c"
     "espd_storage.c"
     "espd_sync_io.c"
     "espd_dev.c"

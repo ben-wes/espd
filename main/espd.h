@@ -303,9 +303,8 @@ extern char espd_wifi_password[65];
  * samples; 64 frames/buffer matches one block (low latency). Larger frame_num
  * (e.g. 128 or 240) adds headroom for FFT-heavy patches.
  */
-/* [pdcontrol] message "ip" → list of four float octets 0..255, or symbol "noip"
- * when unavailable. */
-void espd_pdcontrol_sync_cwd(void);
+/* [espdcontrol] message "ip" → list of four float octets 0..255, or symbol
+ * "noip" when unavailable. */
 
 void pdmain_reload_patch(void);
 void pdmain_reload_patch_from(const char *dir);
