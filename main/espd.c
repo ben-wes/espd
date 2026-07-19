@@ -243,6 +243,7 @@ void app_main(void)
     esp_log_level_set("espd_config", ESP_LOG_INFO);
     esp_log_level_set("espd_pd_io", ESP_LOG_INFO);
     esp_log_level_set("espd_gpio_peripherals", ESP_LOG_INFO);
+    esp_log_level_set("espd_i2c", ESP_LOG_INFO);
     esp_log_level_set("espd_storage", ESP_LOG_INFO);
     esp_log_level_set("espd_dev", ESP_LOG_INFO);
     esp_log_level_set("espd_audio", ESP_LOG_INFO);

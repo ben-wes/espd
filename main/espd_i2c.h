@@ -41,7 +41,6 @@ void espd_i2c_init(void);
 void espd_i2c_set_done_handler(espd_i2c_done_cb cb);
 void espd_i2c_poll(void);
 bool espd_i2c_bus_ready(int bus);
-int espd_i2c_bus_freq_hz(int bus);
 
 /* Enqueue a job; returns false if queue full (caller should report busy). */
 bool espd_i2c_submit(espd_i2c_job_t *job);

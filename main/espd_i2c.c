@@ -103,13 +103,6 @@ bool espd_i2c_bus_ready(int bus)
     return s_buses[bus].active;
 }
 
-int espd_i2c_bus_freq_hz(int bus)
-{
-    if (bus < 0 || bus >= ESPD_I2C_MAX_BUSES || !s_buses[bus].active)
-        return 0;
-    return s_buses[bus].freq_hz;
-}
-
 static espd_i2c_dev_slot_t *dev_slot_alloc(void *owner, int bus, uint8_t addr)
 {
     espd_i2c_dev_slot_t *slot = dev_slot_find_bus_addr(bus, addr);
@@ -285,7 +278,6 @@ static esp_err_t bus_create_user(int idx, int sda, int scl, int freq_hz)
         memset(bus, 0, sizeof(*bus));
         return ESP_ERR_NO_MEM;
     }
-    ESP_LOGI(TAG, "bus%d: user SDA=%d SCL=%d %d Hz", idx, sda, scl, freq_hz);
     return ESP_OK;
 }
 
@@ -311,7 +303,6 @@ static esp_err_t bus_attach_bsp(int idx, int freq_hz)
         memset(bus, 0, sizeof(*bus));
         return ESP_ERR_NO_MEM;
     }
-    ESP_LOGI(TAG, "bus%d: BSP shared bus %d Hz", idx, freq_hz);
     return ESP_OK;
 }
 
@@ -348,8 +339,20 @@ void espd_i2c_init(void)
     }
 
     if (!have) {
-        ESP_LOGI(TAG, "no I2C buses configured");
+        ESP_LOGI(TAG, "off");
         return;
+    }
+
+    for (int i = 0; i < ESPD_I2C_MAX_BUSES; i++) {
+        espd_i2c_bus_t *bus = &s_buses[i];
+
+        if (!bus->active)
+            continue;
+        if (bus->is_bsp)
+            ESP_LOGI(TAG, "bus%d: BSP shared %d Hz", i, bus->freq_hz);
+        else
+            ESP_LOGI(TAG, "bus%d: SDA=%d SCL=%d %d Hz",
+                i, bus->sda, bus->scl, bus->freq_hz);
     }
 
     s_job_q = xQueueCreate(ESPD_I2C_QUEUE_DEPTH, sizeof(espd_i2c_job_t));
@@ -366,8 +369,6 @@ void espd_i2c_init(void)
     }
 
     s_inited = 1;
-    ESP_LOGI(TAG, "worker on core %d (%d bus(es))", (int)ESPD_I2C_TASK_CORE,
-        have);
 }
 
 #else /* !ESPD_USE_I2C */
@@ -382,11 +383,6 @@ bool espd_i2c_bus_ready(int bus)
 {
     (void)bus;
     return false;
-}
-int espd_i2c_bus_freq_hz(int bus)
-{
-    (void)bus;
-    return 0;
 }
 bool espd_i2c_submit(espd_i2c_job_t *job)
 {

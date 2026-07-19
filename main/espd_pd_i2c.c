@@ -116,11 +116,6 @@ static void espd_i2c_done(espd_i2c_job_t *job)
         outlet_bang(x->x_out_data);
 }
 
-static int espd_i2c_arg_int(t_atom *a)
-{
-    return (int)atom_getfloat(a);
-}
-
 static void espd_i2c_dispatch(t_espd_i2c_obj *x, espd_i2c_job_t *job)
 {
     if (!espd_i2c_bus_ready(x->bus)) {
@@ -152,8 +147,8 @@ static void espd_i2c_read(t_espd_i2c_obj *x, t_symbol *s, int argc, t_atom *argv
     }
     memset(&job, 0, sizeof(job));
     job.op = ESPD_I2C_OP_READ;
-    job.reg = (uint8_t)espd_i2c_arg_int(argv);
-    job.read_len = (uint8_t)espd_i2c_arg_int(argv + 1);
+    job.reg = (uint8_t)atom_getint(argv);
+    job.read_len = (uint8_t)atom_getint(argv + 1);
     if (job.read_len == 0 || job.read_len > ESPD_I2C_MAX_READ) {
         espd_i2c_out_sync(x, "args");
         return;
@@ -173,14 +168,14 @@ static void espd_i2c_write(t_espd_i2c_obj *x, t_symbol *s, int argc, t_atom *arg
     }
     memset(&job, 0, sizeof(job));
     job.op = ESPD_I2C_OP_WRITE;
-    job.reg = (uint8_t)espd_i2c_arg_int(argv);
+    job.reg = (uint8_t)atom_getint(argv);
     job.write_len = (uint8_t)(argc - 1);
     if (job.write_len > ESPD_I2C_MAX_WRITE) {
         espd_i2c_out_sync(x, "args");
         return;
     }
     for (i = 0; i < job.write_len; i++)
-        job.write_buf[i] = (uint8_t)espd_i2c_arg_int(argv + 1 + i);
+        job.write_buf[i] = (uint8_t)atom_getint(argv + 1 + i);
     espd_i2c_dispatch(x, &job);
 }
 
@@ -203,7 +198,7 @@ static void espd_i2c_write_raw(t_espd_i2c_obj *x, t_symbol *s, int argc,
         return;
     }
     for (i = 0; i < job.write_len; i++)
-        job.write_buf[i] = (uint8_t)espd_i2c_arg_int(argv + i);
+        job.write_buf[i] = (uint8_t)atom_getint(argv + i);
     espd_i2c_dispatch(x, &job);
 }
 
@@ -220,9 +215,9 @@ static void *espd_i2c_new(t_symbol *s, int argc, t_atom *argv)
 
     (void)s;
     if (argc >= 1)
-        bus = espd_i2c_arg_int(argv);
+        bus = atom_getint(argv);
     if (argc >= 2)
-        addr = espd_i2c_arg_int(argv + 1);
+        addr = atom_getint(argv + 1);
     if (bus < 0 || bus >= ESPD_I2C_MAX_BUSES) {
         pd_error(x, "i2c: bus must be 0..%d", ESPD_I2C_MAX_BUSES - 1);
         bus = 0;
