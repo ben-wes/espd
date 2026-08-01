@@ -5,6 +5,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #define ESPD_CFG_MAX_PINS 8
 
