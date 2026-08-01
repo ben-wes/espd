@@ -297,7 +297,7 @@ extern char espd_wifi_password[65];
  * ESP-NOW (when ESPD_USE_ESPNOW compiled in): [espdnow] uses ESP-NOW over the
  *   WiFi radio. ESP-NOW does not require STA association, but the STA interface
  *   is brought up at boot (unassociated) so the MAC is queryable via
- *   [espdcontrol mac]. Peers are set at runtime from the patch
+ *   'mac' message to [espdcontrol]. Peers are set at runtime from the patch
  *   ([espdnow]'s 'peer <mac>' message), not from config.txt.
  *   espnow_pmk=<32 hex chars> — 16-byte CCMP master key. When set, peers added
  *       from the patch use encryption; omit for plaintext-only operation.
