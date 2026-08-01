@@ -322,6 +322,20 @@ void wifi_start_sta(void)
     }
 }
 
+bool wifi_get_sta_mac(uint8_t *out)
+{
+    if (!s_wifi_phy_ready)
+        return false;
+#if CONFIG_ESP_WIFI_REMOTE_ENABLED
+    if (esp_wifi_remote_get_mac(WIFI_IF_STA, out) != ESP_OK)
+        return false;
+#else
+    if (esp_wifi_get_mac(WIFI_IF_STA, out) != ESP_OK)
+        return false;
+#endif
+    return true;
+}
+
 bool wifi_wait_sta(TickType_t ticks)
 {
     EventBits_t bits;
@@ -426,6 +440,16 @@ static void wifi_ap_start_common(bool with_sta)
         s_wifi_apsta = true;
         xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
         s_retry_num = 0;
+    } else if (with_sta) {
+        /* APSTA with an unassociated STA — used by ESP-NOW when no SSID is
+         * configured. STA interface comes up (MAC assigned) but never
+         * associates; AP still serves the wifi-sync console. */
+#if CONFIG_ESP_WIFI_REMOTE_ENABLED
+        ESP_ERROR_CHECK(esp_wifi_remote_set_mode(WIFI_MODE_APSTA));
+#else
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+#endif
+        s_wifi_apsta = true;
     } else {
 #if CONFIG_ESP_WIFI_REMOTE_ENABLED
         ESP_ERROR_CHECK(esp_wifi_remote_set_mode(WIFI_MODE_AP));

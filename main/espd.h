@@ -63,6 +63,8 @@ void wifi_prepare_phy(void); /* wifi.c — PHY + handlers; call before USB OTG *
 void wifi_start_sta(void); /* wifi.c — STA config + start; call after USB OTG */
 bool wifi_wait_sta(
     TickType_t ticks); /* wifi.c — wait for DHCP; 0 = poll once */
+bool wifi_get_sta_mac(
+    uint8_t *out); /* wifi.c — STA MAC bytes; false if WiFi PHY not up */
 void net_init(void);   /* init */
 void net_hello(void);  /* send initial TCP packet when connected */
 void net_alive(void);  /* send keep-alive packet if needed */
@@ -292,6 +294,13 @@ extern char espd_wifi_password[65];
  *   i2c_bsp=1 — use the BSP codec I2C bus (e.g. Waveshare GPIO11/10).
  *   i2c0=SDA,SCL[,Hz] — dedicated bus 0 (generic boards; max 2 with i2c1=).
  *   i2c1=SDA,SCL[,Hz] — optional second bus. Omit all keys → I2C off.
+ * ESP-NOW (when ESPD_USE_ESPNOW compiled in): [espdnow] uses ESP-NOW over the
+ *   WiFi radio. ESP-NOW does not require STA association, but the STA interface
+ *   is brought up at boot (unassociated) so the MAC is queryable via
+ *   [espdcontrol mac]. Peers are set at runtime from the patch
+ *   ([espdnow]'s 'peer <mac>' message), not from config.txt.
+ *   espnow_pmk=<32 hex chars> — 16-byte CCMP master key. When set, peers added
+ *       from the patch use encryption; omit for plaintext-only operation.
  * (8000..192000; default CONFIG_ESPD_AUDIO_SAMPLE_RATE). Single source of
  * truth: same value flows into both the audio backend (I2S / codec) and Pd
  * (sys_getsr). If the codec / BSP cannot deliver this rate, audio init fails

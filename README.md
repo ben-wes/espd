@@ -135,7 +135,7 @@ Bind with `[r espd/…]`. Indices are **numeric**.
 
 | Object | Messages | Notes |
 |--------|----------|--------|
-| **espdcontrol** | `ip` → 4 floats or `noip` | Wi‑Fi STA address |
+| **espdcontrol** | `ip` → 4 floats or `noip`; `mac` → 6 floats or `nomac` | Wi‑Fi STA address; STA MAC (ESP‑NOW address) |
 
 ### Pd I2C object
 
@@ -144,6 +144,14 @@ Bind with `[r espd/…]`. Indices are **numeric**.
 | **espdi2c** | `read reg len` → byte list (left); status lists (right) | **ESPD_USE_I2C** + `i2c_bsp=1` and/or `i2c0=` in `config.txt` |
 
 Async I2C. **Left:** byte list when `read` succeeds; bang when `write` / `write_raw` succeeds. **Right:** details only — `sync busy|nobus|args`, `read fail nack|timeout|error`, `write fail …`, etc. Use `[bang~]` to pace reads.
+
+### Pd ESP‑NOW object
+
+| Object | Messages | Enable |
+|--------|----------|--------|
+| **espdnow** | `list ...` on inlet → FUDI to peer; `peer <m0..m5>`; `clear` | **ESPD_USE_ESPNOW** (implies WiFi) |
+
+ESP‑NOW over the WiFi radio; no AP association required. `[espdnow <mac>]` sets a TX peer at creation (6 float bytes; use `255 255 255 255 255 255` for broadcast). `[espdnow]` listens only — send → `nopeer` until `peer <mac>`. Send as a list: `[list 1 2 3(` → `1 2 3;`. RX is always on (no sender filter). **Left outlet:** parsed FUDI (float / list / anything). **Right outlet:** `send ok|fail|…`, `peer ok|fail …`, `recv <m0..m5> <rssi>` (RSSI in dBm; before each RX). Optional `espnow_pmk=<32 hex>` enables encrypted peers.
 
 **Networking:** `[netsend]` / `[netreceive]` when WiFi is compiled in and STA connects.
 
@@ -166,7 +174,7 @@ Physical buttons map to **`espd/din/0`**, **`espd/din/1`**, … Order is `io.but
 | **Patch sync over OTG CDC** | off (Generic); on (OTG BSP kits) | `espd_sync.py` |
 | **Embed fallback test patch** | off | If no `main.pd` on active store |
 | **Enable WiFi** | on | Pd net objects |
-| **Compile espd/ain**, **touch**, **aout**, **din GPIO**, **dout**, **espdi2c** | off | GPIO / I2C extras |
+| **Compile espd/ain**, **touch**, **aout**, **din GPIO**, **dout**, **espdi2c**, **espdnow** | off | GPIO / I2C / ESP‑NOW extras |
 
 Full `config.txt` keys: [main/espd.h](main/espd.h). Example: [test-patch/config.txt](test-patch/config.txt).
 

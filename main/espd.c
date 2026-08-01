@@ -14,6 +14,7 @@
 #include "espd_dev.h"
 #include "espd_storage.h"
 #include "espd_i2c.h"
+#include "espd_now.h"
 #if CONFIG_ESPD_WIFI_AP_SYNC
 #include "espd_dev_wifi.h"
 #include "wifi.h"
@@ -293,7 +294,13 @@ void app_main(void)
             wifi_start_apsta();
         } else {
             espd_wifi_net_enabled = 0;
+#if CONFIG_ESPD_USE_ESPNOW
+            /* ESP-NOW needs a STA interface for its MAC; bring up APSTA with
+             * an unassociated STA instead of AP-only. */
+            wifi_start_apsta();
+#else
             wifi_start_ap();
+#endif
         }
         {
             int ap_min = g_espd_cfg.wifi_sync_ap_minutes;
@@ -315,6 +322,15 @@ void app_main(void)
     if (espd_wifi_net_enabled)
         wifi_start_sta();
 #endif
+#endif
+
+#ifdef ESPD_USE_ESPNOW
+    /* ESP-NOW needs the WiFi PHY up and a STA interface. If STA didn't start
+     * (no SSID on a non-AP_SYNC build), bring up STA unassociated so ESP-NOW
+     * has a MAC and a radio. wifi_prepare_phy / wifi_start_sta are idempotent. */
+    wifi_prepare_phy();
+    wifi_start_sta();
+    espd_now_init();
 #endif
 
 #if CONFIG_ESPD_DEV_SERIAL_SYNC

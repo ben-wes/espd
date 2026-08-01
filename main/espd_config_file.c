@@ -277,6 +277,36 @@ void espd_config_load(void)
             }
         }
 #endif
+
+#ifdef ESPD_USE_ESPNOW
+        /* ESP-NOW master key (16 bytes, hex). When set, encrypted peers use
+         * CCMP with this PMK. Omit the key for plaintext-only operation. */
+        else if (!strcmp(k, "espnow_pmk"))
+        {
+            int hexlen = strlen(v);
+            if (hexlen != 32) {
+                ESP_LOGW(TAG, "ignoring espnow_pmk= (need 32 hex chars, got %d)",
+                    hexlen);
+            } else {
+                uint8_t key[16];
+                int ok = 1;
+                for (int i = 0; i < 16; i++) {
+                    unsigned int b;
+                    if (sscanf(v + 2 * i, "%2x", &b) != 1) {
+                        ok = 0;
+                        break;
+                    }
+                    key[i] = (uint8_t)b;
+                }
+                if (ok) {
+                    memcpy(g_espd_cfg.espnow_pmk, key, 16);
+                    g_espd_cfg.espnow_have_pmk = true;
+                } else {
+                    ESP_LOGW(TAG, "ignoring espnow_pmk= (not valid hex)");
+                }
+            }
+        }
+#endif
     }
     fclose(f);
 

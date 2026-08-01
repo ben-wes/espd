@@ -8,6 +8,7 @@
 #include "espd_gpio_peripherals.h"
 #include "bsp/bsp_io.h"
 #include "espd_i2c.h"
+#include "espd_now.h"
 
 #include "../pd/src/m_pd.h"
 
@@ -123,5 +124,8 @@ void espd_pd_io_poll(void) {
 #endif
 #ifdef ESPD_USE_I2C
   espd_i2c_poll();
+#endif
+#ifdef ESPD_USE_ESPNOW
+  espd_now_poll();
 #endif
 }

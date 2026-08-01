@@ -354,6 +354,20 @@ config ESPD_USE_I2C
         when config.txt enables them: i2c_bsp=1 (share BSP codec bus) and/or
         i2c0=SDA,SCL[,Hz] / i2c1=... for a dedicated bus. No I2C keys → off.
 
+config ESPD_USE_ESPNOW
+    bool "Compile espdnow support (ESP-NOW Pd object)"
+    depends on ESPD_USE_WIFI
+    default n
+    help
+        Links ESP-NOW and the [espdnow] Pd object. ESP-NOW shares the WiFi
+        radio; it does not require STA association, but the STA interface is
+        brought up at boot (unassociated) when this is enabled so the MAC is
+        queryable and ESP-NOW has an address to use.
+
+        Optional config.txt key: espnow_pmk=<32 hex chars> (16-byte CCMP
+        master key). When set, peers added with [espdnow]'s 'peer' message
+        use encryption; omit the key for plaintext-only operation.
+
 menu "Generic board I2S pins"
     depends on ESPD_BOARD_GENERIC
 

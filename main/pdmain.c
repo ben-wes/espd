@@ -435,6 +435,9 @@ void espd_pd_control_setup(void);
 #if CONFIG_ESPD_USE_I2C
 void espd_pd_i2c_setup(void);
 #endif
+#if CONFIG_ESPD_USE_ESPNOW
+void espd_pd_now_setup(void);
+#endif
 void x_file_setup(void);
 void espd_cputime_setup(void);
 
@@ -494,6 +497,9 @@ void conf_init(void)
     espd_pd_control_setup();
 #if CONFIG_ESPD_USE_I2C
     espd_pd_i2c_setup();
+#endif
+#if CONFIG_ESPD_USE_ESPNOW
+    espd_pd_now_setup();
 #endif
     espd_cputime_setup();
     trymem(11);

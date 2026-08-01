@@ -182,6 +182,11 @@ if(CONFIG_ESPD_USE_I2C)
     target_sources(${COMPONENT_LIB} PRIVATE "espd_i2c.c" "espd_pd_i2c.c")
 endif()
 
+if(CONFIG_ESPD_USE_ESPNOW)
+    target_sources(${COMPONENT_LIB} PRIVATE "espd_now.c" "espd_pd_now.c")
+    idf_component_optional_requires(PRIVATE esp_wifi esp_now)
+endif()
+
 idf_component_get_property(_espd_main_lib ${COMPONENT_NAME} COMPONENT_LIB)
 
 # Ooura FFT in pd/src/d_fft_fftsg.c: default FFTFLT is double; use float IRAM.

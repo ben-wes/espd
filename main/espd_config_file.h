@@ -76,6 +76,10 @@ typedef struct {
     int  i2c_sda[2];
     int  i2c_scl[2];
     int  i2c_freq_hz[2];
+
+    /* ESP-NOW (when ESPD_USE_ESPNOW compiled in) */
+    bool espnow_have_pmk;
+    uint8_t espnow_pmk[16];     /* ESP-NOW master key (CCMP); 16 bytes */
 } espd_config_t;
 
 extern espd_config_t g_espd_cfg;
