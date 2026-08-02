@@ -25,7 +25,7 @@ Requires [ESP-IDF v6.0.2](https://docs.espressif.com/projects/esp-idf/en/latest/
 
 ```bash
 git clone --recursive <repo-url> espd && cd espd
-git submodule update --init --recursive   # pd @ 0.56-3
+git submodule update --init --recursive   # pd @ master (0.56-5+)
 ./scripts/apply-pd-patches.sh
 ```
 
