@@ -135,7 +135,7 @@ Bind with `[r espd/…]`. Indices are **numeric**.
 
 | Object | Messages | Notes |
 |--------|----------|--------|
-| **espdcontrol** | `ip` → 4 floats or `noip`; `mac` → 6 floats or `nomac` | Wi‑Fi STA address; STA MAC (ESP‑NOW address) |
+| **espdcontrol** | `ip` → symbol `a.b.c.d` or `noip`; `mac` → 6 floats or `nomac` | STA IP (netsend-style host); STA MAC bytes |
 
 ### Pd I2C object
 
@@ -149,9 +149,9 @@ Async I2C. **Left:** byte list when `read` succeeds; bang when `write` / `write_
 
 | Object | Messages | Enable |
 |--------|----------|--------|
-| **espdnow** | `list ...` on inlet → FUDI to peer; `peer <m0..m5>`; `clear` | **ESPD_USE_ESPNOW** (implies WiFi) |
+| **espdnow** | `list …` → FUDI to TX peer; `peer` / `clear`; `listen` / `listen <mac>` | **ESPD_USE_ESPNOW** (implies WiFi) |
 
-ESP‑NOW over the WiFi radio; no AP association required. `[espdnow <mac>]` sets a TX peer at creation (6 float bytes; use `255 255 255 255 255 255` for broadcast). `[espdnow]` listens only — send → `nopeer` until `peer <mac>`. Send as a list: `[list 1 2 3(` → `1 2 3;`. RX is always on (no sender filter). **Left outlet:** parsed FUDI (float / list / anything). **Right outlet:** `send ok|fail|…`, `peer ok|fail …`, `recv <m0..m5> <rssi>` (RSSI in dBm; before each RX). Optional `espnow_pmk=<32 hex>` enables encrypted peers.
+ESP‑NOW over the WiFi radio; connectionless (no connect handshake). MACs are 6 float bytes (same as `[espdcontrol mac]`). `[espdnow m0..m5]` / `peer m0..m5` set the **TX** destination (`255 255 255 255 255 255` = broadcast). `listen m0..m5` filters **RX** to that sender; bare `listen` clears the filter. Send as a list: `[list 1 2 3(`. **Left:** parsed FUDI. **Right:** `from m0..m5`, `signal <rssi-dbm>` (before each accepted RX), plus `send` / `peer` / `listen` status. Optional `espnow_pmk=<32 hex>` enables encrypted peers.
 
 **Networking:** `[netsend]` / `[netreceive]` when WiFi is compiled in and STA connects.
 
