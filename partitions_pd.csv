@@ -5,4 +5,4 @@
 # so one firmware fills whatever flash the chip actually has. Requires FLASHSIZE_DETECT.
 nvs,      data, nvs,     ,        0x6000,
 phy_init, data, phy,     ,        0x1000,
-factory,  app,  factory, ,        1536K,
+factory,  app,  factory, ,        1664K,

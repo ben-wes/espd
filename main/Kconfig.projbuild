@@ -277,7 +277,6 @@ config ESPD_WIFI_AP_SYNC
     depends on ESPD_USE_WIFI && ESPD_DEV_SYNC
     default n
     select HTTPD_WS_SUPPORT
-    select MBEDTLS_TLS_SERVER_AND_CLIENT
     select MBEDTLS_SSL_KEEP_PEER_CERTIFICATE
     select MBEDTLS_DYNAMIC_BUFFER
     select MBEDTLS_DYNAMIC_FREE_CONFIG_DATA
@@ -289,6 +288,10 @@ config ESPD_WIFI_AP_SYNC
         warning once. espd_sync.py --host 192.168.4.1 for Wi-Fi sync without
         a browser. Optional STA via wifi_ssid= in config.txt (APSTA). Boot
         window: wifi_sync_ap_minutes= in config.txt.
+
+        TLS mode (MBEDTLS_TLS_SERVER_AND_CLIENT) is a Kconfig choice — select
+        has no effect on it. Board sdkconfig.defaults pin it when this feature
+        is implied (see gen_board_plugins _wifi_ap_sync_sdkconfig_extras).
 
 endmenu
 

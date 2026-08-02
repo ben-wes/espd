@@ -63,7 +63,7 @@ Needed when:
 
 - wear-levelling sector size changed (e.g. 512 B → 4 KiB in `sdkconfig.defaults.esp32s3`);
 - the FAT is corrupt and mount fails; or
-- **undersized `/storage`**: serial shows a large partition (e.g. `/storage: 14784 KiB at 0x190000`) but stats/PUT report only ~400 KB free (`-ERR no space` on multi‑MB files).
+- **undersized `/storage`**: serial shows a large partition (e.g. `/storage: … KiB at 0x1B0000`) but stats/PUT report only ~400 KB free (`-ERR no space` on multi‑MB files).
 
 That last case is usually a **stale tiny FAT** left in flash from an earlier boot that registered `/storage` against a wrong flash size (typical after a **web flasher** first boot before SFDP-based sizing). Reflashing the app does **not** erase the tail of flash where `/storage` lives, so a valid but tiny FAT can keep mounting.
 
@@ -93,11 +93,11 @@ Also clears NVS and forces a full reflash of the app.
 
 There is no `idf.py erase-partition` command, and **`parttool erase_partition --partition-name=storage` does not apply** (no `storage` entry in the flashed partition table).
 
-Erase from the end of the factory app through the end of the chip. With the default `partitions_pd.csv` (1536K factory app), `/storage` starts at **`0x190000`**. Size = chip flash size − `0x190000` (e.g. **16 MB** chip → `0xE70000` bytes):
+Erase from the end of the factory app through the end of the chip. With the default `partitions_pd.csv` (1664K factory app), `/storage` starts at **`0x1B0000`**. Size = chip flash size − `0x1B0000` (e.g. **16 MB** chip → `0xE50000` bytes):
 
 ```bash
 # 16 MB ESP32-S3 example — adjust size for your chip
-python -m esptool --port PORT erase_region 0x190000 0xE70000
+python -m esptool --port PORT erase_region 0x1B0000 0xE50000
 ```
 
 Then reset so firmware mounts and formats an empty FAT at full size.
