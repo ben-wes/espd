@@ -1,14 +1,15 @@
 /*
  * [espdcontrol] — espd platform queries.
  *
- *   ip  → symbol "a.b.c.d" (STA), or symbol "noip"
- *         (same host form as [netsend] connect <host> <port>)
+ *   ip  → list of four float octets 0..255, or symbol "noip"
  *   mac → list of six float bytes 0..255 (STA), or symbol "nomac"
  */
 
 #include "../pd/src/m_pd.h"
 #include "espd.h"
 #include "espd_config.h"
+
+#include <stdio.h>
 
 typedef struct _espdcontrol {
     t_object x_obj;
@@ -20,11 +21,19 @@ static t_class *espdcontrol_class;
 #if defined(ESPD_USE_WIFI)
 static void espdcontrol_ip(t_espdcontrol *x)
 {
-    if (!wifi_ipaddr[0]) {
+    int a, b, c, d;
+    t_atom ap[4];
+
+    if (!wifi_ipaddr[0] ||
+        sscanf(wifi_ipaddr, "%d.%d.%d.%d", &a, &b, &c, &d) != 4) {
         outlet_symbol(x->x_out, gensym("noip"));
         return;
     }
-    outlet_symbol(x->x_out, gensym(wifi_ipaddr));
+    SETFLOAT(ap + 0, (t_float)a);
+    SETFLOAT(ap + 1, (t_float)b);
+    SETFLOAT(ap + 2, (t_float)c);
+    SETFLOAT(ap + 3, (t_float)d);
+    outlet_list(x->x_out, 0, 4, ap);
 }
 
 static void espdcontrol_mac(t_espdcontrol *x)

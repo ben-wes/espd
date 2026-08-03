@@ -135,7 +135,7 @@ Bind with `[r espd/…]`. Indices are **numeric**.
 
 | Object | Messages | Notes |
 |--------|----------|--------|
-| **espdcontrol** | `ip` → symbol `a.b.c.d` or `noip`; `mac` → 6 floats or `nomac` | STA IP (netsend-style host); STA MAC bytes |
+| **espdcontrol** | `ip` → 4 floats or `noip`; `mac` → 6 floats or `nomac` | STA IP octets; STA MAC bytes |
 
 ### Pd I2C object
 

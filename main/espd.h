@@ -312,9 +312,9 @@ extern char espd_wifi_password[65];
  * samples; 64 frames/buffer matches one block (low latency). Larger frame_num
  * (e.g. 128 or 240) adds headroom for FFT-heavy patches.
  */
-/* [espdcontrol] message "ip" → symbol "a.b.c.d" (STA), or "noip" — same host
- * form as [netsend] connect. Message "mac" → list of six float bytes 0..255
- * (STA), or symbol "nomac". */
+/* [espdcontrol] message "ip" → list of four float octets 0..255 (STA), or
+ * symbol "noip". Message "mac" → list of six float bytes 0..255 (STA), or
+ * symbol "nomac". */
 
 void pdmain_reload_patch(void);
 void pdmain_reload_patch_from(const char *dir);
