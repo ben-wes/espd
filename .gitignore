@@ -11,6 +11,8 @@ sdkconfig.defaults.local
 .vscode/
 __pycache__/
 *.pyc
+# Optional local board YAML (prefer espd-kits / ESPD_BOARDS_DIR; do not commit kits here)
+boards/
 # Generated from boards/*.yaml (scripts/gen_board_plugins.py on CMake configure)
 components/espd_board_*/
 components/espd_boards/Kconfig.inc

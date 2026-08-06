@@ -3,8 +3,9 @@
 Short reference — full guide: **docs/ADDING_A_BOARD.md**
 
 ESPD does not embed board-specific logic in **main/**. Each kit is a
-**boards/*.yaml** file; CMake generates **espd_board_*** plugins that pull in
-an esp-bsp package and compile shared glue from **espd_integration**.
+**boards/*.yaml** file (via **`ESPD_BOARDS_DIR`** or a local gitignored
+`boards/`); CMake generates **espd_board_*** plugins that pull in an esp-bsp
+package and compile shared glue from **espd_integration**.
 
 ## Naming convention
 

@@ -19,7 +19,7 @@ Requires [ESP-IDF v6.0.2](https://docs.espressif.com/projects/esp-idf/en/latest/
 - ESP-IDF **v6.0.2** (`install.sh` once in the IDF tree)
 - USB serial for flash/monitor
 - **Generic I2S:** ESP32 or ESP32-S3 + manual I2S wiring (e.g. INMP441 + MAX98357A)
-- **Board kit:** ESP32-S3 with an esp-bsp package (see [boards/](boards/))
+- **Board kit:** ESP32-S3 with an esp-bsp package ([espd-kits](https://github.com/ben-wes/espd-kits) or your own `boards/*.yaml`)
 
 ## Clone and prepare
 
@@ -39,7 +39,7 @@ Activate IDF in every new shell:
 
 | Layer | Where | When | Examples |
 |-------|--------|------|----------|
-| **Board profile** | `boards/*.yaml` → generated `sdkconfig.defaults` | CMake configure | PSRAM, codec drivers, BSP tuning |
+| **Board profile** | External `boards/*.yaml` → generated `sdkconfig.defaults` | CMake configure | PSRAM, codec drivers, BSP tuning |
 | **Compile-time** | `idf.py menuconfig` → **ESPD Configuration** | Rebuild to change | Target board, WiFi, `espd/ain`, sample rate |
 | **Runtime** | `config.txt` on the active store | Every boot | `wifi_ssid=`, `ain_pins=`, `audio_sample_rate=` |
 
@@ -59,20 +59,25 @@ idf.py build flash monitor
 
 Set **Generic board I2S pins** in menuconfig if wiring differs. SPH0645 microphones are known **not** to work on ESP32.
 
-### Board kit (external `boards/*.yaml`)
+### Board kit (`boards/*.yaml` via `ESPD_BOARDS_DIR`)
 
-espd itself ships only the generic board. Real board definitions live in
-[espd-kits](https://github.com/ben-wes/espd-kits) (or your own tree) — point
-`ESPD_BOARDS_DIR` at them so the kit shows up under **Target board** in menuconfig:
+espd ships only the generic board. Product definitions live in
+[espd-kits](https://github.com/ben-wes/espd-kits) (or any directory of YAML files) —
+point `ESPD_BOARDS_DIR` at that tree so the kit appears under **Target board**:
 
 ```bash
-export ESPD_BOARDS_DIR=~/dev/espd/espd-kits/boards   # external board YAMLs
+export ESPD_BOARDS_DIR=~/dev/espd/espd-kits/boards
 idf.py set-target esp32s3        # or the YAML `target:`
-idf.py menuconfig                # ESPD Configuration → Target board → e.g. Waveshare ESP32-S3-AUDIO → Save
+idf.py menuconfig                # ESPD Configuration → Target board → Save
 idf.py build flash monitor
 ```
 
-First build downloads esp-bsp into `managed_components/` (network required). Prebuilt images: [espd-kits](https://github.com/ben-wes/espd-kits). For non-interactive builds, set the board in `sdkconfig.defaults.local` instead of menuconfig (see [docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md)).
+For a one-off local kit you can instead create `boards/mykit.yaml` in this repo
+(gitignored). Prefer `ESPD_BOARDS_DIR` so kit YAML is not mixed into firmware
+history. First build downloads esp-bsp into `managed_components/` (network
+required). Prebuilt images: [espd-kits](https://github.com/ben-wes/espd-kits).
+Non-interactive: `sdkconfig.defaults.local` (see
+[docs/ADDING_A_BOARD.md](docs/ADDING_A_BOARD.md)).
 
 **Required:** pick the board in menuconfig (chip defaults stay generic until the profile applies). Verify: `grep CONFIG_ESPD_BOARD_ sdkconfig` matches your kit — if wrong, delete `sdkconfig` and run `set-target` again.
 

@@ -13,20 +13,24 @@ package plus a one-file YAML definition.
    package — upstream, a fork, or a local tree with the usual `bsp/esp-bsp.h`
    API (`bsp_audio_init`, `bsp_iot_button_create`, …).
 
-2. Add **`boards/mykit.yaml`** (see schema below).
+2. Add a board YAML (see schema below) — either:
+   - in [espd-kits](https://github.com/ben-wes/espd-kits) / your own tree and
+     `export ESPD_BOARDS_DIR=…/boards`, or
+   - as a local **`boards/mykit.yaml`** here (`boards/` is gitignored; do not
+     commit product kits into espd).
 
 3. Configure and build — CMake generates **`components/espd_board_mykit/`**
    automatically on every `idf.py` configure:
 
 ```bash
+export ESPD_BOARDS_DIR=~/dev/espd/espd-kits/boards   # or use local boards/
 idf.py set-target esp32s3
-echo CONFIG_ESPD_BOARD_MYKIT=y >> sdkconfig.defaults.esp32s3   # optional pre-select
+echo CONFIG_ESPD_BOARD_MYKIT=y > sdkconfig.defaults.local
 idf.py menuconfig build flash monitor
 ```
 
-**Worked example:** real board definitions live in the
-[espd-kits](https://github.com/ben-wes/espd-kits) repo (e.g. `boards/waveshare_s3.yaml`);
-espd itself ships only the generic board.
+**Worked example:** [espd-kits](https://github.com/ben-wes/espd-kits)
+`boards/waveshare_s3.yaml`. espd itself ships only the generic board.
 
 ## Naming convention
 
@@ -273,7 +277,7 @@ chip files) in the main tree — that file stays board-neutral.
 | **menuconfig** | Local dev in `espd` |
 | **`sdkconfig.defaults.local`** | Non-interactive / CI: one file with `CONFIG_ESPD_BOARD_MYKIT=y` (gitignored) |
 | **`ESPD_SDKCONFIG_DEFAULTS`** | Optional env: path to the same content instead of `.local` |
-| **`ESPD_BOARDS_DIR`** | Optional env: external `boards/` tree (default `./boards`) |
+| **`ESPD_BOARDS_DIR`** | Optional env: external `boards/` tree (else `./boards` if present) |
 
 ```bash
 echo 'CONFIG_ESPD_BOARD_MYKIT=y' > sdkconfig.defaults.local
