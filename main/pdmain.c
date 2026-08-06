@@ -435,6 +435,9 @@ void espd_pd_control_setup(void);
 #if CONFIG_ESPD_USE_I2C
 void espd_pd_i2c_setup(void);
 #endif
+#if CONFIG_ESPD_USE_PULSE
+void espd_pd_pulse_setup(void);
+#endif
 #if CONFIG_ESPD_USE_ESPNOW
 void espd_pd_now_setup(void);
 #endif
@@ -497,6 +500,9 @@ void conf_init(void)
     espd_pd_control_setup();
 #if CONFIG_ESPD_USE_I2C
     espd_pd_i2c_setup();
+#endif
+#if CONFIG_ESPD_USE_PULSE
+    espd_pd_pulse_setup();
 #endif
 #if CONFIG_ESPD_USE_ESPNOW
     espd_pd_now_setup();

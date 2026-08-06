@@ -97,6 +97,7 @@ set(MAIN_REQUIRES
     esp_driver_ledc
     esp_driver_i2s
     esp_driver_i2c
+    esp_driver_rmt
     esp_driver_gpio
     esp_driver_uart
     esp_driver_dac
@@ -180,6 +181,10 @@ endif()
 
 if(CONFIG_ESPD_USE_I2C)
     target_sources(${COMPONENT_LIB} PRIVATE "espd_i2c.c" "espd_pd_i2c.c")
+endif()
+
+if(CONFIG_ESPD_USE_PULSE)
+    target_sources(${COMPONENT_LIB} PRIVATE "espd_pulse.c" "espd_pd_pulse.c")
 endif()
 
 if(CONFIG_ESPD_USE_ESPNOW)

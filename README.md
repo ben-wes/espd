@@ -142,6 +142,14 @@ Bind with `[r espd/…]`. Indices are **numeric**.
 |--------|----------|--------|
 | **espdcontrol** | `ip` → 4 floats or `noip`; `mac` → 6 floats or `nomac` | STA IP octets; STA MAC bytes |
 
+### Pd pulse object
+
+| Object | Messages | Enable |
+|--------|----------|--------|
+| **espdpulse** | `rate <Hz>`; `duty <0..1>`; `pulses <N>` (`N>0` burst, `-1` continuous, `0` stop) | **ESPD_USE_PULSE** + `pulse_pins=` in `config.txt` |
+
+RMT hardware timing (independent of audio sample rate). Channel arg maps to `pulse_pins=` order: `[espdpulse 0]` → first GPIO. Useful for stepper STEP clocks, triggers, and general pulse trains. DIR/EN for motors stay on `espd/dout`. Max 4 channels; shares the chip RMT TX pool (e.g. with LED strips).
+
 ### Pd I2C object
 
 | Object | Messages | Enable |
@@ -179,7 +187,7 @@ Physical buttons map to **`espd/din/0`**, **`espd/din/1`**, … Order is `io.but
 | **Patch sync over OTG CDC** | off (Generic); on (OTG BSP kits) | `espd_sync.py` |
 | **Embed fallback test patch** | off | If no `main.pd` on active store |
 | **Enable WiFi** | on | Pd net objects |
-| **Compile espd/ain**, **touch**, **aout**, **din GPIO**, **dout**, **espdi2c**, **espdnow** | off | GPIO / I2C / ESP‑NOW extras |
+| **Compile espd/ain**, **touch**, **aout**, **din GPIO**, **dout**, **espdi2c**, **espdpulse**, **espdnow** | off | GPIO / I2C / pulse / ESP‑NOW extras |
 
 Full `config.txt` keys: [main/espd.h](main/espd.h). Example: [test-patch/config.txt](test-patch/config.txt).
 

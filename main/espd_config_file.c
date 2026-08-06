@@ -228,6 +228,13 @@ void espd_config_load(void)
             g_espd_cfg.dout_n = cfg_parse_pin_list(v, g_espd_cfg.dout_pins, ESPD_CFG_MAX_PINS);
         }
 
+        /* Pulse (RMT / [espdpulse]) */
+        else if (!strcmp(k, "pulse_pins"))
+        {
+            g_espd_cfg.pulse_have_pins = true;
+            g_espd_cfg.pulse_n = cfg_parse_pin_list(v, g_espd_cfg.pulse_pins, ESPD_CFG_MAX_PINS);
+        }
+
         /* Touch */
         else if (!strcmp(k, "touch_pins"))
         {

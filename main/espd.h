@@ -288,7 +288,13 @@ extern char espd_wifi_password[65];
  * Digital out (when ESPD_USE_DOUT compiled in): espd/dout starts only if
  * config.txt has dout_pins= with at least one GPIO. Float >= 0.5 → high, else
  * low. No background polling. dout_pins=8,9 — GPIOs for espd/dout/0.. in order
- * (max 8) Audio (codec and generic I2S backends): audio_sample_rate=48000 — Hz
+ * (max 8)
+ * Pulse (when ESPD_USE_PULSE compiled in): [espdpulse N] starts only if
+ *   config.txt has pulse_pins= with at least one GPIO. RMT hardware timing
+ *   (not Pd sample rate). Messages: rate <Hz>, duty <0..1>, pulses <N>
+ *   (N>0 burst, -1 continuous, 0 stop). pulse_pins=12,13 — GPIOs for
+ *   [espdpulse 0].. (max 4). Shares the chip RMT TX pool (e.g. with LEDs).
+ * Audio (codec and generic I2S backends): audio_sample_rate=48000 — Hz
  * I2C (when ESPD_USE_I2C compiled in): [espdi2c] starts only when config.txt
  *   enables a bus. Async read/write; byte lists on the right outlet.
  *   i2c_bsp=1 — use the BSP codec I2C bus (e.g. Waveshare GPIO11/10).

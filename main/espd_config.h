@@ -59,6 +59,10 @@
 #define ESPD_USE_I2C 1
 #endif
 
+#if CONFIG_ESPD_USE_PULSE
+#define ESPD_USE_PULSE 1
+#endif
+
 #if CONFIG_ESPD_USE_ESPNOW
 #define ESPD_USE_ESPNOW 1
 #endif

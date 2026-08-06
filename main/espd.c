@@ -14,6 +14,7 @@
 #include "espd_dev.h"
 #include "espd_storage.h"
 #include "espd_i2c.h"
+#include "espd_pulse.h"
 #include "espd_now.h"
 #if CONFIG_ESPD_WIFI_AP_SYNC
 #include "espd_dev_wifi.h"
@@ -454,6 +455,9 @@ void app_main(void)
     espd_initdacs();
 #ifdef ESPD_USE_I2C
     espd_i2c_init();
+#endif
+#ifdef ESPD_USE_PULSE
+    espd_pulse_init();
 #endif
     pdmain_init();
 

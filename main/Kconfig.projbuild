@@ -357,6 +357,16 @@ config ESPD_USE_I2C
         when config.txt enables them: i2c_bsp=1 (share BSP codec bus) and/or
         i2c0=SDA,SCL[,Hz] / i2c1=... for a dedicated bus. No I2C keys → off.
 
+config ESPD_USE_PULSE
+    bool "Compile espdpulse support (RMT GPIO pulse trains)"
+    default n
+    help
+        Links RMT pulse generator and the [espdpulse] Pd object. Channels
+        start only when config.txt lists GPIOs: pulse_pins=12,13. Messages:
+        rate (Hz), duty (0..1), pulses (N>0 burst, -1 continuous, 0 stop).
+        Timing is hardware-driven (not Pd sample rate). Shares the chip's
+        RMT TX pool with other users (e.g. LED strips). Max 4 channels.
+
 config ESPD_USE_ESPNOW
     bool "Compile espdnow support (ESP-NOW Pd object)"
     depends on ESPD_USE_WIFI

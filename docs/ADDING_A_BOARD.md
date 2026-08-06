@@ -300,6 +300,7 @@ Activate IDF v6.0.2 per [README.md](../README.md).
 | **espd/ain/N** | GPIO analog in (pots, sensors) | **ESPD_USE_AIN** + **ain_pins=** |
 | **espd/aout/N** | LEDC PWM | **ESPD_USE_AOUT** + **aout_pins=** |
 | **espd/dout/N** | GPIO out | **ESPD_USE_DOUT** + **dout_pins=** |
+| **[espdpulse N]** | RMT pulse train | **ESPD_USE_PULSE** + **pulse_pins=** |
 | **espd/touch/N** | Touch sensor | **ESPD_USE_TOUCH** + **touch_pins=** |
 
 ## Local storage (main.pd, config.txt)

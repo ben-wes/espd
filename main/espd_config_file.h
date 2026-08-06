@@ -63,6 +63,11 @@ typedef struct {
     int  dout_n;
     int  dout_pins[ESPD_CFG_MAX_PINS];
 
+    /* Pulse (RMT) — [espdpulse N] */
+    bool pulse_have_pins;
+    int  pulse_n;
+    int  pulse_pins[ESPD_CFG_MAX_PINS];
+
     /* Touch */
     bool touch_have_pins;
     int  touch_n;
